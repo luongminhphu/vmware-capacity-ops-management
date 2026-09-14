@@ -1,0 +1,7 @@
+# Bỏ qua file này nếu bạn đã tạo Project riêng cho app này trong KubeSphere Console
+# (Workspace → Projects → Create) — KubeSphere tự tạo namespace tương ứng, chỉ cần
+# đổi `namespace: vmware-capacity-ops` ở TẤT CẢ manifest khác cho khớp tên Project đó.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: vmware-capacity-ops

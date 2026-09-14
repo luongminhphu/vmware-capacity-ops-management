@@ -1,4 +1,5 @@
 .env
+k8s/02-secret.yaml
 __pycache__/
 *.pyc
 .venv/

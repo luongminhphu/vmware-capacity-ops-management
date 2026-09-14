@@ -1,0 +1,45 @@
+# Giá trị KHÔNG nhạy cảm — an toàn để commit vào git. Mọi giá trị nhạy cảm
+# (mật khẩu, JWT_SECRET) nằm ở 02-secret.yaml (không commit bản điền thật).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vco-config
+  namespace: vmware-capacity-ops
+data:
+  ADMIN_USERNAME: "admin"
+  COOKIE_SECURE: "false"          # đặt "true" nếu Ingress/NodePort của bạn phục vụ qua HTTPS
+  CORS_ORIGINS: "*"
+  ENABLE_SCHEDULER: "true"
+  POLL_INTERVAL_MINUTES: "60"
+
+  # ---- vCenter #1..#4 — phần KHÔNG nhạy cảm ----
+  # Dùng chung tài khoản read-only infra.mon@vsphere.local trên cả 4 vCenter.
+  # Đặt VCENTER_i_DEMO=true (không cần HOST thật) để chạy thử với dữ liệu giả lập
+  # trước khi có kết nối vCenter thật.
+  VCENTER_1_KEY: "vc-hcm-01"
+  VCENTER_1_NAME: "vCenter HCM DC1"
+  VCENTER_1_HOST: "vcenter01.yourcompany.local"
+  VCENTER_1_USERNAME: "infra.mon@vsphere.local"
+  VCENTER_1_VERIFY_SSL: "false"
+  VCENTER_1_DEMO: "false"
+
+  VCENTER_2_KEY: "vc-hcm-02"
+  VCENTER_2_NAME: "vCenter HCM DC2"
+  VCENTER_2_HOST: "vcenter02.yourcompany.local"
+  VCENTER_2_USERNAME: "infra.mon@vsphere.local"
+  VCENTER_2_VERIFY_SSL: "false"
+  VCENTER_2_DEMO: "false"
+
+  VCENTER_3_KEY: "vc-dr-01"
+  VCENTER_3_NAME: "vCenter DR Site"
+  VCENTER_3_HOST: "vcenter03.yourcompany.local"
+  VCENTER_3_USERNAME: "infra.mon@vsphere.local"
+  VCENTER_3_VERIFY_SSL: "false"
+  VCENTER_3_DEMO: "false"
+
+  VCENTER_4_KEY: "vc-branch-01"
+  VCENTER_4_NAME: "vCenter Branch"
+  VCENTER_4_HOST: "vcenter04.yourcompany.local"
+  VCENTER_4_USERNAME: "infra.mon@vsphere.local"
+  VCENTER_4_VERIFY_SSL: "false"
+  VCENTER_4_DEMO: "false"

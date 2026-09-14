@@ -98,6 +98,84 @@ Sau khi cấu hình xong, kiểm tra nhanh bằng nút **"Đồng bộ ngay"** t
 phải danh sách vCenter) — nếu có lỗi kết nối/permission, thông báo lỗi cụ thể sẽ hiện ngay tại chip
 vCenter tương ứng.
 
+## Triển khai trên Kubernetes / KubeSphere
+
+Ngoài Docker Compose, thư mục `k8s/` chứa manifest sẵn sàng áp dụng lên cụm KubeSphere
+(hoặc bất kỳ cụm Kubernetes chuẩn nào, vì KubeSphere chạy trên Kubernetes gốc). Image
+ứng dụng được build và đẩy tự động lên **GitHub Container Registry (GHCR)** qua GitHub
+Action `.github/workflows/build-push.yml` mỗi khi push lên nhánh `main`, thành
+`ghcr.io/luongminhphu/vmware-capacity-ops-management-app:latest`. Ứng dụng expose ra
+ngoài qua **Service NodePort** (không cần Ingress/domain).
+
+### Bước 1 — Lấy image đã build
+
+Sau khi push code lên `main`, chờ GitHub Action chạy xong (tab **Actions** trên repo),
+kiểm tra image tại `https://github.com/luongminhphu?tab=packages`.
+
+Mặc định package trên GHCR là **Private** — cụm KubeSphere cần một Image Pull Secret để
+pull được:
+
+```bash
+# Tạo Personal Access Token (classic) trên GitHub với quyền `read:packages`,
+# rồi tạo secret pull-image ngay trong namespace của app:
+kubectl create secret docker-registry ghcr-pull-secret \
+  -n vmware-capacity-ops \
+  --docker-server=ghcr.io \
+  --docker-username=luongminhphu \
+  --docker-password='<PAT có quyền read:packages>' \
+  --docker-email='luongminhphu@gmail.com'
+```
+
+Hoặc đơn giản hơn: vào package trên GitHub → **Package settings** → **Change
+visibility** → **Public** — khi đó có thể xoá khối `imagePullSecrets` trong
+`k8s/04-app.yaml` và bỏ qua secret trên.
+
+### Bước 2 — Tạo Secret chứa thông tin nhạy cảm
+
+```bash
+cp k8s/02-secret.example.yaml k8s/02-secret.yaml
+# Sửa k8s/02-secret.yaml: mật khẩu Postgres, JWT_SECRET, ADMIN_PASSWORD,
+# mật khẩu infra.mon@vsphere.local cho từng vCenter. File này đã có trong
+# .gitignore — sẽ không bị commit.
+```
+
+### Bước 3 — Sửa `k8s/01-configmap.yaml`
+
+Điền đúng `VCENTER_i_HOST`/`VCENTER_i_NAME`/`VCENTER_i_KEY` cho 4 vCenter thật của bạn
+(hoặc để `VCENTER_i_DEMO: "true"` để chạy thử trước với dữ liệu giả lập).
+
+### Bước 4 — Áp dụng lên cụm
+
+```bash
+kubectl apply -k k8s/
+# hoặc áp dụng từng file theo thứ tự nếu không dùng kustomize:
+# kubectl apply -f k8s/00-namespace.yaml -f k8s/01-configmap.yaml \
+#   -f k8s/02-secret.yaml -f k8s/03-postgres.yaml -f k8s/04-app.yaml
+
+kubectl -n vmware-capacity-ops get pods -w
+```
+
+Khi Pod `vco-app` ở trạng thái `Running`/`Ready`, truy cập
+`http://<IP-bất-kỳ-của-node-trong-cụm>:30080` (đổi `30080` nếu bạn đã sửa `nodePort`
+trong `k8s/04-app.yaml`).
+
+### Lưu ý khi chạy trên Kubernetes
+
+- **Giữ `replicas: 1`** cho `vco-app` — bộ đếm polling vCenter chạy trong tiến trình app,
+  không có khoá phối hợp giữa nhiều pod; scale ngang sẽ gây polling trùng lặp vào vCenter.
+- Áp dụng đúng thứ tự (Secret + ConfigMap trước Deployment) — nếu sửa
+  ConfigMap/Secret sau khi Pod đã chạy, phải `kubectl rollout restart deployment/vco-app -n vmware-capacity-ops`
+  để Pod đọc giá trị mới (Kubernetes không tự nạp lại env khi ConfigMap/Secret đổi).
+- Có thể dùng KubeSphere Console (giao diện Workloads → Deployments/StatefulSets) để
+  theo dõi/log/scale thay cho `kubectl` — cụm chỉ cần các manifest trên được áp dụng
+  trước, sau đó quản lý bằng UI như bình thường.
+- Dùng `kubectl get storageclass` để xem StorageClass khả dụng trên cụm của bạn nếu
+  PVC của Postgres (`k8s/03-postgres.yaml`) không tự bind (Pending) — thêm
+  `storageClassName` tương ứng vào `volumeClaimTemplates`.
+- Đây là manifest chưa được kiểm thử trên cụm KubeSphere thật (sandbox phát triển không
+  có Kubernetes) — đã kiểm tra kỹ về logic/cấu trúc YAML nhưng bạn nên áp dụng từng bước
+  và theo dõi `kubectl describe pod`/`kubectl logs` nếu có sự cố.
+
 ## Lưu ý về dữ liệu lịch sử & polling
 
 - Mỗi lần đồng bộ (thủ công qua "Đồng bộ ngay"/"Sync all", hoặc tự động theo

@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vco-app
+  namespace: vmware-capacity-ops
+  labels:
+    app: vco-app
+spec:
+  replicas: 1  # giữ 1 — scheduler polling vCenter chạy trong tiến trình app, tăng replicas
+               # sẽ khiến nhiều pod cùng poll trùng lặp vào vCenter (không có phối hợp khoá).
+  selector:
+    matchLabels:
+      app: vco-app
+  template:
+    metadata:
+      labels:
+        app: vco-app
+    spec:
+      # Bỏ khối imagePullSecrets bên dưới NẾU bạn đã đặt GHCR package ở chế độ Public
+      # (Package Settings → Change visibility). Nếu để Private (mặc định), bắt buộc phải
+      # tạo secret này trước — xem hướng dẫn trong README.md.
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+      containers:
+        - name: app
+          # Sửa lại đúng tên image mà workflow .github/workflows/build-push.yml đã đẩy lên,
+          # xem tại: https://github.com/luongminhphu?tab=packages
+          image: ghcr.io/luongminhphu/vmware-capacity-ops-management-app:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef: { name: vco-config }
+            - secretRef: { name: vco-secrets }
+          readinessProbe:
+            httpGet: { path: /api/health, port: 8000 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/health, port: 8000 }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests: { cpu: "100m", memory: "256Mi" }
+            limits: { cpu: "1", memory: "512Mi" }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: vco-app
+  namespace: vmware-capacity-ops
+spec:
+  type: NodePort
+  selector:
+    app: vco-app
+  ports:
+    - port: 80
+      targetPort: 8000
+      nodePort: 30080   # đổi nếu 30080 đã bị chiếm trên cụm của bạn (dải hợp lệ 30000-32767)
