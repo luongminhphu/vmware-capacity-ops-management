@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="vi" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>VMware Capacity Ops Management</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/styles.css" />
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body data-view="dashboard">
+<script id="exported-state" type="application/json"></script>
+<a href="#mainContent" class="skip-link">Bỏ qua đến nội dung chính</a>
+
+<!-- ================= LOGIN SCREEN ================= -->
+<div id="loginScreen">
+  <form class="login-card" id="loginForm">
+    <div class="brand-mark" aria-label="VMware Capacity Ops">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="4" width="7" height="7" rx="1.4"></rect><rect x="14" y="4" width="7" height="7" rx="1.4"></rect>
+        <rect x="3" y="14" width="7" height="7" rx="1.4"></rect><rect x="14" y="14" width="7" height="7" rx="1.4"></rect>
+      </svg>
+    </div>
+    <h2>VMware Capacity Ops Management</h2>
+    <p class="lead">Đăng nhập để xem dashboard capacity và compliance.</p>
+    <div id="loginError"></div>
+    <div class="login-field">
+      <label for="loginUsername">Tên đăng nhập</label>
+      <input type="text" id="loginUsername" autocomplete="username" required>
+    </div>
+    <div class="login-field">
+      <label for="loginPassword">Mật khẩu</label>
+      <input type="password" id="loginPassword" autocomplete="current-password" required>
+    </div>
+    <button class="btn btn-primary" type="submit" id="btnLogin">Đăng nhập</button>
+  </form>
+</div>
+
+<!-- ================= APP SHELL ================= -->
+<div class="app-shell hidden" id="appShell">
+
+  <header class="page-header">
+    <div class="brand-wrap">
+      <div class="brand-mark" aria-label="VMware Capacity Ops">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="4" width="7" height="7" rx="1.4"></rect>
+          <rect x="14" y="4" width="7" height="7" rx="1.4"></rect>
+          <rect x="3" y="14" width="7" height="7" rx="1.4"></rect>
+          <rect x="14" y="14" width="7" height="7" rx="1.4"></rect>
+        </svg>
+      </div>
+      <div>
+        <div class="eyebrow">Infrastructure Capacity Ops</div>
+        <h1>VMware Capacity Ops Management</h1>
+        <p class="lead">Theo dõi tài nguyên đã dùng / còn dư, kiểm tra compliance và mô phỏng what-if cho hạ tầng VMware.</p>
+      </div>
+    </div>
+    <div class="header-actions">
+      <button class="btn btn-secondary" id="btnExportCsv" type="button">Export CSV</button>
+      <button class="btn btn-primary" id="btnExportReport" type="button">Export báo cáo HTML</button>
+      <button class="btn icon-btn" id="themeToggle" type="button" aria-label="Chuyển dark/light mode" title="Chuyển dark/light mode">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
+      </button>
+    </div>
+  </header>
+
+  <section class="top-bar">
+    <div class="top-bar-left">
+      <div class="view-toggle" id="perspectiveToggle">
+        <button type="button" data-perspective="executive">Executive View</button>
+        <button type="button" data-perspective="technical" class="active">Technical View</button>
+      </div>
+      <select id="vcenterSelect" title="Chọn vCenter"></select>
+      <button class="btn btn-secondary btn-sm" id="btnSyncNow" type="button">Đồng bộ ngay</button>
+      <span class="vcenter-status-row" id="vcenterStatusRow"></span>
+    </div>
+    <div class="user-menu">
+      <span id="currentUserLabel"></span>
+      <button class="btn btn-secondary" id="btnLogout" type="button">Đăng xuất</button>
+    </div>
+  </section>
+
+  <div class="validation-banner" id="validationBanner"></div>
+
+  <!-- ================= EXECUTIVE VIEW ================= -->
+  <div id="executiveView" class="perspective-view hidden">
+    <section class="exec-grid" id="execKpis"></section>
+
+    <section class="chart-grid" style="grid-template-columns:2fr 1fr;">
+      <article class="card chart-card">
+        <div class="panel-head"><div><div class="panel-title">Xu hướng sử dụng tài nguyên (toàn hệ thống)</div><p class="panel-sub">Tổng vCPU/RAM đã dùng so với tổng năng lực vật lý theo thời gian, tổng hợp từ lịch sử polling.</p></div></div>
+        <div class="chart-wrap"><canvas id="chartExecTrend"></canvas></div>
+      </article>
+      <article class="card chart-card">
+        <div class="panel-head"><div><div class="panel-title">Phân bổ theo vCenter</div><p class="panel-sub">Mức sử dụng CPU/RAM theo từng vCenter.</p></div></div>
+        <div class="chart-wrap"><canvas id="chartExecByVcenter"></canvas></div>
+      </article>
+    </section>
+
+    <div class="insight-card" id="execForecastCpu"></div>
+    <div class="insight-card" id="execForecastRam"></div>
+
+    <section class="panel">
+      <div class="panel-head">
+        <div><div class="panel-title">Top cluster rủi ro cao nhất</div><p class="panel-sub">Xếp hạng theo % ngưỡng overcommit CPU/RAM đã dùng — ưu tiên đầu tư/mở rộng.</p></div>
+      </div>
+      <div id="execTopRisk"></div>
+    </section>
+  </div>
+
+  <!-- ================= TECHNICAL VIEW ================= -->
+  <div id="technicalView" class="perspective-view">
+
+    <section class="toolbar" aria-label="Nạp và cấu hình dữ liệu">
+      <div class="field-group">
+        <label for="hostFile">Host file (CSV/JSON) — import thủ công</label>
+        <input type="file" id="hostFile" accept=".csv,.json,.txt">
+      </div>
+      <div class="field-group">
+        <label for="vmFile">VM file (CSV/JSON) — import thủ công</label>
+        <input type="file" id="vmFile" accept=".csv,.json,.txt">
+      </div>
+      <div class="field-group">
+        <label for="idleThresholdInput">Ngưỡng VM idle (ngày)</label>
+        <input type="text" id="idleThresholdInput" value="30">
+      </div>
+      <div class="field-group">
+        <label for="cpuOvercommitInput">Ngưỡng overcommit CPU (vCPU:pCPU)</label>
+        <input type="text" id="cpuOvercommitInput" value="6">
+      </div>
+      <div class="field-group">
+        <label for="htFactorInput" title="Số pCPU logic dùng để tính overcommit = CPU Cores (vật lý) × hệ số này. Mặc định 2 vì hầu hết host ESXi bật Hyperthreading (mỗi core vật lý = 2 logical thread).">Hệ số Hyperthreading (pCPU logic/core)</label>
+        <input type="text" id="htFactorInput" value="2">
+      </div>
+      <div class="field-group">
+        <label for="ramOvercommitInput">Ngưỡng overcommit RAM (vRAM:pRAM)</label>
+        <input type="text" id="ramOvercommitInput" value="1.5">
+      </div>
+      <div class="toolbar-actions">
+        <button class="btn btn-secondary" id="btnLoadSample" type="button">Nạp sample data</button>
+        <button class="btn btn-secondary" id="btnResetAll" type="button">Đặt lại toàn bộ</button>
+      </div>
+    </section>
+
+    <section class="section-nav">
+      <div class="tabbar" id="viewTabs">
+        <button class="tab-btn active" data-view="dashboard" type="button">Dashboard</button>
+        <button class="tab-btn" data-view="compliance" type="button">Compliance</button>
+        <button class="tab-btn" data-view="inventory" type="button">Inventory</button>
+        <button class="tab-btn" data-view="whatif" type="button">What-if Simulation</button>
+      </div>
+      <div class="panel-toolbar">
+        <select id="filterCluster"><option value="all">Tất cả cluster</option></select>
+        <select id="filterHost"><option value="all">Tất cả host</option></select>
+        <span class="pill na" id="dataFootprint">Hosts: 0 | VMs: 0</span>
+      </div>
+    </section>
+
+    <main id="mainContent">
+
+      <!-- ================= DASHBOARD VIEW ================= -->
+      <section id="viewDashboard" class="view-section">
+        <section class="kpi-grid" id="capacityKpis"></section>
+
+        <section class="chart-grid">
+          <article class="card chart-card">
+            <div class="panel-head"><div><div class="panel-title">Utilization theo Cluster</div><p class="panel-sub">CPU / RAM / Storage % sử dụng theo từng cluster.</p></div></div>
+            <div class="chart-wrap"><canvas id="chartClusterUtil"></canvas></div>
+          </article>
+          <article class="card chart-card">
+            <div class="panel-head"><div><div class="panel-title">Utilization theo Host</div><p class="panel-sub">Top host theo mức sử dụng CPU/RAM.</p></div></div>
+            <div class="chart-wrap"><canvas id="chartHostUtil"></canvas></div>
+          </article>
+          <article class="card chart-card">
+            <div class="panel-head"><div><div class="panel-title">VM Power State</div><p class="panel-sub">Phân bố trạng thái nguồn của VM.</p></div></div>
+            <div class="chart-wrap"><canvas id="chartPowerState"></canvas></div>
+          </article>
+        </section>
+
+        <section class="chart-grid" style="grid-template-columns:1fr 1fr;">
+          <article class="card chart-card">
+            <div class="panel-head"><div><div class="panel-title">Phân bổ tài nguyên theo Datastore</div><p class="panel-sub">Provisioned vs Used theo datastore.</p></div></div>
+            <div class="chart-wrap"><canvas id="chartDatastore"></canvas></div>
+          </article>
+          <article class="card chart-card">
+            <div class="panel-head"><div><div class="panel-title">Overcommit Ratio</div><p class="panel-sub">CPU / RAM overcommit theo cluster (vCPU:pCPU, vRAM:pRAM).</p></div></div>
+            <div class="chart-wrap"><canvas id="chartOvercommit"></canvas></div>
+          </article>
+        </section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div><div class="panel-title">Phân bổ theo Cluster</div><p class="panel-sub">Chi tiết capacity, usage và overcommit từng cluster.</p></div>
+          </div>
+          <div class="table-scroll">
+            <table class="data-table" id="clusterTable">
+              <thead><tr>
+                <th data-key="name">Cluster</th><th data-key="hosts">Hosts</th><th data-key="vms">VMs</th>
+                <th data-key="cpuPct" title="% ngưỡng overcommit CPU đã dùng = overcommit CPU thực tế ÷ ngưỡng overcommit CPU × 100. Overcommit CPU = vCPU dùng / pCPU logic (pCPU logic = CPU Cores vật lý × hệ số Hyperthreading)">CPU % (theo overcommit)</th><th data-key="ramPct" title="% ngưỡng overcommit RAM đã dùng = overcommit RAM thực tế ÷ ngưỡng overcommit RAM × 100">RAM % (theo overcommit)</th><th data-key="storagePct">Storage %</th>
+                <th data-key="cpuOvercommit">CPU Overcommit</th><th data-key="ramOvercommit">RAM Overcommit</th><th data-key="status">Status</th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <!-- ================= COMPLIANCE VIEW ================= -->
+      <section id="viewCompliance" class="view-section hidden">
+        <section class="kpi-grid" id="complianceKpis"></section>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div><div class="panel-title">Compliance Findings</div><p class="panel-sub">Host CPU/RAM vượt ngưỡng, overcommit ratio cluster, VM idle/tắt lâu/over-provision vCPU.</p></div>
+            <div class="panel-toolbar">
+              <div class="search-box">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+                <input type="text" id="complianceSearch" placeholder="Tìm theo tên, cluster, host...">
+              </div>
+              <select id="complianceSeverityFilter">
+                <option value="all">Mọi severity</option>
+                <option value="critical">Critical</option>
+                <option value="warning">Warning</option>
+                <option value="info">Info</option>
+              </select>
+              <select id="complianceTypeFilter">
+                <option value="all">Mọi loại kiểm tra</option>
+                <option value="host_cpu">Host CPU vượt ngưỡng</option>
+                <option value="host_ram">Host RAM vượt ngưỡng</option>
+                <option value="overcommit_cpu">Overcommit CPU vượt ngưỡng</option>
+                <option value="overcommit_ram">Overcommit RAM vượt ngưỡng</option>
+                <option value="vm_idle">VM idle lâu</option>
+                <option value="vm_off">VM tắt lâu</option>
+                <option value="vm_overprovision">VM over-provision</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="data-table" id="complianceTable">
+              <thead><tr>
+                <th data-key="severity">Severity</th><th data-key="type">Loại</th><th data-key="entity">Đối tượng</th>
+                <th data-key="cluster">Cluster</th><th data-key="metric">Chỉ số</th><th data-key="recommendation">Khuyến nghị</th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="row-count" id="complianceRowCount"></div>
+        </section>
+      </section>
+
+      <!-- ================= INVENTORY VIEW ================= -->
+      <section id="viewInventory" class="view-section hidden">
+        <section class="table-card">
+          <div class="panel-head">
+            <div><div class="panel-title">Host Table</div><p class="panel-sub">Toàn bộ ESXi host đã import hoặc đồng bộ, kèm mức sử dụng.</p></div>
+            <div class="panel-toolbar">
+              <div class="search-box">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+                <input type="text" id="hostSearch" placeholder="Tìm host...">
+              </div>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="data-table" id="hostTable">
+              <thead><tr>
+                <th data-key="cluster">Cluster</th><th data-key="host">Host</th><th data-key="cores">CPU Cores</th>
+                <th data-key="ramGB">RAM GB</th><th data-key="vcpuUsed">vCPU dùng</th><th data-key="cpuPct" title="% ngưỡng overcommit CPU đã dùng = (vCPU dùng / pCPU logic) ÷ ngưỡng overcommit CPU × 100, pCPU logic = CPU Cores vật lý × hệ số Hyperthreading. Vượt 100% nghĩa là overcommit thực tế của host đã vượt ngưỡng cấu hình">CPU % (theo overcommit)</th>
+                <th data-key="ramUsedGB">RAM dùng</th><th data-key="ramPct" title="% ngưỡng overcommit RAM đã dùng = (RAM dùng / RAM vật lý) ÷ ngưỡng overcommit RAM × 100. Vượt 100% nghĩa là overcommit thực tế của host đã vượt ngưỡng cấu hình">RAM % (theo overcommit)</th><th data-key="vmCount">Số VM</th><th data-key="status">Status</th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="row-count" id="hostRowCount"></div>
+        </section>
+
+        <section class="table-card">
+          <div class="panel-head">
+            <div><div class="panel-title">VM Table</div><p class="panel-sub">Toàn bộ VM đã import hoặc đồng bộ, kèm trạng thái và mức sử dụng disk.</p></div>
+            <div class="panel-toolbar">
+              <div class="search-box">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+                <input type="text" id="vmSearch" placeholder="Tìm VM, IP...">
+              </div>
+              <select id="vmStatusFilter">
+                <option value="all">Mọi trạng thái</option>
+                <option value="on">Powered On</option>
+                <option value="off">Powered Off</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="data-table" id="vmTable">
+              <thead><tr>
+                <th data-key="cluster">Cluster</th><th data-key="host">Host</th><th data-key="vm">VM</th><th data-key="powerState">Power</th>
+                <th data-key="ipAddress">IP</th><th data-key="vcpu">vCPU</th><th data-key="ramGB">RAM GB</th>
+                <th data-key="diskProvGB">Disk Prov</th><th data-key="diskUsedGB">Disk Used</th><th data-key="diskUsedPct">Disk Used %</th>
+                <th data-key="lastActivityDays">Idle (ngày)</th><th data-key="powerOffDays">Tắt (ngày)</th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="row-count" id="vmRowCount"></div>
+        </section>
+      </section>
+
+      <!-- ================= WHAT-IF VIEW ================= -->
+      <section id="viewWhatif" class="view-section hidden">
+        <section class="panel">
+          <div class="panel-head">
+            <div><div class="panel-title">Scenario Templates</div><p class="panel-sub">Chọn nhanh một kịch bản chuẩn để mô phỏng tác động lên capacity.</p></div>
+          </div>
+          <div class="scenario-grid" id="scenarioTemplates"></div>
+        </section>
+
+        <div class="layout-2col">
+          <aside class="side-card">
+            <h4>Chọn cluster mục tiêu</h4>
+            <div class="field">
+              <select id="whatifClusterSelect"></select>
+            </div>
+            <div class="legend-list" style="margin-top:1rem;">
+              <div class="legend-item"><span class="legend-dot" style="background:var(--ok)"></span>An toàn (&lt;80% ngưỡng overcommit)</div>
+              <div class="legend-item"><span class="legend-dot" style="background:var(--warn)"></span>Theo dõi (80–100% ngưỡng overcommit)</div>
+              <div class="legend-item"><span class="legend-dot" style="background:var(--crit)"></span>Vượt ngưỡng (&gt;100% ngưỡng overcommit)</div>
+            </div>
+            <h4 style="margin-top:1.2rem;">Lịch sử simulation</h4>
+            <div class="sim-list" id="simHistoryList"><div class="empty-note">Chưa có simulation nào.</div></div>
+            <button class="btn btn-secondary btn-sm" id="btnClearSimHistory" type="button" style="margin-top:.6rem;width:100%;">Xoá lịch sử</button>
+          </aside>
+
+          <div class="sim-shell">
+            <div class="sim-card">
+              <div class="sim-tabbar" id="simTabs">
+                <button class="sim-tab active" data-sim="addHost" type="button">Add Host</button>
+                <button class="sim-tab" data-sim="addVm" type="button">Add VM</button>
+                <button class="sim-tab" data-sim="resizeVm" type="button">Resize VM</button>
+                <button class="sim-tab" data-sim="decommission" type="button">Decommission Idle VM</button>
+              </div>
+              <div id="simFormArea"></div>
+            </div>
+            <div class="sim-card sim-result hidden" id="simResultArea"></div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <div class="footer-note">VMware Capacity Ops Management — dữ liệu live từ vCenter (đọc chỉ đọc, tài khoản infra.mon@vsphere.local) + import thủ công, lưu lịch sử để phân tích xu hướng.</div>
+</div>
+
+<script src="js/api.js"></script>
+<script src="js/core.js"></script>
+<script src="js/views/executive.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

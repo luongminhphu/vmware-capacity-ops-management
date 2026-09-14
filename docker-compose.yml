@@ -1,0 +1,76 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vmware_app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-vmware_capacity_ops}
+    volumes:
+      - vco_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vmware_app} -d ${POSTGRES_DB:-vmware_capacity_ops}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # Not published to the host by default — only the `app` service needs it.
+    # Uncomment for local debugging with a DB client:
+    # ports:
+    #   - "5432:5432"
+
+  app:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-vmware_app}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-vmware_capacity_ops}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-admin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:?set ADMIN_PASSWORD in .env}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      ENABLE_SCHEDULER: ${ENABLE_SCHEDULER:-true}
+      POLL_INTERVAL_MINUTES: ${POLL_INTERVAL_MINUTES:-60}
+      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+
+      VCENTER_1_KEY: ${VCENTER_1_KEY:-}
+      VCENTER_1_NAME: ${VCENTER_1_NAME:-}
+      VCENTER_1_HOST: ${VCENTER_1_HOST:-}
+      VCENTER_1_USERNAME: ${VCENTER_1_USERNAME:-infra.mon@vsphere.local}
+      VCENTER_1_PASSWORD: ${VCENTER_1_PASSWORD:-}
+      VCENTER_1_VERIFY_SSL: ${VCENTER_1_VERIFY_SSL:-false}
+      VCENTER_1_DEMO: ${VCENTER_1_DEMO:-false}
+
+      VCENTER_2_KEY: ${VCENTER_2_KEY:-}
+      VCENTER_2_NAME: ${VCENTER_2_NAME:-}
+      VCENTER_2_HOST: ${VCENTER_2_HOST:-}
+      VCENTER_2_USERNAME: ${VCENTER_2_USERNAME:-infra.mon@vsphere.local}
+      VCENTER_2_PASSWORD: ${VCENTER_2_PASSWORD:-}
+      VCENTER_2_VERIFY_SSL: ${VCENTER_2_VERIFY_SSL:-false}
+      VCENTER_2_DEMO: ${VCENTER_2_DEMO:-false}
+
+      VCENTER_3_KEY: ${VCENTER_3_KEY:-}
+      VCENTER_3_NAME: ${VCENTER_3_NAME:-}
+      VCENTER_3_HOST: ${VCENTER_3_HOST:-}
+      VCENTER_3_USERNAME: ${VCENTER_3_USERNAME:-infra.mon@vsphere.local}
+      VCENTER_3_PASSWORD: ${VCENTER_3_PASSWORD:-}
+      VCENTER_3_VERIFY_SSL: ${VCENTER_3_VERIFY_SSL:-false}
+      VCENTER_3_DEMO: ${VCENTER_3_DEMO:-false}
+
+      VCENTER_4_KEY: ${VCENTER_4_KEY:-}
+      VCENTER_4_NAME: ${VCENTER_4_NAME:-}
+      VCENTER_4_HOST: ${VCENTER_4_HOST:-}
+      VCENTER_4_USERNAME: ${VCENTER_4_USERNAME:-infra.mon@vsphere.local}
+      VCENTER_4_PASSWORD: ${VCENTER_4_PASSWORD:-}
+      VCENTER_4_VERIFY_SSL: ${VCENTER_4_VERIFY_SSL:-false}
+      VCENTER_4_DEMO: ${VCENTER_4_DEMO:-false}
+    ports:
+      - "${APP_PORT:-8000}:8000"
+
+volumes:
+  vco_pgdata:
