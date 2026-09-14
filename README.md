@@ -104,33 +104,11 @@ Ngoài Docker Compose, thư mục `k8s/` chứa manifest sẵn sàng áp dụng 
 (hoặc bất kỳ cụm Kubernetes chuẩn nào, vì KubeSphere chạy trên Kubernetes gốc). Image
 ứng dụng được build và đẩy tự động lên **GitHub Container Registry (GHCR)** qua GitHub
 Action `.github/workflows/build-push.yml` mỗi khi push lên nhánh `main`, thành
-`ghcr.io/luongminhphu/vmware-capacity-ops-management-app:latest`. Ứng dụng expose ra
+`ghcr.io/luongminhphu/vmware-capacity-ops-management-app:latest`. Package này hiện đã
+**Public** — cụm có thể pull thẳng, không cần Image Pull Secret. Ứng dụng expose ra
 ngoài qua **Service NodePort** (không cần Ingress/domain).
 
-### Bước 1 — Lấy image đã build
-
-Sau khi push code lên `main`, chờ GitHub Action chạy xong (tab **Actions** trên repo),
-kiểm tra image tại `https://github.com/luongminhphu?tab=packages`.
-
-Mặc định package trên GHCR là **Private** — cụm KubeSphere cần một Image Pull Secret để
-pull được:
-
-```bash
-# Tạo Personal Access Token (classic) trên GitHub với quyền `read:packages`,
-# rồi tạo secret pull-image ngay trong namespace của app:
-kubectl create secret docker-registry ghcr-pull-secret \
-  -n infra-ops \
-  --docker-server=ghcr.io \
-  --docker-username=luongminhphu \
-  --docker-password='<PAT có quyền read:packages>' \
-  --docker-email='luongminhphu@gmail.com'
-```
-
-Hoặc đơn giản hơn: vào package trên GitHub → **Package settings** → **Change
-visibility** → **Public** — khi đó có thể xoá khối `imagePullSecrets` trong
-`k8s/04-app.yaml` và bỏ qua secret trên.
-
-### Bước 2 — Tạo Secret chứa thông tin nhạy cảm
+### Bước 1 — Tạo Secret chứa thông tin nhạy cảm
 
 ```bash
 cp k8s/02-secret.example.yaml k8s/02-secret.yaml
@@ -139,12 +117,12 @@ cp k8s/02-secret.example.yaml k8s/02-secret.yaml
 # .gitignore — sẽ không bị commit.
 ```
 
-### Bước 3 — Sửa `k8s/01-configmap.yaml`
+### Bước 2 — Sửa `k8s/01-configmap.yaml`
 
 Điền đúng `VCENTER_i_HOST`/`VCENTER_i_NAME`/`VCENTER_i_KEY` cho 4 vCenter thật của bạn
 (hoặc để `VCENTER_i_DEMO: "true"` để chạy thử trước với dữ liệu giả lập).
 
-### Bước 4 — Áp dụng lên cụm
+### Bước 3 — Áp dụng lên cụm
 
 Nếu namespace `infra-ops` đã có sẵn (tạo qua KubeSphere Console — Project infra-ops),
 **không cần áp dụng `k8s/00-namespace.yaml`**:
@@ -161,6 +139,31 @@ kubectl -n infra-ops get pods -w
 Khi Pod `vco-app` ở trạng thái `Running`/`Ready`, truy cập
 `http://<IP-bất-kỳ-của-node-trong-cụm>:30080` (đổi `30080` nếu bạn đã sửa `nodePort`
 trong `k8s/04-app.yaml`).
+
+### Nếu package GHCR bị chuyển lại về Private
+
+GitHub có tuỳ chọn "Inherit access from source repository" đôi khi tự đưa package
+Private trở lại sau mỗi lần build (vì repo nguồn là Private). Nếu gặp lỗi
+`ImagePullBackOff` / `401 Unauthorized` khi pull, quay lại **Public** trong Package
+Settings (nhớ tắt "Inherit access from source repository" nếu có), hoặc dùng Image
+Pull Secret làm phương án chắc chắn:
+
+```bash
+kubectl create secret docker-registry ghcr-pull-secret \
+  -n infra-ops \
+  --docker-server=ghcr.io \
+  --docker-username=luongminhphu \
+  --docker-password='<PAT có quyền read:packages>' \
+  --docker-email='luongminhphu@gmail.com'
+```
+
+... rồi thêm lại vào `k8s/04-app.yaml` (trong `spec.template.spec`, trước
+`containers:`):
+
+```yaml
+      imagePullSecrets:
+        - name: ghcr-pull-secret
+```
 
 ### Lưu ý khi chạy trên Kubernetes
 

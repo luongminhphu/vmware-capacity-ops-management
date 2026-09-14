@@ -16,11 +16,12 @@ spec:
       labels:
         app: vco-app
     spec:
-      # Bỏ khối imagePullSecrets bên dưới NẾU bạn đã đặt GHCR package ở chế độ Public
-      # (Package Settings → Change visibility). Nếu để Private (mặc định), bắt buộc phải
-      # tạo secret này trước — xem hướng dẫn trong README.md.
-      imagePullSecrets:
-        - name: ghcr-pull-secret
+      # Image ghcr.io/luongminhphu/vmware-capacity-ops-management-app là PUBLIC —
+      # không cần imagePullSecrets. Nếu sau này bạn chuyển package về Private (hoặc
+      # GitHub tự đổi lại do "Inherit access from source repository"), thêm lại:
+      #   imagePullSecrets:
+      #     - name: ghcr-pull-secret
+      # và tạo secret đó theo hướng dẫn trong README.md.
       containers:
         - name: app
           # Sửa lại đúng tên image mà workflow .github/workflows/build-push.yml đã đẩy lên,
