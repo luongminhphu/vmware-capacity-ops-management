@@ -2,7 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: vco-app
-  namespace: vmware-capacity-ops
+  namespace: infra-ops
   labels:
     app: vco-app
 spec:
@@ -48,7 +48,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: vco-app
-  namespace: vmware-capacity-ops
+  namespace: infra-ops
 spec:
   type: NodePort
   selector:

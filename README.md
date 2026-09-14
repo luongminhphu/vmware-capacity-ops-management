@@ -119,7 +119,7 @@ pull được:
 # Tạo Personal Access Token (classic) trên GitHub với quyền `read:packages`,
 # rồi tạo secret pull-image ngay trong namespace của app:
 kubectl create secret docker-registry ghcr-pull-secret \
-  -n vmware-capacity-ops \
+  -n infra-ops \
   --docker-server=ghcr.io \
   --docker-username=luongminhphu \
   --docker-password='<PAT có quyền read:packages>' \
@@ -146,13 +146,16 @@ cp k8s/02-secret.example.yaml k8s/02-secret.yaml
 
 ### Bước 4 — Áp dụng lên cụm
 
+Nếu namespace `infra-ops` đã có sẵn (tạo qua KubeSphere Console — Project infra-ops),
+**không cần áp dụng `k8s/00-namespace.yaml`**:
+
 ```bash
 kubectl apply -k k8s/
 # hoặc áp dụng từng file theo thứ tự nếu không dùng kustomize:
-# kubectl apply -f k8s/00-namespace.yaml -f k8s/01-configmap.yaml \
+# kubectl apply -f k8s/01-configmap.yaml \
 #   -f k8s/02-secret.yaml -f k8s/03-postgres.yaml -f k8s/04-app.yaml
 
-kubectl -n vmware-capacity-ops get pods -w
+kubectl -n infra-ops get pods -w
 ```
 
 Khi Pod `vco-app` ở trạng thái `Running`/`Ready`, truy cập
@@ -164,7 +167,7 @@ trong `k8s/04-app.yaml`).
 - **Giữ `replicas: 1`** cho `vco-app` — bộ đếm polling vCenter chạy trong tiến trình app,
   không có khoá phối hợp giữa nhiều pod; scale ngang sẽ gây polling trùng lặp vào vCenter.
 - Áp dụng đúng thứ tự (Secret + ConfigMap trước Deployment) — nếu sửa
-  ConfigMap/Secret sau khi Pod đã chạy, phải `kubectl rollout restart deployment/vco-app -n vmware-capacity-ops`
+  ConfigMap/Secret sau khi Pod đã chạy, phải `kubectl rollout restart deployment/vco-app -n infra-ops`
   để Pod đọc giá trị mới (Kubernetes không tự nạp lại env khi ConfigMap/Secret đổi).
 - Có thể dùng KubeSphere Console (giao diện Workloads → Deployments/StatefulSets) để
   theo dõi/log/scale thay cho `kubectl` — cụm chỉ cần các manifest trên được áp dụng

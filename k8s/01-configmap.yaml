@@ -4,7 +4,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: vco-config
-  namespace: vmware-capacity-ops
+  namespace: infra-ops
 data:
   ADMIN_USERNAME: "admin"
   COOKIE_SECURE: "false"          # đặt "true" nếu Ingress/NodePort của bạn phục vụ qua HTTPS
