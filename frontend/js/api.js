@@ -67,4 +67,29 @@ const api = {
 
   getSettings: () => apiRequest('/settings'),
   updateSettings: (payload) => apiRequest('/settings', { method: 'PUT', body: JSON.stringify(payload) }),
+
+  /* PDF report is a binary download, not JSON — bypasses apiRequest and
+     streams the response straight into a file-save via an object URL. */
+  downloadPdfReport: async (view, vcenter) => {
+    const qs = new URLSearchParams({ view, vcenter: vcenter || 'all' }).toString();
+    const res = await fetch(`${API_BASE}/reports/pdf?${qs}`, { credentials: 'include' });
+    if (res.status === 401) {
+      if (window.onApiUnauthorized) window.onApiUnauthorized();
+      throw new ApiError(401, 'Phiên đăng nhập đã hết hạn.');
+    }
+    if (!res.ok) {
+      let detail = `Lỗi API (${res.status})`;
+      try { const data = await res.json(); if (data && data.detail) detail = data.detail; } catch { /* body wasn't JSON */ }
+      throw new ApiError(res.status, detail);
+    }
+    const blob = await res.blob();
+    const cd = res.headers.get('Content-Disposition') || '';
+    const match = /filename="?([^";]+)"?/.exec(cd);
+    const filename = match ? match[1] : `vco_report_${view}_${Date.now()}.pdf`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
 };

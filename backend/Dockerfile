@@ -5,9 +5,20 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # psycopg2-binary needs libpq at runtime; curl is used by the healthcheck.
+# WeasyPrint (PDF report export) needs Pango/Cairo/GDK-Pixbuf for text shaping
+# and rendering, plus shared-mime-info for MIME detection. fonts-dejavu-core
+# and fonts-noto-core supply glyph coverage for Vietnamese diacritics in PDFs.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
+    libpango-1.0-0 \
+    libpangocairo-1.0-0 \
+    libcairo2 \
+    libgdk-pixbuf2.0-0 \
+    libffi8 \
+    shared-mime-info \
+    fonts-dejavu-core \
+    fonts-noto-core \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt .

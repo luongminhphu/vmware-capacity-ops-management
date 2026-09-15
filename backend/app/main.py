@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from .collectors.scheduler import scheduler_loop
 from .config import get_settings
 from .database import Base, SessionLocal, engine
-from .routers import auth, compliance, dashboard, data, export, imports, settings as settings_router, vcenters
+from .routers import auth, compliance, dashboard, data, export, imports, reports, settings as settings_router, vcenters
 from .security import ensure_bootstrap_admin
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -63,6 +63,7 @@ app.include_router(data.router)
 app.include_router(compliance.router)
 app.include_router(imports.router)
 app.include_router(export.router)
+app.include_router(reports.router)
 app.include_router(settings_router.router)
 
 

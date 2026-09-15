@@ -78,6 +78,21 @@ async function refreshVcenterList() {
   }
 }
 
+async function handleExportPdf(view, btn) {
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Đang tạo PDF...';
+  try {
+    const vcenterParam = currentVcenterFilter === 'import' ? '__none__' : currentVcenterFilter;
+    await api.downloadPdfReport(view, vcenterParam);
+  } catch (err) {
+    showValidationBanner([`Không thể xuất báo cáo PDF: ${err.message}`], []);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+}
+
 async function handleSyncNow() {
   const btn = $('#btnSyncNow');
   btn.disabled = true;
@@ -176,6 +191,8 @@ function bindTopBarInteractions() {
   $('#loginForm').addEventListener('submit', handleLoginSubmit);
   $('#btnLogout').addEventListener('click', handleLogout);
   $('#btnSyncNow').addEventListener('click', handleSyncNow);
+  $('#btnExportPdfExec').addEventListener('click', e => handleExportPdf('executive', e.currentTarget));
+  $('#btnExportPdfTech').addEventListener('click', e => handleExportPdf('technical', e.currentTarget));
   $('#vcenterSelect').addEventListener('change', e => {
     currentVcenterFilter = e.target.value;
     loadLiveData();
