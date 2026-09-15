@@ -9,8 +9,24 @@ gian bằng PostgreSQL, và giao diện chia hai góc nhìn:
 - **Technical View** — dashboard capacity chi tiết, bảng host/VM, compliance findings, what-if
   simulation (Add Host, Add VM, Resize VM, Decommission Idle VM + 6 scenario template dựng sẵn).
 
-Giao diện theo **HSC Design System** (nền tối, giá trị số dùng tabular-nums, màu trạng thái
-AN TOÀN/THEO DÕI/VƯỢT NGƯỠNG nhất quán).
+Giao diện dùng tone màu lạnh (slate-blue) đồng nhất ở cả dark và light theme, giá trị số
+dùng tabular-nums, màu trạng thái AN TOÀN/THEO DÕI/VƯỢT NGƯỠNG nhất quán.
+
+### Xuất báo cáo PDF (khổ A4)
+
+Hai nút **Xuất PDF · Điều hành** và **Xuất PDF · Kỹ thuật** ở header tải báo cáo PDF khổ
+A4 (in được trực tiếp) từ `GET /api/reports/pdf?view=executive|technical&vcenter=<key|all>`
+(yêu cầu đăng nhập), theo scope vCenter đang chọn trên thanh lọc:
+
+- **Báo cáo Điều hành** — KPI CPU/RAM/Storage/Host-VM tổng quan, đánh giá rủi ro tổng thể,
+  insight đầu tư/rủi ro tự sinh, biểu đồ utilization theo cluster + VM power-state, top cluster
+  cần quan tâm nhất, top 10 compliance findings. Gọn trong ~2 trang, dành cho lãnh đạo.
+- **Báo cáo Kỹ thuật** — bảng overcommit theo cluster, chi tiết từng host, từng datastore, và
+  toàn bộ compliance findings (sắp xếp theo severity). Dài hơn, dành cho đội kỹ thuật.
+
+Render bằng [WeasyPrint](https://weasyprint.org/) (thuần Python/HTML/CSS, không cần Chromium) —
+đã có sẵn system dependencies trong `backend/Dockerfile`. Font Việt dùng bộ Noto Sans để hiển
+thị đầy đủ dấu tiếng Việt trong PDF.
 
 ## Kiến trúc
 
