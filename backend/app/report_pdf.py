@@ -46,6 +46,11 @@ COLORS = {
     "crit_bg": "#fbe4e2",
     "na": "#667085",
     "na_bg": "#eef1f5",
+    # Darker than "surface2" on purpose: this is the unfilled 100% track of
+    # the headline gauges, and it needs enough contrast against the white
+    # card background for a reader to register the full half-circle shape
+    # (not just the filled arc) at a glance.
+    "gauge_track": "#c7cfdb",
 }
 
 STATUS_COLOR = {"ok": ("ok", "ok_bg"), "warn": ("warn", "warn_bg"), "bad": ("bad", "bad_bg"),
@@ -226,7 +231,7 @@ def svg_gauge(pct: Optional[float], color: str, size: int = 132, max_scale: floa
     label = fmt_pct(pct, 0)
     top = f'<text x="{cx:.1f}" y="{h-6:.1f}" text-anchor="middle" font-family="Roboto, Noto Sans, sans-serif" font-size="8.5" font-weight="700" fill="{COLORS["muted"]}" text-transform="uppercase">{esc(label_top)}</text>' if label_top else ""
     return f'''<svg width="{w:.0f}" height="{h:.0f}" viewBox="0 0 {w:.0f} {h:.0f}" font-family="Roboto, Noto Sans, sans-serif">
-      <path d="M {x0:.1f} {y0:.1f} A {r:.1f} {r:.1f} 0 0 1 {x1:.1f} {y1:.1f}" fill="none" stroke="{COLORS['surface2']}" stroke-width="{stroke_w:.1f}" stroke-linecap="round"/>
+      <path d="M {x0:.1f} {y0:.1f} A {r:.1f} {r:.1f} 0 0 1 {x1:.1f} {y1:.1f}" fill="none" stroke="{COLORS['gauge_track']}" stroke-width="{stroke_w:.1f}" stroke-linecap="round"/>
       {fg_path}
       <text x="{cx:.1f}" y="{cy+2:.1f}" text-anchor="middle" font-size="{w*0.155:.1f}" font-weight="800" fill="{COLORS['ink']}">{label}</text>
       {top}
