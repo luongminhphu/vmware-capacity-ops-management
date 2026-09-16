@@ -403,6 +403,16 @@ function getHostList(clusterFilter) {
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
 
+// clusters === null means "no cluster filter applied" (every host, from any cluster).
+// clusters === [] means "filtered down to zero clusters" (no host qualifies).
+function getHostsForClusters(clusters) {
+  if (clusters === null) return getHostList('all');
+  const allowed = new Set(clusters);
+  const set = new Set();
+  appState.hosts.forEach(h => { if (allowed.has(h.cluster)) set.add(h.host); });
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+
 function buildClusterRows() {
   const clusters = getClusterList();
   return clusters.map(name => {
@@ -1459,6 +1469,8 @@ function populateFilterSelects() {
   hostSel.value = appState.filters.host;
 
   $('#dataFootprint').textContent = `Hosts: ${appState.hosts.length} | VMs: ${appState.vms.length}`;
+
+  if (typeof populatePdfScopeFilter === 'function') populatePdfScopeFilter();
 }
 
 function syncViewSections() {

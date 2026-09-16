@@ -70,9 +70,15 @@ const api = {
 
   /* PDF report is a binary download, not JSON — bypasses apiRequest and
      streams the response straight into a file-save via an object URL. */
-  downloadPdfReport: async (view, vcenter, types) => {
+  downloadPdfReport: async (view, vcenter, types, clusters, hosts) => {
     const params = { view, vcenter: vcenter || 'all' };
     if (types && types.length) params.types = types.join(',');
+    // clusters/hosts: null means "no filter" (omit param entirely). A non-null
+    // array means the user explicitly scoped the export, so send the param even
+    // when empty (0 items selected) so the backend can tell "filter to nothing"
+    // apart from "no filter at all".
+    if (clusters !== null && clusters !== undefined) params.clusters = clusters.join(',');
+    if (hosts !== null && hosts !== undefined) params.hosts = hosts.join(',');
     const qs = new URLSearchParams(params).toString();
     const res = await fetch(`${API_BASE}/reports/pdf?${qs}`, { credentials: 'include' });
     if (res.status === 401) {

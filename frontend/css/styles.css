@@ -1,7 +1,7 @@
 /* ── HSC Design System tokens (adapted for a dark-first ops dashboard) ── */
 :root, [data-theme="light"] {
-  --font-body:-apple-system,BlinkMacSystemFont,'SF Pro Display','SF Pro Text','Inter','Helvetica Neue',Arial,sans-serif;
-  --font-mono:-apple-system,BlinkMacSystemFont,'SF Pro Display','SF Pro Text','Inter','Helvetica Neue',Arial,sans-serif;
+  --font-body:'Roboto','Helvetica Neue',Arial,-apple-system,BlinkMacSystemFont,sans-serif;
+  --font-mono:'Roboto','Helvetica Neue',Arial,-apple-system,BlinkMacSystemFont,sans-serif;
   --text-xs:clamp(.72rem,.7rem + .1vw,.78rem);
   --text-sm:clamp(.82rem,.8rem + .14vw,.9rem);
   --text-base:clamp(.9rem,.88rem + .16vw,1rem);
@@ -79,6 +79,15 @@ h1{font-family:var(--font-body);font-size:var(--text-xl);font-weight:700;line-he
 .finding-filter-item input[type="checkbox"]{accent-color:var(--primary);width:15px;height:15px;flex:0 0 auto;}
 .finding-filter-all{font-weight:600;}
 .finding-filter-sep{height:1px;background:var(--divider);margin:var(--space-1) 0;}
+.scope-filter-panel{min-width:280px;max-height:400px;}
+.scope-quick-group{display:flex;flex-wrap:wrap;gap:var(--space-1);padding:var(--space-1) var(--space-2) 0;}
+.scope-quick-btn{border:1px solid var(--border);background:var(--surface-2);color:var(--text);border-radius:var(--radius-pill,999px);padding:2px 10px;font-size:var(--text-xs);cursor:pointer;line-height:1.6;}
+.scope-quick-btn:hover{background:var(--surface-3);border-color:var(--border-strong);}
+.scope-quick-btn.active{background:var(--primary);border-color:var(--primary);color:#fff;}
+.scope-cluster-list,.scope-host-list{display:flex;flex-direction:column;gap:2px;max-height:150px;overflow-y:auto;padding-left:2px;}
+.scope-host-list.hidden{display:none;}
+.scope-host-toggle{font-weight:600;}
+.scope-empty-note{padding:var(--space-1) var(--space-2);font-size:var(--text-xs);color:var(--text-muted);}
 .btn-danger{color:var(--bad);}
 .btn-sm{min-height:28px;padding:0 var(--space-3);font-size:var(--text-xs);}
 .icon-btn{width:36px;height:36px;display:grid;place-items:center;padding:0;}

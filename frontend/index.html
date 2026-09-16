@@ -6,7 +6,7 @@
 <title>VMware Capacity Ops Management</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="css/styles.css" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
@@ -58,6 +58,26 @@
     </div>
     <div class="header-actions">
       <button class="btn btn-secondary" id="btnExportCsv" type="button">Export CSV</button>
+      <details class="finding-filter-dropdown" id="pdfScopeFilterDropdown">
+        <summary class="btn btn-secondary" title="Chọn cluster/host sẽ được đưa vào báo cáo PDF">Phạm vi cluster/host cho PDF</summary>
+        <div class="finding-filter-panel scope-filter-panel">
+          <div class="scope-quick-group" id="scopeQuickGroup">
+            <button type="button" class="scope-quick-btn" data-scope-quick="all">Toàn dự án</button>
+          </div>
+          <div class="finding-filter-sep"></div>
+          <label class="finding-filter-item finding-filter-all">
+            <input type="checkbox" id="pdfClusterAll" checked>
+            <span>Chọn tất cả cluster</span>
+          </label>
+          <div id="pdfClusterList" class="scope-cluster-list"></div>
+          <div class="finding-filter-sep"></div>
+          <label class="finding-filter-item scope-host-toggle">
+            <input type="checkbox" id="pdfHostNarrowToggle">
+            <span>Giới hạn thêm theo host cụ thể (tùy chọn)</span>
+          </label>
+          <div id="pdfHostList" class="scope-host-list hidden"></div>
+        </div>
+      </details>
       <details class="finding-filter-dropdown" id="pdfFindingFilterDropdown">
         <summary class="btn btn-secondary" title="Chọn loại finding sẽ được đưa vào báo cáo PDF">Lọc findings cho PDF</summary>
         <div class="finding-filter-panel">

@@ -161,7 +161,7 @@ def svg_bar_chart(labels: List[str], series: List[Dict[str, Any]], width: int = 
     bar_gap = group_w * 0.18
     bar_w = (group_w - bar_gap) / n_series
 
-    parts = [f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" font-family="Inter, Noto Sans, sans-serif">']
+    parts = [f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" font-family="Roboto, Noto Sans, sans-serif">']
     # gridlines + y-axis labels (4 steps)
     for i in range(5):
         frac = i / 4
@@ -208,7 +208,7 @@ def svg_cluster_risk_chart(cluster_rows: List[Dict[str, Any]], metric: str, find
     plot_w = width - pad_l - pad_r
     max_scale = 140.0  # bars scale to a 140%-max visual range, same convention as bar_cell()
 
-    parts = [f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" font-family="Inter, Noto Sans, sans-serif">']
+    parts = [f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" font-family="Roboto, Noto Sans, sans-serif">']
     for i, c in enumerate(rows):
         pct = c["model"][pct_key]
         cls = c[status_key]["cls"]
@@ -244,14 +244,14 @@ def _base_css(report_title: str, generated_at: str) -> str:
 @page {{
   size: A4;
   margin: 16mm 14mm 18mm 14mm;
-  @top-left {{ content: "VMware Capacity Ops Management"; font-family:'Inter','Noto Sans',sans-serif; font-size:8.5px; color:{COLORS['faint']}; letter-spacing:.04em; text-transform:uppercase; }}
-  @top-right {{ content: "{report_title}"; font-family:'Inter','Noto Sans',sans-serif; font-size:8.5px; color:{COLORS['faint']}; letter-spacing:.04em; text-transform:uppercase; }}
-  @bottom-left {{ content: "Tạo lúc {generated_at}"; font-family:'Inter','Noto Sans',sans-serif; font-size:8px; color:{COLORS['faint']}; }}
-  @bottom-right {{ content: "Trang " counter(page) " / " counter(pages); font-family:'Inter','Noto Sans',sans-serif; font-size:8px; color:{COLORS['faint']}; }}
+  @top-left {{ content: "VMware Capacity Ops Management"; font-family:'Roboto','Noto Sans',sans-serif; font-size:8.5px; color:{COLORS['faint']}; letter-spacing:.04em; text-transform:uppercase; }}
+  @top-right {{ content: "{report_title}"; font-family:'Roboto','Noto Sans',sans-serif; font-size:8.5px; color:{COLORS['faint']}; letter-spacing:.04em; text-transform:uppercase; }}
+  @bottom-left {{ content: "Tạo lúc {generated_at}"; font-family:'Roboto','Noto Sans',sans-serif; font-size:8px; color:{COLORS['faint']}; }}
+  @bottom-right {{ content: "Trang " counter(page) " / " counter(pages); font-family:'Roboto','Noto Sans',sans-serif; font-size:8px; color:{COLORS['faint']}; }}
 }}
 * {{ box-sizing:border-box; }}
-body {{ font-family:'Inter','Noto Sans',sans-serif; color:{COLORS['ink']}; font-size:10.3px; line-height:1.5; }}
-h1,h2,h3,h4 {{ font-family:'Inter','Noto Sans',sans-serif; font-weight:700; color:{COLORS['ink']}; margin:0; }}
+body {{ font-family:'Roboto','Noto Sans',sans-serif; color:{COLORS['ink']}; font-size:10.3px; line-height:1.5; }}
+h1,h2,h3,h4 {{ font-family:'Roboto','Noto Sans',sans-serif; font-weight:700; color:{COLORS['ink']}; margin:0; }}
 .cover-title {{ font-size:22px; font-weight:800; color:{COLORS['primary_dark']}; margin-bottom:2px; }}
 .cover-sub {{ font-size:12px; color:{COLORS['muted']}; margin-bottom:14px; }}
 .eyebrow {{ font-size:8.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:{COLORS['accent']}; margin-bottom:4px; }}
