@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional
 
 
 class Policy:
-    def __init__(self, cpu_overcommit_max=6.0, ram_overcommit_max=1.5, ht_factor=2.0, idle_days=30):
+    def __init__(self, cpu_overcommit_max=6.0, ram_overcommit_max=1.0, ht_factor=2.0, idle_days=30):
         self.cpu_overcommit_max = cpu_overcommit_max
         self.ram_overcommit_max = ram_overcommit_max
         self.ht_factor = ht_factor

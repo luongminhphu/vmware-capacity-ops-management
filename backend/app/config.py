@@ -56,7 +56,7 @@ class Settings(BaseSettings):
 
     # Compliance / overcommit default thresholds (mirrors the original client-side policy)
     cpu_overcommit_max: float = 6.0
-    ram_overcommit_max: float = 1.5
+    ram_overcommit_max: float = 1.0
     ht_factor: float = 2.0
     idle_days: int = 30
 

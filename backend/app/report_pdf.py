@@ -51,6 +51,19 @@ STATUS_COLOR = {"ok": ("ok", "ok_bg"), "warn": ("warn", "warn_bg"), "bad": ("bad
 SEVERITY_COLOR = {"critical": ("crit", "crit_bg"), "warning": ("warn", "warn_bg"), "info": ("primary", "surface2")}
 SEVERITY_LABEL_VI = {"critical": "Nghiêm trọng", "warning": "Cảnh báo", "info": "Thông tin"}
 
+# Canonical list of compliance-finding types, mirrored from capacity.build_compliance_findings().
+# Used to validate/label the optional report-export type filter (?types=... on /api/reports/pdf).
+ALL_FINDING_TYPES = ["host_cpu", "host_ram", "overcommit_cpu", "overcommit_ram", "vm_idle", "vm_off", "vm_overprovision"]
+FINDING_TYPE_LABEL_VI = {
+    "host_cpu": "Host CPU vượt ngưỡng",
+    "host_ram": "Host RAM vượt ngưỡng",
+    "overcommit_cpu": "Overcommit CPU vượt ngưỡng",
+    "overcommit_ram": "Overcommit RAM vượt ngưỡng",
+    "vm_idle": "VM idle lâu",
+    "vm_off": "VM tắt lâu",
+    "vm_overprovision": "VM over-provision",
+}
+
 
 def _finite(v) -> bool:
     return v is not None and isinstance(v, (int, float)) and math.isfinite(v)
@@ -148,7 +161,7 @@ def svg_bar_chart(labels: List[str], series: List[Dict[str, Any]], width: int = 
     bar_gap = group_w * 0.18
     bar_w = (group_w - bar_gap) / n_series
 
-    parts = [f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" font-family="Noto Sans, sans-serif">']
+    parts = [f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" font-family="Inter, Noto Sans, sans-serif">']
     # gridlines + y-axis labels (4 steps)
     for i in range(5):
         frac = i / 4
@@ -172,6 +185,57 @@ def svg_bar_chart(labels: List[str], series: List[Dict[str, Any]], width: int = 
     return "".join(parts)
 
 
+def svg_cluster_risk_chart(cluster_rows: List[Dict[str, Any]], metric: str, finding_counts: Dict[str, Dict[str, int]],
+                            width: int = 330, height: Optional[int] = None) -> str:
+    """Horizontal bar chart, one row per cluster, for a single metric ('cpu' or 'ram').
+
+    Unlike svg_bar_chart (flat series colors), each bar here is colored by that
+    cluster's own risk status for the metric (ok/warn/bad/crit) so the chart
+    visually summarizes *risk*, not just utilization. A small severity badge
+    (critical/warning finding count for that cluster) is drawn at the row's end
+    when the cluster has any compliance findings.
+    """
+    pct_key = f"{metric}Pct"
+    status_key = f"{metric}Status"
+    rows = [c for c in cluster_rows if _finite(c["model"].get(pct_key))]
+    if not rows:
+        return '<div style="color:#98a2b3;font-size:11px;padding:8px 0;">Không có dữ liệu.</div>'
+    rows = sorted(rows, key=lambda c: c["model"][pct_key], reverse=True)[:10]
+
+    row_h = 20
+    pad_l, pad_r, pad_t = 78, 58, 4
+    height = height if height is not None else pad_t + len(rows) * row_h + 6
+    plot_w = width - pad_l - pad_r
+    max_scale = 140.0  # bars scale to a 140%-max visual range, same convention as bar_cell()
+
+    parts = [f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" font-family="Inter, Noto Sans, sans-serif">']
+    for i, c in enumerate(rows):
+        pct = c["model"][pct_key]
+        cls = c[status_key]["cls"]
+        fg_key, _ = STATUS_COLOR.get(cls, STATUS_COLOR["na"])
+        y = pad_t + i * row_h
+        bar_y = y + 3
+        bar_h = row_h - 8
+        clamped = max(0.0, min(max_scale, pct))
+        bar_w = clamped / max_scale * plot_w
+        name = c["name"] if len(c["name"]) <= 13 else c["name"][:12] + "…"
+        parts.append(f'<text x="{pad_l-6}" y="{bar_y+bar_h/2+3:.1f}" text-anchor="end" font-size="8.3" fill="{COLORS["ink"]}">{esc(name)}</text>')
+        parts.append(f'<rect x="{pad_l}" y="{bar_y:.1f}" width="{plot_w:.1f}" height="{bar_h}" rx="2" fill="{COLORS["surface2"]}"/>')
+        parts.append(f'<rect x="{pad_l}" y="{bar_y:.1f}" width="{max(1.5,bar_w):.1f}" height="{bar_h}" rx="2" fill="{COLORS[fg_key]}"/>')
+        parts.append(f'<text x="{pad_l+plot_w+5}" y="{bar_y+bar_h/2+3:.1f}" font-size="8" fill="{COLORS["muted"]}" font-weight="700">{fmt_pct(pct,0)}</text>')
+        fc = finding_counts.get(c["name"]) or {}
+        crit_n, warn_n = fc.get("critical", 0), fc.get("warning", 0)
+        if crit_n or warn_n:
+            badge_n = crit_n + warn_n
+            badge_title = "·".join(([f"{crit_n} nghiêm trọng"] if crit_n else []) + ([f"{warn_n} cảnh báo"] if warn_n else []))
+            badge_color = COLORS["crit"] if crit_n else COLORS["warn"]
+            bx = pad_l + plot_w + 34
+            parts.append(f'<circle cx="{bx}" cy="{bar_y+bar_h/2:.1f}" r="7" fill="{badge_color}"><title>{esc(badge_title)}</title></circle>')
+            parts.append(f'<text x="{bx}" y="{bar_y+bar_h/2+2.8:.1f}" text-anchor="middle" font-size="7.5" font-weight="700" fill="#ffffff">{badge_n}<title>{esc(badge_title)}</title></text>')
+    parts.append('</svg>')
+    return "".join(parts)
+
+
 # ---------------------------------------------------------------------------
 # Shared page chrome
 # ---------------------------------------------------------------------------
@@ -180,14 +244,14 @@ def _base_css(report_title: str, generated_at: str) -> str:
 @page {{
   size: A4;
   margin: 16mm 14mm 18mm 14mm;
-  @top-left {{ content: "VMware Capacity Ops Management"; font-family:'Noto Sans',sans-serif; font-size:8.5px; color:{COLORS['faint']}; letter-spacing:.04em; text-transform:uppercase; }}
-  @top-right {{ content: "{report_title}"; font-family:'Noto Sans',sans-serif; font-size:8.5px; color:{COLORS['faint']}; letter-spacing:.04em; text-transform:uppercase; }}
-  @bottom-left {{ content: "Tạo lúc {generated_at}"; font-family:'Noto Sans',sans-serif; font-size:8px; color:{COLORS['faint']}; }}
-  @bottom-right {{ content: "Trang " counter(page) " / " counter(pages); font-family:'Noto Sans',sans-serif; font-size:8px; color:{COLORS['faint']}; }}
+  @top-left {{ content: "VMware Capacity Ops Management"; font-family:'Inter','Noto Sans',sans-serif; font-size:8.5px; color:{COLORS['faint']}; letter-spacing:.04em; text-transform:uppercase; }}
+  @top-right {{ content: "{report_title}"; font-family:'Inter','Noto Sans',sans-serif; font-size:8.5px; color:{COLORS['faint']}; letter-spacing:.04em; text-transform:uppercase; }}
+  @bottom-left {{ content: "Tạo lúc {generated_at}"; font-family:'Inter','Noto Sans',sans-serif; font-size:8px; color:{COLORS['faint']}; }}
+  @bottom-right {{ content: "Trang " counter(page) " / " counter(pages); font-family:'Inter','Noto Sans',sans-serif; font-size:8px; color:{COLORS['faint']}; }}
 }}
 * {{ box-sizing:border-box; }}
-body {{ font-family:'Noto Sans',sans-serif; color:{COLORS['ink']}; font-size:10.3px; line-height:1.5; }}
-h1,h2,h3,h4 {{ font-family:'Noto Sans',sans-serif; font-weight:700; color:{COLORS['ink']}; margin:0; }}
+body {{ font-family:'Inter','Noto Sans',sans-serif; color:{COLORS['ink']}; font-size:10.3px; line-height:1.5; }}
+h1,h2,h3,h4 {{ font-family:'Inter','Noto Sans',sans-serif; font-weight:700; color:{COLORS['ink']}; margin:0; }}
 .cover-title {{ font-size:22px; font-weight:800; color:{COLORS['primary_dark']}; margin-bottom:2px; }}
 .cover-sub {{ font-size:12px; color:{COLORS['muted']}; margin-bottom:14px; }}
 .eyebrow {{ font-size:8.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:{COLORS['accent']}; margin-bottom:4px; }}
@@ -290,11 +354,19 @@ def _executive_insights(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]
 # Executive report
 # ---------------------------------------------------------------------------
 def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]], policy: capacity.Policy,
-                           scope_label: str, run_meta: Optional[List[Dict[str, Any]]] = None) -> str:
+                           scope_label: str, run_meta: Optional[List[Dict[str, Any]]] = None,
+                           include_types: Optional[List[str]] = None) -> str:
     model = capacity.build_capacity_model(hosts, vms, policy)
     cluster_rows = capacity.build_cluster_rows(hosts, vms, policy)
-    findings = capacity.build_compliance_findings(hosts, vms, policy)
+    all_findings = capacity.build_compliance_findings(hosts, vms, policy)
+    type_filter = set(include_types) if include_types is not None else None
+    findings = [f for f in all_findings if type_filter is None or f.get("type") in type_filter]
     sev = _severity_counts(findings)
+    cluster_finding_counts: Dict[str, Dict[str, int]] = {}
+    for f in findings:
+        key = f.get("cluster") or "—"
+        d = cluster_finding_counts.setdefault(key, {"critical": 0, "warning": 0, "info": 0})
+        d[f.get("severity", "info")] = d.get(f.get("severity", "info"), 0) + 1
     overall = _overall_status(model)
     generated_at = _now_str()
     insights = _executive_insights(model, cluster_rows, findings, policy)
@@ -303,17 +375,10 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
     donut = svg_donut([
         {"label": "Powered On", "value": powered_on, "color": COLORS["ok"]},
         {"label": "Powered Off", "value": powered_off, "color": COLORS["na"]},
-    ], size=104)
+    ], size=88)
 
-    cluster_labels = [c["name"] for c in cluster_rows]
-    cluster_chart = svg_bar_chart(
-        cluster_labels,
-        [
-            {"name": "CPU %", "color": COLORS["primary"], "values": [c["model"]["cpuPct"] if _finite(c["model"]["cpuPct"]) else 0 for c in cluster_rows]},
-            {"name": "RAM %", "color": COLORS["accent"], "values": [c["model"]["ramPct"] if _finite(c["model"]["ramPct"]) else 0 for c in cluster_rows]},
-        ],
-        width=430, height=190,
-    )
+    cpu_risk_chart = svg_cluster_risk_chart(cluster_rows, "cpu", cluster_finding_counts, width=246)
+    ram_risk_chart = svg_cluster_risk_chart(cluster_rows, "ram", cluster_finding_counts, width=246)
 
     top_risk_clusters = sorted(cluster_rows, key=lambda c: max(
         c["model"]["cpuPct"] if _finite(c["model"]["cpuPct"]) else -1,
@@ -351,6 +416,11 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
             parts.append(f"{esc(rm.get('vcenterKey'))} ({ts_fmt})")
         scope_note = " · ".join(parts)
 
+    filter_note = ""
+    if type_filter is not None and len(type_filter) < len(ALL_FINDING_TYPES):
+        excluded = [FINDING_TYPE_LABEL_VI.get(t, t) for t in ALL_FINDING_TYPES if t not in type_filter]
+        filter_note = f"Đã loại {len(excluded)}/{len(ALL_FINDING_TYPES)} loại finding khỏi báo cáo: {', '.join(excluded)}."
+
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8"/><style>{_base_css('Báo cáo điều hành', generated_at)}</style></head>
 <body>
   <div class="eyebrow">Infrastructure Capacity Ops · Executive Summary</div>
@@ -361,7 +431,8 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
     <span>Thời điểm tạo báo cáo: <b>{generated_at}</b></span>
     <span>Trạng thái tổng thể: {status_pill(overall)}</span>
   </div>
-  {f'<div class="small-note" style="margin:-10px 0 14px;">Dữ liệu tổng hợp từ: {scope_note}</div>' if scope_note else ''}
+  {f'<div class="small-note" style="margin:-10px 0 4px;">Dữ liệu tổng hợp từ: {scope_note}</div>' if scope_note else ''}
+  {f'<div class="small-note" style="margin:0 0 14px;">{esc(filter_note)}</div>' if filter_note else ''}
 
   <div class="section">
     <div class="section-title">Tổng quan năng lực</div>
@@ -378,16 +449,29 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
     {insights_html}
   </div>
 
-  <div class="section two-col">
-    <div>
-      <div class="section-title">Utilization theo Cluster</div>
-      {cluster_chart}
-      <div class="legend"><span><span class="dot" style="background:{COLORS['primary']}"></span>CPU %</span><span><span class="dot" style="background:{COLORS['accent']}"></span>RAM %</span></div>
+  <div class="section">
+    <div class="section-title">Rủi ro theo Cluster</div>
+    <div class="section-sub">Màu thanh thể hiện trạng thái rủi ro của từng cluster (không phải màu cố định theo chỉ số). Số trong vòng tròn ở cuối thanh là số finding nghiêm trọng/cảnh báo của cluster đó.</div>
+    <div class="two-col">
+      <div>
+        <div class="section-title" style="font-size:10.5px;border-left:none;padding-left:0;">CPU % ngưỡng</div>
+        {cpu_risk_chart}
+      </div>
+      <div>
+        <div class="section-title" style="font-size:10.5px;border-left:none;padding-left:0;">RAM % ngưỡng</div>
+        {ram_risk_chart}
+      </div>
+      <div style="flex:0 0 118px;text-align:center;">
+        <div class="section-title" style="font-size:10.5px;border-left:none;padding-left:0;text-align:left;">VM Power State</div>
+        {donut}
+        <div class="legend" style="justify-content:center;flex-direction:column;gap:2px;"><span><span class="dot" style="background:{COLORS['ok']}"></span>On ({fmt_int(powered_on)})</span><span><span class="dot" style="background:{COLORS['na']}"></span>Off ({fmt_int(powered_off)})</span></div>
+      </div>
     </div>
-    <div style="flex:0 0 150px;text-align:center;">
-      <div class="section-title" style="text-align:left;">VM Power State</div>
-      {donut}
-      <div class="legend" style="justify-content:center;"><span><span class="dot" style="background:{COLORS['ok']}"></span>On ({fmt_int(powered_on)})</span><span><span class="dot" style="background:{COLORS['na']}"></span>Off ({fmt_int(powered_off)})</span></div>
+    <div class="legend">
+      <span><span class="dot" style="background:{COLORS['ok']}"></span>An toàn</span>
+      <span><span class="dot" style="background:{COLORS['warn']}"></span>Theo dõi</span>
+      <span><span class="dot" style="background:{COLORS['bad']}"></span>Cảnh báo</span>
+      <span><span class="dot" style="background:{COLORS['crit']}"></span>Vượt ngưỡng</span>
     </div>
   </div>
 
@@ -414,17 +498,24 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
 # Technical detail report
 # ---------------------------------------------------------------------------
 def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]], policy: capacity.Policy,
-                           scope_label: str, run_meta: Optional[List[Dict[str, Any]]] = None) -> str:
+                           scope_label: str, run_meta: Optional[List[Dict[str, Any]]] = None,
+                           include_types: Optional[List[str]] = None) -> str:
     model = capacity.build_capacity_model(hosts, vms, policy)
     cluster_rows = capacity.build_cluster_rows(hosts, vms, policy)
     host_rows = sorted(capacity.build_host_rows(hosts, vms, policy),
                         key=lambda h: max(h["cpuPct"] if _finite(h["cpuPct"]) else -1, h["ramPct"] if _finite(h["ramPct"]) else -1),
                         reverse=True)
     ds_rows = capacity.build_datastore_rows(vms)
-    findings = sorted(capacity.build_compliance_findings(hosts, vms, policy),
-                       key=lambda f: {"critical": 0, "warning": 1, "info": 2}.get(f.get("severity"), 3))
+    type_filter = set(include_types) if include_types is not None else None
+    findings = sorted(
+        [f for f in capacity.build_compliance_findings(hosts, vms, policy) if type_filter is None or f.get("type") in type_filter],
+        key=lambda f: {"critical": 0, "warning": 1, "info": 2}.get(f.get("severity"), 3))
     generated_at = _now_str()
     sev = _severity_counts(findings)
+    filter_note = ""
+    if type_filter is not None and len(type_filter) < len(ALL_FINDING_TYPES):
+        excluded = [FINDING_TYPE_LABEL_VI.get(t, t) for t in ALL_FINDING_TYPES if t not in type_filter]
+        filter_note = f"Đã loại {len(excluded)}/{len(ALL_FINDING_TYPES)} loại finding khỏi báo cáo: {', '.join(excluded)}."
 
     policy_note = (f"Ngưỡng overcommit CPU {policy.cpu_overcommit_max:.1f}x · RAM {policy.ram_overcommit_max:.1f}x · "
                    f"Hệ số HT {policy.ht_factor:.1f}x · Ngưỡng idle {policy.idle_days} ngày")
@@ -482,6 +573,7 @@ def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
     <span class="chip">{fmt_int(sev['warning'])} cảnh báo</span>
     <span class="chip">{fmt_int(sev['info'])} thông tin</span>
   </div>
+  {f'<div class="small-note" style="margin:-6px 0 14px;">{esc(filter_note)}</div>' if filter_note else ''}
 
   <div class="section">
     <div class="section-title">Overcommit theo Cluster</div>
@@ -522,9 +614,10 @@ def html_to_pdf_bytes(html_str: str) -> bytes:
 
 
 def build_report_pdf(view: str, hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]], policy: capacity.Policy,
-                      scope_label: str, run_meta: Optional[List[Dict[str, Any]]] = None) -> bytes:
+                      scope_label: str, run_meta: Optional[List[Dict[str, Any]]] = None,
+                      include_types: Optional[List[str]] = None) -> bytes:
     if view == "technical":
-        html_str = render_technical_html(hosts, vms, policy, scope_label, run_meta)
+        html_str = render_technical_html(hosts, vms, policy, scope_label, run_meta, include_types)
     else:
-        html_str = render_executive_html(hosts, vms, policy, scope_label, run_meta)
+        html_str = render_executive_html(hosts, vms, policy, scope_label, run_meta, include_types)
     return html_to_pdf_bytes(html_str)

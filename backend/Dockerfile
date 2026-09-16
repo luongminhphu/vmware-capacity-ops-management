@@ -8,6 +8,11 @@ WORKDIR /app
 # WeasyPrint (PDF report export) needs Pango/Cairo/GDK-Pixbuf for text shaping
 # and rendering, plus shared-mime-info for MIME detection. fonts-dejavu-core
 # and fonts-noto-core supply glyph coverage for Vietnamese diacritics in PDFs.
+# fonts-inter provides the Inter typeface used as the primary PDF font (Apple's
+# SF Pro Display cannot be legally bundled outside Apple's own ecosystem, so
+# PDF reports use Inter as the closest open-licensed, metrics-friendly match;
+# the in-browser dashboard still renders true SF Pro on macOS/iOS via the
+# -apple-system font-stack, see frontend/css/styles.css).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
@@ -19,6 +24,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     shared-mime-info \
     fonts-dejavu-core \
     fonts-noto-core \
+    fonts-inter \
     && rm -rf /var/lib/apt/lists/*
 
 COPY backend/requirements.txt .

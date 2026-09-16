@@ -26,6 +26,7 @@ def _scope_label(vcenter: Optional[str]) -> str:
 def export_pdf(
     view: str = Query(default="executive", pattern="^(executive|technical)$"),
     vcenter: Optional[str] = Query(default="all"),
+    types: Optional[str] = Query(default=None, description="Comma-separated finding types to include (omit = all types)"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -36,8 +37,13 @@ def export_pdf(
     if not host_rows and not vm_rows:
         raise HTTPException(status_code=404, detail="Chưa có dữ liệu để tạo báo cáo. Hãy đồng bộ hoặc import dữ liệu trước.")
 
+    include_types = None
+    if types:
+        requested = {t.strip() for t in types.split(",") if t.strip()}
+        include_types = [t for t in report_pdf.ALL_FINDING_TYPES if t in requested]
+
     try:
-        pdf_bytes = report_pdf.build_report_pdf(view, host_rows, vm_rows, policy, _scope_label(vcenter), run_meta)
+        pdf_bytes = report_pdf.build_report_pdf(view, host_rows, vm_rows, policy, _scope_label(vcenter), run_meta, include_types)
     except Exception as exc:  # pragma: no cover - surfaced to the UI
         raise HTTPException(status_code=500, detail=f"Không thể tạo PDF: {exc}")
 

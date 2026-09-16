@@ -78,13 +78,47 @@ async function refreshVcenterList() {
   }
 }
 
+function getSelectedPdfFindingTypes() {
+  const all = Array.from(document.querySelectorAll('.pdfFindingTypeCb'));
+  const checked = all.filter(cb => cb.checked).map(cb => cb.value);
+  if (checked.length === all.length) return null; // no filter = every type
+  return checked;
+}
+
+function updatePdfFindingFilterSummary() {
+  const all = Array.from(document.querySelectorAll('.pdfFindingTypeCb'));
+  const checkedCount = all.filter(cb => cb.checked).length;
+  const dropdown = $('#pdfFindingFilterDropdown');
+  const summary = dropdown && dropdown.querySelector('summary');
+  if (!summary) return;
+  summary.textContent = checkedCount === all.length
+    ? 'Lọc findings cho PDF'
+    : `Lọc findings cho PDF (${checkedCount}/${all.length})`;
+  const allCb = $('#pdfFindingTypeAll');
+  if (allCb) allCb.checked = checkedCount === all.length;
+}
+
+function bindPdfFindingFilterDropdown() {
+  const allCb = $('#pdfFindingTypeAll');
+  const typeCbs = Array.from(document.querySelectorAll('.pdfFindingTypeCb'));
+  if (allCb) {
+    allCb.addEventListener('change', () => {
+      typeCbs.forEach(cb => { cb.checked = allCb.checked; });
+      updatePdfFindingFilterSummary();
+    });
+  }
+  typeCbs.forEach(cb => cb.addEventListener('change', updatePdfFindingFilterSummary));
+  updatePdfFindingFilterSummary();
+}
+
 async function handleExportPdf(view, btn) {
   const originalLabel = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Đang tạo PDF...';
   try {
     const vcenterParam = currentVcenterFilter === 'import' ? '__none__' : currentVcenterFilter;
-    await api.downloadPdfReport(view, vcenterParam);
+    const findingTypes = getSelectedPdfFindingTypes();
+    await api.downloadPdfReport(view, vcenterParam, findingTypes);
   } catch (err) {
     showValidationBanner([`Không thể xuất báo cáo PDF: ${err.message}`], []);
   } finally {
@@ -193,6 +227,7 @@ function bindTopBarInteractions() {
   $('#btnSyncNow').addEventListener('click', handleSyncNow);
   $('#btnExportPdfExec').addEventListener('click', e => handleExportPdf('executive', e.currentTarget));
   $('#btnExportPdfTech').addEventListener('click', e => handleExportPdf('technical', e.currentTarget));
+  bindPdfFindingFilterDropdown();
   $('#vcenterSelect').addEventListener('change', e => {
     currentVcenterFilter = e.target.value;
     loadLiveData();
@@ -213,7 +248,6 @@ async function bootstrap() {
   } catch (err) {
     showLoginScreen();
   }
-  hydrateExportedState();
 }
 
 bootstrap();

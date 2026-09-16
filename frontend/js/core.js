@@ -14,7 +14,7 @@ const appState = {
   hostTableSearch: '',
   vmTableSearch: '',
   vmStatusFilter: 'all',
-  policy: { idleDays: 30, cpuWarn: 50, cpuHigh: 80, ramWarn: 50, ramHigh: 80, dsWarn: 70, dsHigh: 85, dsCrit: 95, cpuOvercommitMax: 6, ramOvercommitMax: 1.5, htFactor: 2 },
+  policy: { idleDays: 30, cpuWarn: 50, cpuHigh: 80, ramWarn: 50, ramHigh: 80, dsWarn: 70, dsHigh: 85, dsCrit: 95, cpuOvercommitMax: 6, ramOvercommitMax: 1.0, htFactor: 2 },
   charts: {},
   simHistory: [],
   whatif: { cluster: null, tab: 'addHost', drafts: {} },
@@ -1368,7 +1368,7 @@ function showValidationBanner(errors, warnings) {
 function rebuildFromRaw() {
   appState.policy.idleDays = Math.max(1, cleanNum($('#idleThresholdInput').value) || 30);
   appState.policy.cpuOvercommitMax = Math.max(0.1, cleanNum($('#cpuOvercommitInput').value) || 6);
-  appState.policy.ramOvercommitMax = Math.max(0.1, cleanNum($('#ramOvercommitInput').value) || 1.5);
+  appState.policy.ramOvercommitMax = Math.max(0.1, cleanNum($('#ramOvercommitInput').value) || 1.0);
   appState.policy.htFactor = Math.max(1, cleanNum($('#htFactorInput').value) || 2);
   // No raw rows staged (data came from a live vCenter sync or was already
   // loaded from the server via /api/data/latest) — nothing to re-parse.
@@ -1438,37 +1438,6 @@ function exportCsv() {
   downloadBlob(`vmware-capacity-export-${Date.now()}.csv`, sections.join('\n'), 'text/csv;charset=utf-8');
 }
 
-/* ---------- Export HTML snapshot report ---------- */
-function exportHtmlReport() {
-  const clone = document.documentElement.cloneNode(true);
-  const stateNode = clone.querySelector('#exported-state');
-  const state = {
-    hostsRaw: appState.hostsRaw, vmsRaw: appState.vmsRaw,
-    reportTimestamp: appState.reportTimestamp, policy: appState.policy,
-    filters: appState.filters, view: appState.view
-  };
-  stateNode.textContent = JSON.stringify(state).replace(/</g, '\\u003c');
-  ['#hostFile','#vmFile'].forEach(sel => { const el = clone.querySelector(sel); if (el) el.removeAttribute('required'); });
-  downloadBlob(`vmware-capacity-report-${Date.now()}.html`, '<!DOCTYPE html>\n' + clone.outerHTML, 'text/html;charset=utf-8');
-}
-
-function hydrateExportedState() {
-  const node = $('#exported-state');
-  if (!node || !node.textContent.trim()) return;
-  try {
-    const s = JSON.parse(node.textContent);
-    appState.hostsRaw = s.hostsRaw || [];
-    appState.vmsRaw = s.vmsRaw || [];
-    appState.reportTimestamp = s.reportTimestamp || null;
-    if (s.policy) appState.policy = { ...appState.policy, ...s.policy };
-    if (s.filters) appState.filters = { ...appState.filters, ...s.filters };
-    if (s.view) appState.view = s.view;
-    if (appState.hostsRaw.length || appState.vmsRaw.length) {
-      rebuildFromRaw();
-      refreshAll();
-    }
-  } catch (err) { console.error('Failed to hydrate exported state', err); }
-}
 /* =========================================================
    Filters, view switching, bindings, refreshAll, init
    ========================================================= */
@@ -1518,7 +1487,6 @@ function bindGlobalInteractions() {
   $('#vmFile').addEventListener('change', e => loadFileInput(e.target, 'vmsRaw'));
   $('#btnLoadSample').addEventListener('click', loadSampleData);
   $('#btnExportCsv').addEventListener('click', exportCsv);
-  $('#btnExportReport').addEventListener('click', exportHtmlReport);
 
   $('#btnResetAll').addEventListener('click', () => {
     appState.hostsRaw = []; appState.vmsRaw = []; appState.hosts = []; appState.vms = [];
