@@ -48,11 +48,12 @@ COLORS = {
     "crit_bg": "#fbe4e2",
     "na": "#667085",
     "na_bg": "#eef1f5",
-    # Darker than "surface2" on purpose: this is the unfilled 100% track of
-    # the headline gauges, and it needs enough contrast against the white
-    # card background for a reader to register the full half-circle shape
-    # (not just the filled arc) at a glance.
-    "gauge_track": "#c7cfdb",
+    # Darker than "surface2" on purpose: this is the unfilled 100% track
+    # behind every gauge and bar-chart fill (svg_gauge / bar_cell /
+    # svg_ranked_bar_chart), and it needs enough contrast against the white
+    # card background for a reader to register the full 100% extent at a
+    # glance, not just the filled/colored portion.
+    "track_bg": "#c7cfdb",
 }
 
 STATUS_COLOR = {"ok": ("ok", "ok_bg"), "warn": ("warn", "warn_bg"), "bad": ("bad", "bad_bg"),
@@ -151,7 +152,7 @@ def bar_cell(pct: Optional[float], cls: str = "ok", width_px: int = 80, height_p
     return (
         f'<svg width="{width_px}" height="{height_px}" viewBox="0 0 {width_px} {height_px}" '
         f'style="display:block;vertical-align:middle;">'
-        f'<rect x="0" y="0" width="{width_px}" height="{height_px}" rx="{r:.1f}" fill="{COLORS["surface2"]}"/>'
+        f'<rect x="0" y="0" width="{width_px}" height="{height_px}" rx="{r:.1f}" fill="{COLORS["track_bg"]}"/>'
         f'<rect x="0" y="0" width="{fill_w_draw:.1f}" height="{height_px}" rx="{r:.1f}" fill="{color}"/>'
         f'<text x="{cx:.1f}" y="{text_y}" text-anchor="middle" font-family="Roboto, Noto Sans, sans-serif" '
         f'font-size="{font_size}" font-weight="700" fill="#ffffff">{esc(label)}</text>'
@@ -233,7 +234,7 @@ def svg_gauge(pct: Optional[float], color: str, size: int = 132, max_scale: floa
     label = fmt_pct(pct, 0)
     top = f'<text x="{cx:.1f}" y="{h-6:.1f}" text-anchor="middle" font-family="Roboto, Noto Sans, sans-serif" font-size="8.5" font-weight="700" fill="{COLORS["muted"]}" text-transform="uppercase">{esc(label_top)}</text>' if label_top else ""
     return f'''<svg width="{w:.0f}" height="{h:.0f}" viewBox="0 0 {w:.0f} {h:.0f}" font-family="Roboto, Noto Sans, sans-serif">
-      <path d="M {x0:.1f} {y0:.1f} A {r:.1f} {r:.1f} 0 0 1 {x1:.1f} {y1:.1f}" fill="none" stroke="{COLORS['gauge_track']}" stroke-width="{stroke_w:.1f}" stroke-linecap="round"/>
+      <path d="M {x0:.1f} {y0:.1f} A {r:.1f} {r:.1f} 0 0 1 {x1:.1f} {y1:.1f}" fill="none" stroke="{COLORS['track_bg']}" stroke-width="{stroke_w:.1f}" stroke-linecap="round"/>
       {fg_path}
       <text x="{cx:.1f}" y="{cy+2:.1f}" text-anchor="middle" font-size="{w*0.155:.1f}" font-weight="800" fill="{COLORS['ink']}">{label}</text>
       {top}
@@ -325,7 +326,7 @@ def svg_ranked_bar_chart(rows: List[Dict[str, Any]], width: int = 330, height: O
         name = name if len(name) <= name_max_len else name[:name_max_len - 1] + "…"
         label = fmt_pct(pct, 0)
         parts.append(f'<text x="{pad_l-6}" y="{bar_y+bar_h/2+3:.1f}" text-anchor="end" font-size="8.3" fill="{COLORS["ink"]}">{esc(name)}</text>')
-        parts.append(f'<rect x="{pad_l}" y="{bar_y:.1f}" width="{plot_w:.1f}" height="{bar_h}" rx="{bar_h/2:.1f}" fill="{COLORS["surface2"]}"/>')
+        parts.append(f'<rect x="{pad_l}" y="{bar_y:.1f}" width="{plot_w:.1f}" height="{bar_h}" rx="{bar_h/2:.1f}" fill="{COLORS["track_bg"]}"/>')
         fill_w = max(bar_h, bar_w)
         parts.append(f'<rect x="{pad_l}" y="{bar_y:.1f}" width="{fill_w:.1f}" height="{bar_h}" rx="{bar_h/2:.1f}" fill="{COLORS[fg_key]}"/>')
         if bar_w >= 20:
@@ -612,11 +613,11 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
     <div class="section-sub">Màu thanh thể hiện trạng thái rủi ro của từng cluster (không phải màu cố định theo chỉ số). Số trong vòng tròn ở cuối thanh là số finding nghiêm trọng/cảnh báo của cluster đó.</div>
     <div class="two-col">
       <div>
-        <div class="section-title" style="font-size:10.5px;border-left:none;padding-left:0;">CPU % ngưỡng</div>
+        <div class="section-title" style="font-size:10.5px;border-left:none;padding-left:0;">% CPU</div>
         {cpu_risk_chart}
       </div>
       <div>
-        <div class="section-title" style="font-size:10.5px;border-left:none;padding-left:0;">RAM % ngưỡng</div>
+        <div class="section-title" style="font-size:10.5px;border-left:none;padding-left:0;">% RAM</div>
         {ram_risk_chart}
       </div>
       <div style="flex:0 0 118px;text-align:center;">
@@ -764,7 +765,7 @@ def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
   <div class="section">
     <div class="section-title">Overcommit theo Cluster</div>
     <table>
-      <thead><tr><th>Cluster</th><th>Hosts</th><th>VMs</th><th>CPU x</th><th>CPU %ngưỡng</th><th>RAM x</th><th>RAM %ngưỡng</th><th>Storage %</th><th>Trạng thái</th></tr></thead>
+      <thead><tr><th>Cluster</th><th>Hosts</th><th>VMs</th><th>CPU x</th><th>% CPU</th><th>RAM x</th><th>% RAM</th><th>% Storage</th><th>Trạng thái</th></tr></thead>
       <tbody>{cluster_html}</tbody>
     </table>
   </div>
@@ -773,15 +774,15 @@ def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
     <div class="section-title">Top-10 Host sử dụng cao nhất</div>
     <div class="section-sub">Màu thanh thể hiện trạng thái rủi ro của từng host theo chỉ số.</div>
     <div class="chart-row">
-      <div class="chart-card"><div class="chart-card-title">CPU % ngưỡng</div>{host_cpu_chart}</div>
-      <div class="chart-card"><div class="chart-card-title">RAM % ngưỡng</div>{host_ram_chart}</div>
+      <div class="chart-card"><div class="chart-card-title">% CPU</div>{host_cpu_chart}</div>
+      <div class="chart-card"><div class="chart-card-title">% RAM</div>{host_ram_chart}</div>
     </div>
   </div>
 
   <div class="section">
     <div class="section-title">Chi tiết Host ({fmt_int(len(host_rows))})</div>
     <table>
-      <thead><tr><th>Cluster</th><th>Host</th><th>Cores</th><th>RAM GB</th><th>vCPU dùng</th><th>CPU %ngưỡng</th><th>RAM dùng GB</th><th>RAM %ngưỡng</th><th>VM</th><th>Trạng thái</th></tr></thead>
+      <thead><tr><th>Cluster</th><th>Host</th><th>Cores</th><th>RAM GB</th><th>vCPU dùng</th><th>% CPU</th><th>RAM dùng GB</th><th>% RAM</th><th>VM</th><th>Trạng thái</th></tr></thead>
       <tbody>{host_html}</tbody>
     </table>
   </div>
@@ -794,7 +795,7 @@ def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
   <div class="section">
     <div class="section-title">Utilization theo Datastore</div>
     <table>
-      <thead><tr><th>Datastore</th><th>Provisioned GB</th><th>Used GB</th><th>% Used</th><th>VM</th><th>Trạng thái</th></tr></thead>
+      <thead><tr><th>Datastore</th><th>Provisioned GB</th><th>Used GB</th><th>% Storage</th><th>VM</th><th>Trạng thái</th></tr></thead>
       <tbody>{ds_html}</tbody>
     </table>
   </div>
