@@ -135,3 +135,18 @@ class AppSetting(Base):
 
     key = Column(String(64), primary_key=True)
     value = Column(String(255), nullable=False)
+
+
+class ReportLogo(Base):
+    """Singleton row (id=1) holding the company logo used on PDF report covers.
+
+    Stored as base64 text in Postgres (not on local disk) so it survives pod
+    restarts/rescheduling on KubeSphere without needing a persistent volume.
+    """
+    __tablename__ = "report_logo"
+
+    id = Column(Integer, primary_key=True, default=1)
+    filename = Column(String(255), nullable=True)
+    mime_type = Column(String(64), nullable=False)
+    data_base64 = Column(Text, nullable=False)
+    uploaded_at = Column(DateTime, default=utcnow)

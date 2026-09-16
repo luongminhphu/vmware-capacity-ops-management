@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from .. import data_access, report_pdf
 from ..config import get_settings
 from ..database import get_db
-from ..models import User
+from ..models import ReportLogo, User
 from ..security import get_current_user
 
 router = APIRouter(prefix="/api/reports", tags=["reports"])
@@ -79,8 +79,11 @@ def export_pdf(
         requested = {t.strip() for t in types.split(",") if t.strip()}
         include_types = [t for t in report_pdf.ALL_FINDING_TYPES if t in requested]
 
+    logo_row = db.query(ReportLogo).filter(ReportLogo.id == 1).first()
+    logo_data_url = f"data:{logo_row.mime_type};base64,{logo_row.data_base64}" if logo_row else None
+
     try:
-        pdf_bytes = report_pdf.build_report_pdf(view, host_rows, vm_rows, policy, scope_label, run_meta, include_types)
+        pdf_bytes = report_pdf.build_report_pdf(view, host_rows, vm_rows, policy, scope_label, run_meta, include_types, logo_data_url)
     except Exception as exc:  # pragma: no cover - surfaced to the UI
         raise HTTPException(status_code=500, detail=f"Không thể tạo PDF: {exc}")
 

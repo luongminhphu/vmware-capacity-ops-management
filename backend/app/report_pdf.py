@@ -10,12 +10,15 @@ report has zero network dependencies and renders identically every time.
 """
 import datetime as dt
 import html
+import itertools
 import math
 from typing import Any, Dict, List, Optional
 
 from weasyprint import HTML
 
 from . import capacity
+
+_SVG_UID = itertools.count()
 
 # ---------------------------------------------------------------------------
 # Cool-tone print palette (unified with the in-app dashboard's slate-blue
@@ -107,21 +110,55 @@ def status_pill(status: Optional[Dict[str, str]]) -> str:
             f'border-color:{COLORS[fg_key]}33">{esc(status.get("text", "NA"))}</span>')
 
 
-def bar_cell(pct: Optional[float], cls: str = "ok", width_px: int = 74) -> str:
+def bar_cell(pct: Optional[float], cls: str = "ok", width_px: int = 80, height_px: int = 15, max_scale: float = 140.0) -> str:
+    """Progress-bar cell with the percentage label NESTED INSIDE the colored
+    fill, for a compact, professional look.
+
+    Rendered as inline SVG (not HTML/CSS). Earlier versions centered the
+    label over the *whole* track and used a stroke-halo double text-draw to
+    keep it legible on top of both the colored fill and the plain track --
+    on WeasyPrint that stroke halo rendered as a smudgy double image. A
+    clip-path variant (white text clipped to the fill, muted text clipped to
+    the track, both centered on the whole bar) avoided the halo but could
+    still split a single glyph in half right at the fill boundary.
+
+    This version instead widens the colored "chip" so it is never narrower
+    than what the label itself needs -- the label is always drawn exactly
+    once, centered, solid white, fully inside the colored fill. The chip
+    still grows with pct (larger values render a visibly longer bar) but
+    never shrinks below the label's own width, so the number is always
+    legibly nested inside the bar instead of spilling onto the plain track.
+    """
     fg_key, _ = STATUS_COLOR.get(cls, STATUS_COLOR["na"])
-    clamped = 0.0 if not _finite(pct) else max(0.0, min(140.0, pct))
-    fill_w = min(100.0, clamped) / 140.0 * 100.0 if clamped > 100 else clamped / 140.0 * 100.0
-    # scale bar to a 140%-max visual range so overcommit-over-100% is visible
+    color = COLORS[fg_key]
+    clamped = 0.0 if not _finite(pct) else max(0.0, min(max_scale, pct))
+    fill_w = max(0.0, min(1.0, clamped / max_scale)) * width_px
+    r = height_px / 2.0
+    cy = height_px / 2.0
+    font_size = round(height_px * 0.6, 1)
     label = fmt_pct(pct)
+    text_y = round(cy + font_size * 0.35, 1)
+    label_w_est = len(label) * font_size * 0.62 + 10
+    fill_w_draw = min(width_px, max(height_px, fill_w, label_w_est))
+    cx = fill_w_draw / 2.0
     return (
-        f'<div class="barcell" style="width:{width_px}px">'
-        f'<div class="barcell-track"><div class="barcell-fill" style="width:{fill_w:.1f}%;background:{COLORS[fg_key]}"></div></div>'
-        f'<div class="barcell-label">{esc(label)}</div></div>'
+        f'<svg width="{width_px}" height="{height_px}" viewBox="0 0 {width_px} {height_px}" '
+        f'style="display:block;vertical-align:middle;">'
+        f'<rect x="0" y="0" width="{width_px}" height="{height_px}" rx="{r:.1f}" fill="{COLORS["surface2"]}"/>'
+        f'<rect x="0" y="0" width="{fill_w_draw:.1f}" height="{height_px}" rx="{r:.1f}" fill="{color}"/>'
+        f'<text x="{cx:.1f}" y="{text_y}" text-anchor="middle" font-family="Roboto, Noto Sans, sans-serif" '
+        f'font-size="{font_size}" font-weight="700" fill="#ffffff">{esc(label)}</text>'
+        f'</svg>'
     )
 
 
-def svg_donut(segments: List[Dict[str, Any]], size: int = 120, hole: float = 0.62) -> str:
-    """segments: [{label, value, color}] — color is a hex string."""
+def svg_donut(segments: List[Dict[str, Any]], size: int = 120, hole: float = 0.62,
+              center_label: Optional[str] = None, center_sub: Optional[str] = None) -> str:
+    """segments: [{label, value, color}] — color is a hex string.
+
+    When `center_label` is given (e.g. a total count or headline %), it is
+    drawn centered in the donut hole so the chart carries its own headline
+    number instead of relying purely on an external legend."""
     total = sum(max(0.0, s.get("value", 0) or 0) for s in segments) or 1.0
     r = size / 2
     cx = cy = r
@@ -141,7 +178,49 @@ def svg_donut(segments: List[Dict[str, Any]], size: int = 120, hole: float = 0.6
             f'stroke-dashoffset="{-offset:.2f}" transform="rotate(-90 {cx} {cy})"/>'
         )
         offset += dash
-    return f'<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}">{"".join(arcs)}</svg>'
+    center = ""
+    if center_label is not None:
+        label_y = cy + (2 if not center_sub else -2)
+        center += (f'<text x="{cx}" y="{label_y:.1f}" text-anchor="middle" font-family="Roboto, Noto Sans, sans-serif" '
+                   f'font-size="{size*0.16:.1f}" font-weight="800" fill="{COLORS["ink"]}">{esc(center_label)}</text>')
+        if center_sub:
+            center += (f'<text x="{cx}" y="{cy+size*0.14:.1f}" text-anchor="middle" font-family="Roboto, Noto Sans, sans-serif" '
+                       f'font-size="{size*0.075:.1f}" fill="{COLORS["muted"]}">{esc(center_sub)}</text>')
+    return f'<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}" font-family="Roboto, Noto Sans, sans-serif">{"".join(arcs)}{center}</svg>'
+
+
+def svg_gauge(pct: Optional[float], color: str, size: int = 132, max_scale: float = 140.0,
+              label_top: Optional[str] = None) -> str:
+    """Compact semicircular gauge: arc sweep proportional to `pct` (capped at
+    `max_scale`), with the percentage rendered large in the center. Used for
+    headline CPU/RAM/Storage utilization callouts so the Executive report
+    reads at a glance instead of only through KPI numbers."""
+    w = float(size)
+    stroke_w = w * 0.10
+    r = w / 2 - stroke_w / 2 - 3
+    cx, cy = w / 2, w / 2 - 2
+    h = w / 2 + stroke_w / 2 + 26
+
+    def polar(deg: float):
+        rad = math.radians(deg)
+        return cx + r * math.cos(rad), cy - r * math.sin(rad)
+
+    x0, y0 = polar(180)
+    x1, y1 = polar(0)
+    clamped = 0.0 if not _finite(pct) else max(0.0, min(max_scale, pct))
+    frac = clamped / max_scale
+    end_deg = 180 - 180 * frac
+    xe, ye = polar(end_deg)
+    large_arc = 1 if frac > 0.5 else 0
+    fg_path = f'<path d="M {x0:.1f} {y0:.1f} A {r:.1f} {r:.1f} 0 {large_arc} 1 {xe:.1f} {ye:.1f}" fill="none" stroke="{color}" stroke-width="{stroke_w:.1f}" stroke-linecap="round"/>' if frac > 0.008 else ""
+    label = fmt_pct(pct, 0)
+    top = f'<text x="{cx:.1f}" y="{h-6:.1f}" text-anchor="middle" font-family="Roboto, Noto Sans, sans-serif" font-size="8.5" font-weight="700" fill="{COLORS["muted"]}" text-transform="uppercase">{esc(label_top)}</text>' if label_top else ""
+    return f'''<svg width="{w:.0f}" height="{h:.0f}" viewBox="0 0 {w:.0f} {h:.0f}" font-family="Roboto, Noto Sans, sans-serif">
+      <path d="M {x0:.1f} {y0:.1f} A {r:.1f} {r:.1f} 0 0 1 {x1:.1f} {y1:.1f}" fill="none" stroke="{COLORS['surface2']}" stroke-width="{stroke_w:.1f}" stroke-linecap="round"/>
+      {fg_path}
+      <text x="{cx:.1f}" y="{cy+2:.1f}" text-anchor="middle" font-size="{w*0.155:.1f}" font-weight="800" fill="{COLORS['ink']}">{label}</text>
+      {top}
+    </svg>'''
 
 
 def svg_bar_chart(labels: List[str], series: List[Dict[str, Any]], width: int = 720, height: int = 220,
@@ -185,55 +264,89 @@ def svg_bar_chart(labels: List[str], series: List[Dict[str, Any]], width: int = 
     return "".join(parts)
 
 
-def svg_cluster_risk_chart(cluster_rows: List[Dict[str, Any]], metric: str, finding_counts: Dict[str, Dict[str, int]],
-                            width: int = 330, height: Optional[int] = None) -> str:
-    """Horizontal bar chart, one row per cluster, for a single metric ('cpu' or 'ram').
+def svg_ranked_bar_chart(rows: List[Dict[str, Any]], width: int = 330, height: Optional[int] = None,
+                          max_scale: float = 140.0, name_max_len: int = 13, top_n: int = 10) -> str:
+    """Generic horizontal ranked bar chart: one row per entity (cluster/host/
+    datastore), sorted descending by `pct`. The bar is colored by risk status
+    (`cls`) and the % label is embedded INSIDE the colored fill (right-aligned)
+    when the fill is wide enough, matching the same "label inside the bar"
+    treatment as `bar_cell()`; falls back to just outside the fill for very
+    short bars so the number never gets clipped or overlaps a badge.
 
-    Unlike svg_bar_chart (flat series colors), each bar here is colored by that
-    cluster's own risk status for the metric (ok/warn/bad/crit) so the chart
-    visually summarizes *risk*, not just utilization. A small severity badge
-    (critical/warning finding count for that cluster) is drawn at the row's end
-    when the cluster has any compliance findings.
+    `rows`: [{"name": str, "pct": float, "cls": "ok"|"warn"|"bad"|"crit"|"na",
+              "badge": Optional[int], "badge_crit": bool, "badge_title": str}]
     """
-    pct_key = f"{metric}Pct"
-    status_key = f"{metric}Status"
-    rows = [c for c in cluster_rows if _finite(c["model"].get(pct_key))]
+    rows = [r for r in rows if _finite(r.get("pct"))]
     if not rows:
         return '<div style="color:#98a2b3;font-size:11px;padding:8px 0;">Không có dữ liệu.</div>'
-    rows = sorted(rows, key=lambda c: c["model"][pct_key], reverse=True)[:10]
+    rows = sorted(rows, key=lambda r: r["pct"], reverse=True)[:top_n]
 
     row_h = 20
-    pad_l, pad_r, pad_t = 78, 58, 4
+    # Reserve enough left padding for the row-name column so long labels
+    # (e.g. datastore names truncated at a longer `name_max_len`) never draw
+    # past x=0, where inline SVG gets clipped by its own viewBox in
+    # WeasyPrint -- that clipping previously ate the first few characters
+    # off long names instead of showing the truncation ellipsis.
+    pad_l, pad_r, pad_t = max(78, round(name_max_len * 4.8) + 14), 34, 4
+    has_badge = any(r.get("badge") for r in rows)
+    if has_badge:
+        pad_r = 58
     height = height if height is not None else pad_t + len(rows) * row_h + 6
     plot_w = width - pad_l - pad_r
-    max_scale = 140.0  # bars scale to a 140%-max visual range, same convention as bar_cell()
 
     parts = [f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" font-family="Roboto, Noto Sans, sans-serif">']
-    for i, c in enumerate(rows):
-        pct = c["model"][pct_key]
-        cls = c[status_key]["cls"]
+    for i, r in enumerate(rows):
+        pct = r["pct"]
+        cls = r.get("cls", "na")
         fg_key, _ = STATUS_COLOR.get(cls, STATUS_COLOR["na"])
         y = pad_t + i * row_h
         bar_y = y + 3
         bar_h = row_h - 8
         clamped = max(0.0, min(max_scale, pct))
         bar_w = clamped / max_scale * plot_w
-        name = c["name"] if len(c["name"]) <= 13 else c["name"][:12] + "…"
+        name = str(r.get("name", ""))
+        name = name if len(name) <= name_max_len else name[:name_max_len - 1] + "…"
+        label = fmt_pct(pct, 0)
         parts.append(f'<text x="{pad_l-6}" y="{bar_y+bar_h/2+3:.1f}" text-anchor="end" font-size="8.3" fill="{COLORS["ink"]}">{esc(name)}</text>')
-        parts.append(f'<rect x="{pad_l}" y="{bar_y:.1f}" width="{plot_w:.1f}" height="{bar_h}" rx="2" fill="{COLORS["surface2"]}"/>')
-        parts.append(f'<rect x="{pad_l}" y="{bar_y:.1f}" width="{max(1.5,bar_w):.1f}" height="{bar_h}" rx="2" fill="{COLORS[fg_key]}"/>')
-        parts.append(f'<text x="{pad_l+plot_w+5}" y="{bar_y+bar_h/2+3:.1f}" font-size="8" fill="{COLORS["muted"]}" font-weight="700">{fmt_pct(pct,0)}</text>')
-        fc = finding_counts.get(c["name"]) or {}
-        crit_n, warn_n = fc.get("critical", 0), fc.get("warning", 0)
-        if crit_n or warn_n:
-            badge_n = crit_n + warn_n
-            badge_title = "·".join(([f"{crit_n} nghiêm trọng"] if crit_n else []) + ([f"{warn_n} cảnh báo"] if warn_n else []))
-            badge_color = COLORS["crit"] if crit_n else COLORS["warn"]
-            bx = pad_l + plot_w + 34
+        parts.append(f'<rect x="{pad_l}" y="{bar_y:.1f}" width="{plot_w:.1f}" height="{bar_h}" rx="{bar_h/2:.1f}" fill="{COLORS["surface2"]}"/>')
+        fill_w = max(bar_h, bar_w)
+        parts.append(f'<rect x="{pad_l}" y="{bar_y:.1f}" width="{fill_w:.1f}" height="{bar_h}" rx="{bar_h/2:.1f}" fill="{COLORS[fg_key]}"/>')
+        if bar_w >= 20:
+            lx = pad_l + fill_w - 5
+            parts.append(f'<text x="{lx:.1f}" y="{bar_y+bar_h/2+2.9:.1f}" text-anchor="end" font-size="7.6" font-weight="700" fill="#ffffff">{label}</text>')
+        else:
+            lx = pad_l + fill_w + 5
+            parts.append(f'<text x="{lx:.1f}" y="{bar_y+bar_h/2+2.9:.1f}" text-anchor="start" font-size="7.6" font-weight="700" fill="{COLORS["muted"]}">{label}</text>')
+        badge_n = r.get("badge")
+        if badge_n:
+            badge_title = r.get("badge_title", "")
+            badge_color = COLORS["crit"] if r.get("badge_crit") else COLORS["warn"]
+            bx = pad_l + plot_w + 22
             parts.append(f'<circle cx="{bx}" cy="{bar_y+bar_h/2:.1f}" r="7" fill="{badge_color}"><title>{esc(badge_title)}</title></circle>')
             parts.append(f'<text x="{bx}" y="{bar_y+bar_h/2+2.8:.1f}" text-anchor="middle" font-size="7.5" font-weight="700" fill="#ffffff">{badge_n}<title>{esc(badge_title)}</title></text>')
     parts.append('</svg>')
     return "".join(parts)
+
+
+def svg_cluster_risk_chart(cluster_rows: List[Dict[str, Any]], metric: str, finding_counts: Dict[str, Dict[str, int]],
+                            width: int = 330, height: Optional[int] = None) -> str:
+    """Cluster-specific wrapper around svg_ranked_bar_chart for a single
+    metric ('cpu' or 'ram'): colors each bar by that cluster's own risk
+    status and attaches a critical/warning finding-count badge at row end."""
+    pct_key = f"{metric}Pct"
+    status_key = f"{metric}Status"
+    rows = []
+    for c in cluster_rows:
+        if not _finite(c["model"].get(pct_key)):
+            continue
+        fc = finding_counts.get(c["name"]) or {}
+        crit_n, warn_n = fc.get("critical", 0), fc.get("warning", 0)
+        badge_title = "·".join(([f"{crit_n} nghiêm trọng"] if crit_n else []) + ([f"{warn_n} cảnh báo"] if warn_n else []))
+        rows.append({
+            "name": c["name"], "pct": c["model"][pct_key], "cls": c[status_key]["cls"],
+            "badge": (crit_n + warn_n) or None, "badge_crit": bool(crit_n), "badge_title": badge_title,
+        })
+    return svg_ranked_bar_chart(rows, width=width, height=height)
 
 
 # ---------------------------------------------------------------------------
@@ -272,10 +385,6 @@ th {{ text-align:left; background:{COLORS['surface2']}; color:{COLORS['muted']};
 td {{ padding:4.5px 6px; border-bottom:1px solid {COLORS['divider']}; vertical-align:middle; }}
 tbody tr:nth-child(even) {{ background:#fbfcfe; }}
 .pill {{ display:inline-block; padding:1.5px 7px; border-radius:3px; font-size:8px; font-weight:700; border:1px solid; white-space:nowrap; }}
-.barcell {{ display:flex; align-items:center; gap:6px; }}
-.barcell-track {{ flex:1; height:5px; border-radius:99px; background:{COLORS['surface2']}; overflow:hidden; }}
-.barcell-fill {{ height:100%; border-radius:99px; }}
-.barcell-label {{ font-size:8px; color:{COLORS['muted']}; font-variant-numeric:tabular-nums; min-width:32px; text-align:right; }}
 .insight-box {{ background:{COLORS['surface']}; border:1px solid {COLORS['border']}; border-left:3px solid {COLORS['accent']}; border-radius:0 6px 6px 0; padding:9px 12px; margin-bottom:8px; font-size:9.5px; }}
 .insight-box b {{ color:{COLORS['primary_dark']}; }}
 .insight-box.risk {{ border-left-color:{COLORS['crit']}; }}
@@ -285,6 +394,13 @@ tbody tr:nth-child(even) {{ background:#fbfcfe; }}
 .legend .dot {{ width:7px; height:7px; border-radius:2px; display:inline-block; margin-right:4px; vertical-align:middle; }}
 .small-note {{ font-size:8px; color:{COLORS['faint']}; margin-top:6px; }}
 .chip {{ display:inline-block; padding:1px 6px; border-radius:99px; background:{COLORS['surface2']}; color:{COLORS['muted']}; font-size:8px; font-weight:600; margin-right:4px; }}
+.cover-header {{ display:flex; justify-content:space-between; align-items:flex-start; gap:14px; }}
+.cover-logo {{ max-height:42px; max-width:150px; object-fit:contain; }}
+.gauge-row {{ display:flex; gap:6px; margin-bottom:10px; }}
+.gauge-card {{ flex:1; background:{COLORS['surface']}; border:1px solid {COLORS['border']}; border-radius:6px; padding:8px 4px 4px; text-align:center; }}
+.chart-row {{ display:flex; gap:14px; align-items:flex-start; }}
+.chart-card {{ flex:1; background:{COLORS['surface']}; border:1px solid {COLORS['border']}; border-radius:6px; padding:10px 12px; }}
+.chart-card-title {{ font-size:9.5px; font-weight:700; color:{COLORS['ink']}; margin-bottom:4px; }}
 """
 
 
@@ -355,7 +471,7 @@ def _executive_insights(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]
 # ---------------------------------------------------------------------------
 def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]], policy: capacity.Policy,
                            scope_label: str, run_meta: Optional[List[Dict[str, Any]]] = None,
-                           include_types: Optional[List[str]] = None) -> str:
+                           include_types: Optional[List[str]] = None, logo_data_url: Optional[str] = None) -> str:
     model = capacity.build_capacity_model(hosts, vms, policy)
     cluster_rows = capacity.build_cluster_rows(hosts, vms, policy)
     all_findings = capacity.build_compliance_findings(hosts, vms, policy)
@@ -375,10 +491,25 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
     donut = svg_donut([
         {"label": "Powered On", "value": powered_on, "color": COLORS["ok"]},
         {"label": "Powered Off", "value": powered_off, "color": COLORS["na"]},
-    ], size=88)
+    ], size=88, center_label=fmt_int(powered_on + powered_off), center_sub="VM")
 
     cpu_risk_chart = svg_cluster_risk_chart(cluster_rows, "cpu", cluster_finding_counts, width=246)
     ram_risk_chart = svg_cluster_risk_chart(cluster_rows, "ram", cluster_finding_counts, width=246)
+
+    # Headline utilization gauges — give the cover-page numbers a chart, not
+    # just text, for a livelier and more scannable first impression.
+    cpu_status = capacity.get_status_for_pct(model.get("cpuPct"), 80, 100)
+    ram_status = capacity.get_status_for_pct(model.get("ramPct"), 80, 100)
+    ds_status = capacity.get_status_for_pct(model.get("storagePct"), 80, 90)
+    gauge_cpu = svg_gauge(model.get("cpuPct"), COLORS[STATUS_COLOR.get(cpu_status["cls"], STATUS_COLOR["na"])[0]])
+    gauge_ram = svg_gauge(model.get("ramPct"), COLORS[STATUS_COLOR.get(ram_status["cls"], STATUS_COLOR["na"])[0]])
+    gauge_ds = svg_gauge(model.get("storagePct"), COLORS[STATUS_COLOR.get(ds_status["cls"], STATUS_COLOR["na"])[0]], max_scale=100.0)
+
+    findings_donut = svg_donut([
+        {"label": "Nghiêm trọng", "value": sev["critical"], "color": COLORS["crit"]},
+        {"label": "Cảnh báo", "value": sev["warning"], "color": COLORS["warn"]},
+        {"label": "Thông tin", "value": sev["info"], "color": COLORS["primary"]},
+    ], size=88, center_label=fmt_int(sev["critical"] + sev["warning"] + sev["info"]), center_sub="Finding")
 
     top_risk_clusters = sorted(cluster_rows, key=lambda c: max(
         c["model"]["cpuPct"] if _finite(c["model"]["cpuPct"]) else -1,
@@ -421,11 +552,18 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
         excluded = [FINDING_TYPE_LABEL_VI.get(t, t) for t in ALL_FINDING_TYPES if t not in type_filter]
         filter_note = f"Đã loại {len(excluded)}/{len(ALL_FINDING_TYPES)} loại finding khỏi báo cáo: {', '.join(excluded)}."
 
+    logo_html = f'<img class="cover-logo" src="{esc(logo_data_url)}"/>' if logo_data_url else ''
+
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8"/><style>{_base_css('Báo cáo điều hành', generated_at)}</style></head>
 <body>
-  <div class="eyebrow">Infrastructure Capacity Ops · Executive Summary</div>
-  <div class="cover-title">Báo cáo Điều hành — Capacity Ops</div>
-  <div class="cover-sub">Tổng quan năng lực hạ tầng ảo hóa VMware phục vụ ra quyết định đầu tư và mở rộng.</div>
+  <div class="cover-header">
+    <div>
+      <div class="eyebrow">Infrastructure Capacity Ops · Executive Summary</div>
+      <div class="cover-title">Báo cáo Điều hành — Capacity Ops</div>
+      <div class="cover-sub">Tổng quan năng lực hạ tầng ảo hóa VMware phục vụ ra quyết định đầu tư và mở rộng.</div>
+    </div>
+    {logo_html}
+  </div>
   <div class="meta-row">
     <span>Phạm vi: <b>{esc(scope_label)}</b></span>
     <span>Thời điểm tạo báo cáo: <b>{generated_at}</b></span>
@@ -436,6 +574,11 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
 
   <div class="section">
     <div class="section-title">Tổng quan năng lực</div>
+    <div class="gauge-row">
+      <div class="gauge-card">{gauge_cpu}<div class="kpi-label" style="margin-top:2px;">CPU ngưỡng</div></div>
+      <div class="gauge-card">{gauge_ram}<div class="kpi-label" style="margin-top:2px;">RAM ngưỡng</div></div>
+      <div class="gauge-card">{gauge_ds}<div class="kpi-label" style="margin-top:2px;">Storage sử dụng</div></div>
+    </div>
     <div class="kpi-grid">
       <div class="kpi-card"><div class="kpi-label">CPU (pCPU logic)</div><div class="kpi-value">{fmt_int(model['usedVcpu'])} / {fmt_int(model['totalLogicalCores'])}</div><div class="kpi-sub">Overcommit {fmt_num(model['cpuOvercommit'],2,'x')} · {fmt_pct(model['cpuPct'])} ngưỡng</div></div>
       <div class="kpi-card"><div class="kpi-label">RAM (GB)</div><div class="kpi-value">{fmt_int(model['usedRamGB'])} / {fmt_int(model['totalRamGB'])}</div><div class="kpi-sub">Overcommit {fmt_num(model['ramOvercommit'],2,'x')} · {fmt_pct(model['ramPct'])} ngưỡng</div></div>
@@ -484,11 +627,23 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
   </div>
 
   <div class="section">
-    <div class="section-title">Rủi ro compliance nổi bật ({fmt_int(sev['critical'])} nghiêm trọng · {fmt_int(sev['warning'])} cảnh báo · {fmt_int(sev['info'])} thông tin)</div>
-    <table>
-      <thead><tr><th>Mức độ</th><th>Đối tượng</th><th>Loại</th><th>Khuyến nghị</th></tr></thead>
-      <tbody>{findings_html}</tbody>
-    </table>
+    <div class="section-title">Rủi ro compliance nổi bật</div>
+    <div class="chart-row">
+      <div style="flex:0 0 118px;text-align:center;">
+        {findings_donut}
+        <div class="legend" style="justify-content:center;flex-direction:column;gap:2px;text-align:left;">
+          <span><span class="dot" style="background:{COLORS['crit']}"></span>Nghiêm trọng ({fmt_int(sev['critical'])})</span>
+          <span><span class="dot" style="background:{COLORS['warn']}"></span>Cảnh báo ({fmt_int(sev['warning'])})</span>
+          <span><span class="dot" style="background:{COLORS['primary']}"></span>Thông tin ({fmt_int(sev['info'])})</span>
+        </div>
+      </div>
+      <div style="flex:1;">
+        <table>
+          <thead><tr><th>Mức độ</th><th>Đối tượng</th><th>Loại</th><th>Khuyến nghị</th></tr></thead>
+          <tbody>{findings_html}</tbody>
+        </table>
+      </div>
+    </div>
     <div class="small-note">Danh sách đầy đủ và chi tiết kỹ thuật xem tại Báo cáo Kỹ thuật hoặc Export CSV.</div>
   </div>
 </body></html>"""
@@ -499,7 +654,7 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
 # ---------------------------------------------------------------------------
 def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]], policy: capacity.Policy,
                            scope_label: str, run_meta: Optional[List[Dict[str, Any]]] = None,
-                           include_types: Optional[List[str]] = None) -> str:
+                           include_types: Optional[List[str]] = None, logo_data_url: Optional[str] = None) -> str:
     model = capacity.build_capacity_model(hosts, vms, policy)
     cluster_rows = capacity.build_cluster_rows(hosts, vms, policy)
     host_rows = sorted(capacity.build_host_rows(hosts, vms, policy),
@@ -527,9 +682,19 @@ def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
         <td>{bar_cell(c['model']['cpuPct'], c['cpuStatus']['cls'])}</td>
         <td>{fmt_num(c['model']['ramOvercommit'],2,'x')}</td>
         <td>{bar_cell(c['model']['ramPct'], c['ramStatus']['cls'])}</td>
-        <td>{fmt_pct(c['model']['storagePct'])}</td>
+        <td>{bar_cell(c['model']['storagePct'], capacity.get_status_for_pct(c['model']['storagePct'], 80, 90)['cls'], max_scale=100.0)}</td>
         <td>{status_pill(c['overall'])}</td>
       </tr>""" for c in cluster_rows)
+
+    host_cpu_chart = svg_ranked_bar_chart(
+        [{"name": h.get("host"), "pct": h.get("cpuPct"), "cls": h["cpuStatus"]["cls"]} for h in host_rows],
+        width=330, top_n=10)
+    host_ram_chart = svg_ranked_bar_chart(
+        [{"name": h.get("host"), "pct": h.get("ramPct"), "cls": h["ramStatus"]["cls"]} for h in host_rows],
+        width=330, top_n=10)
+    ds_chart = svg_ranked_bar_chart(
+        [{"name": d["name"], "pct": d["pct"], "cls": d["status"]["cls"]} for d in ds_rows],
+        width=680, height=None, max_scale=100.0, name_max_len=20, top_n=10)
 
     host_html = "".join(f"""
       <tr>
@@ -556,11 +721,18 @@ def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
         <td style="max-width:190px;">{esc(f.get('recommendation'))}</td>
       </tr>""" for f in findings) if findings else '<tr><td colspan="6" class="small-note">Không có phát hiện nào.</td></tr>'
 
+    logo_html = f'<img class="cover-logo" src="{esc(logo_data_url)}"/>' if logo_data_url else ''
+
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8"/><style>{_base_css('Báo cáo kỹ thuật', generated_at)}</style></head>
 <body>
-  <div class="eyebrow">Infrastructure Capacity Ops · Technical Detail</div>
-  <div class="cover-title">Báo cáo Kỹ thuật — Capacity Ops</div>
-  <div class="cover-sub">Chi tiết overcommit, host, datastore và compliance findings phục vụ vận hành kỹ thuật.</div>
+  <div class="cover-header">
+    <div>
+      <div class="eyebrow">Infrastructure Capacity Ops · Technical Detail</div>
+      <div class="cover-title">Báo cáo Kỹ thuật — Capacity Ops</div>
+      <div class="cover-sub">Chi tiết overcommit, host, datastore và compliance findings phục vụ vận hành kỹ thuật.</div>
+    </div>
+    {logo_html}
+  </div>
   <div class="meta-row">
     <span>Phạm vi: <b>{esc(scope_label)}</b></span>
     <span>Thời điểm tạo báo cáo: <b>{generated_at}</b></span>
@@ -584,11 +756,25 @@ def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
   </div>
 
   <div class="section">
+    <div class="section-title">Top-10 Host sử dụng cao nhất</div>
+    <div class="section-sub">Màu thanh thể hiện trạng thái rủi ro của từng host theo chỉ số.</div>
+    <div class="chart-row">
+      <div class="chart-card"><div class="chart-card-title">CPU % ngưỡng</div>{host_cpu_chart}</div>
+      <div class="chart-card"><div class="chart-card-title">RAM % ngưỡng</div>{host_ram_chart}</div>
+    </div>
+  </div>
+
+  <div class="section">
     <div class="section-title">Chi tiết Host ({fmt_int(len(host_rows))})</div>
     <table>
       <thead><tr><th>Cluster</th><th>Host</th><th>Cores</th><th>RAM GB</th><th>vCPU dùng</th><th>CPU %ngưỡng</th><th>RAM dùng GB</th><th>RAM %ngưỡng</th><th>VM</th><th>Trạng thái</th></tr></thead>
       <tbody>{host_html}</tbody>
     </table>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Top-10 Datastore theo % sử dụng</div>
+    <div class="chart-card">{ds_chart}</div>
   </div>
 
   <div class="section">
@@ -615,9 +801,9 @@ def html_to_pdf_bytes(html_str: str) -> bytes:
 
 def build_report_pdf(view: str, hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]], policy: capacity.Policy,
                       scope_label: str, run_meta: Optional[List[Dict[str, Any]]] = None,
-                      include_types: Optional[List[str]] = None) -> bytes:
+                      include_types: Optional[List[str]] = None, logo_data_url: Optional[str] = None) -> bytes:
     if view == "technical":
-        html_str = render_technical_html(hosts, vms, policy, scope_label, run_meta, include_types)
+        html_str = render_technical_html(hosts, vms, policy, scope_label, run_meta, include_types, logo_data_url)
     else:
-        html_str = render_executive_html(hosts, vms, policy, scope_label, run_meta, include_types)
+        html_str = render_executive_html(hosts, vms, policy, scope_label, run_meta, include_types, logo_data_url)
     return html_to_pdf_bytes(html_str)

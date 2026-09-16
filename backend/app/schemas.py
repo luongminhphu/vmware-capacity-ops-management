@@ -32,3 +32,12 @@ class SettingsUpdate(BaseModel):
     ram_overcommit_max: Optional[float] = None
     ht_factor: Optional[float] = None
     idle_days: Optional[int] = None
+
+
+class LogoUpload(BaseModel):
+    """Logo submitted as a data URL (e.g. 'data:image/png;base64,iVBORw0...'),
+    exactly what FileReader.readAsDataURL() produces in the browser — the
+    frontend can PUT this straight from the <input type=file> without any
+    extra encoding step."""
+    data_url: str
+    filename: Optional[str] = None

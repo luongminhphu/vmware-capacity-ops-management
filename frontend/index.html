@@ -95,6 +95,24 @@
           <label class="finding-filter-item"><input type="checkbox" class="pdfFindingTypeCb" value="vm_overprovision" checked><span>VM over-provision</span></label>
         </div>
       </details>
+      <details class="finding-filter-dropdown" id="pdfLogoDropdown">
+        <summary class="btn btn-secondary" title="Import logo công ty để hiển thị trên báo cáo PDF">Logo báo cáo</summary>
+        <div class="finding-filter-panel logo-upload-panel">
+          <div class="logo-upload-preview-row">
+            <div class="logo-upload-preview" id="logoUploadPreview">
+              <span class="logo-upload-empty" id="logoUploadEmptyLabel">Chưa có logo</span>
+              <img id="logoUploadImg" alt="Logo công ty" class="hidden">
+            </div>
+            <div class="logo-upload-actions">
+              <label class="btn btn-secondary btn-sm" for="logoUploadInput">Chọn ảnh…</label>
+              <input type="file" id="logoUploadInput" accept="image/png,image/jpeg,image/svg+xml,image/webp" class="hidden">
+              <button type="button" class="btn btn-secondary btn-sm" id="btnRemoveLogo">Xóa logo</button>
+            </div>
+          </div>
+          <p class="logo-upload-hint">Logo sẽ hiển thị ở góc trang bìa các báo cáo PDF (Điều hành &amp; Kỹ thuật). Khuyến nghị PNG/SVG nền trong suốt, tối đa 2MB.</p>
+          <p class="logo-upload-status" id="logoUploadStatus"></p>
+        </div>
+      </details>
       <button class="btn btn-secondary" id="btnExportPdfExec" type="button" title="Xuất báo cáo PDF khổ A4 dành cho lãnh đạo">Xuất PDF · Điều hành</button>
       <button class="btn btn-secondary" id="btnExportPdfTech" type="button" title="Xuất báo cáo PDF khổ A4 chi tiết kỹ thuật">Xuất PDF · Kỹ thuật</button>
       <button class="btn icon-btn" id="themeToggle" type="button" aria-label="Chuyển dark/light mode" title="Chuyển dark/light mode">

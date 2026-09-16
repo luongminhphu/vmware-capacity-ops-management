@@ -100,4 +100,8 @@ const api = {
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   },
+
+  getLogo: () => apiRequest('/settings/logo'),
+  saveLogo: (dataUrl, filename) => apiRequest('/settings/logo', { method: 'PUT', body: JSON.stringify({ data_url: dataUrl, filename }) }),
+  deleteLogo: () => apiRequest('/settings/logo', { method: 'DELETE' }),
 };

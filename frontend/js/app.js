@@ -251,6 +251,83 @@ function bindPdfFindingFilterDropdown() {
   updatePdfFindingFilterSummary();
 }
 
+/* ---------- Company logo upload (embedded on PDF report covers) ---------- */
+function setLogoStatus(message, kind) {
+  const el = $('#logoUploadStatus');
+  if (!el) return;
+  el.textContent = message || '';
+  el.classList.remove('ok', 'error');
+  if (kind) el.classList.add(kind);
+}
+
+function renderLogoPreview(dataUrl) {
+  const img = $('#logoUploadImg');
+  const emptyLabel = $('#logoUploadEmptyLabel');
+  if (!img || !emptyLabel) return;
+  if (dataUrl) {
+    img.src = dataUrl;
+    img.classList.remove('hidden');
+    emptyLabel.classList.add('hidden');
+  } else {
+    img.removeAttribute('src');
+    img.classList.add('hidden');
+    emptyLabel.classList.remove('hidden');
+  }
+}
+
+async function loadCompanyLogo() {
+  try {
+    const res = await api.getLogo();
+    renderLogoPreview(res && res.dataUrl ? res.dataUrl : null);
+  } catch (err) {
+    renderLogoPreview(null);
+  }
+}
+
+const MAX_LOGO_UPLOAD_BYTES = 2 * 1024 * 1024;
+
+async function handleLogoFileSelected(e) {
+  const file = e.target.files && e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  if (file.size > MAX_LOGO_UPLOAD_BYTES) {
+    setLogoStatus('Kích thước logo vượt quá 2MB cho phép.', 'error');
+    return;
+  }
+  setLogoStatus('Đang tải logo lên...', null);
+  try {
+    const dataUrl = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error('Không đọc được tệp ảnh.'));
+      reader.readAsDataURL(file);
+    });
+    const res = await api.saveLogo(dataUrl, file.name);
+    renderLogoPreview(res && res.dataUrl ? res.dataUrl : dataUrl);
+    setLogoStatus('Đã lưu logo. Logo sẽ xuất hiện trên báo cáo PDF tiếp theo.', 'ok');
+  } catch (err) {
+    setLogoStatus(`Tải logo thất bại: ${err.message}`, 'error');
+  }
+}
+
+async function handleRemoveLogo() {
+  setLogoStatus('Đang xóa logo...', null);
+  try {
+    await api.deleteLogo();
+    renderLogoPreview(null);
+    setLogoStatus('Đã xóa logo công ty.', 'ok');
+  } catch (err) {
+    setLogoStatus(`Xóa logo thất bại: ${err.message}`, 'error');
+  }
+}
+
+function bindLogoUploadDropdown() {
+  const input = $('#logoUploadInput');
+  const removeBtn = $('#btnRemoveLogo');
+  if (input) input.addEventListener('change', handleLogoFileSelected);
+  if (removeBtn) removeBtn.addEventListener('click', handleRemoveLogo);
+}
+
 async function handleExportPdf(view, btn) {
   const originalLabel = btn.textContent;
   btn.disabled = true;
@@ -361,6 +438,7 @@ async function initAppData() {
 
   await refreshVcenterList();
   await loadLiveData();
+  await loadCompanyLogo();
 }
 
 function bindTopBarInteractions() {
@@ -371,6 +449,7 @@ function bindTopBarInteractions() {
   $('#btnExportPdfTech').addEventListener('click', e => handleExportPdf('technical', e.currentTarget));
   bindPdfFindingFilterDropdown();
   bindPdfScopeFilterDropdown();
+  bindLogoUploadDropdown();
   $('#vcenterSelect').addEventListener('change', e => {
     currentVcenterFilter = e.target.value;
     loadLiveData();
