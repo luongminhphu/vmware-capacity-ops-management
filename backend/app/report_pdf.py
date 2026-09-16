@@ -33,8 +33,10 @@ COLORS = {
     "divider": "#e4e7ec",
     "surface": "#f8fafc",
     "surface2": "#eef2f7",
-    "primary": "#2563eb",
-    "primary_dark": "#1d4ed8",
+    # Synced to HSC's brand blue (design-system tokens: --brand / --logo-blue)
+    # so headline text in the report matches the company logo's blue exactly.
+    "primary": "#2681FF",
+    "primary_dark": "#074B9B",
     "accent": "#0891b2",
     "ok": "#15803d",
     "ok_bg": "#e7f5ec",
@@ -584,15 +586,13 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
     <span>Thời điểm tạo báo cáo: <b>{generated_at}</b></span>
     <span>Trạng thái tổng thể: {status_pill(overall)}</span>
   </div>
-  {f'<div class="small-note" style="margin:-10px 0 4px;">Dữ liệu tổng hợp từ: {scope_note}</div>' if scope_note else ''}
-  {f'<div class="small-note" style="margin:0 0 14px;">{esc(filter_note)}</div>' if filter_note else ''}
 
   <div class="section">
     <div class="section-title">Tổng quan năng lực</div>
     <div class="gauge-row">
-      <div class="gauge-card">{gauge_cpu}<div class="kpi-label" style="margin-top:2px;">CPU ngưỡng</div></div>
-      <div class="gauge-card">{gauge_ram}<div class="kpi-label" style="margin-top:2px;">RAM ngưỡng</div></div>
-      <div class="gauge-card">{gauge_ds}<div class="kpi-label" style="margin-top:2px;">Storage sử dụng</div></div>
+      <div class="gauge-card">{gauge_cpu}<div class="kpi-label" style="margin-top:2px;">CPU Usage</div></div>
+      <div class="gauge-card">{gauge_ram}<div class="kpi-label" style="margin-top:2px;">RAM Usage</div></div>
+      <div class="gauge-card">{gauge_ds}<div class="kpi-label" style="margin-top:2px;">Storage Usage</div></div>
     </div>
     <div class="kpi-grid">
       <div class="kpi-card"><div class="kpi-label">CPU (pCPU logic)</div><div class="kpi-value">{fmt_int(model['usedVcpu'])} / {fmt_int(model['totalLogicalCores'])}</div><div class="kpi-sub">Overcommit {fmt_num(model['cpuOvercommit'],2,'x')} · {fmt_pct(model['cpuPct'])} ngưỡng</div></div>
@@ -760,7 +760,6 @@ def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
     <span class="chip">{fmt_int(sev['warning'])} cảnh báo</span>
     <span class="chip">{fmt_int(sev['info'])} thông tin</span>
   </div>
-  {f'<div class="small-note" style="margin:-6px 0 14px;">{esc(filter_note)}</div>' if filter_note else ''}
 
   <div class="section">
     <div class="section-title">Overcommit theo Cluster</div>
