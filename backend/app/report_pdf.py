@@ -189,12 +189,22 @@ def svg_donut(segments: List[Dict[str, Any]], size: int = 120, hole: float = 0.6
     return f'<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}" font-family="Roboto, Noto Sans, sans-serif">{"".join(arcs)}{center}</svg>'
 
 
-def svg_gauge(pct: Optional[float], color: str, size: int = 132, max_scale: float = 140.0,
+def svg_gauge(pct: Optional[float], color: str, size: int = 132, max_scale: float = 100.0,
               label_top: Optional[str] = None) -> str:
     """Compact semicircular gauge: arc sweep proportional to `pct` (capped at
     `max_scale`), with the percentage rendered large in the center. Used for
     headline CPU/RAM/Storage utilization callouts so the Executive report
-    reads at a glance instead of only through KPI numbers."""
+    reads at a glance instead of only through KPI numbers.
+
+    The drawn arc always sweeps at most 180 degrees (from the 9-o'clock point
+    to some point along the top half of the circle), so it is always the
+    *minor* arc between its two endpoints -- the SVG large-arc-flag must
+    therefore always be 0. Do not derive it from `frac`: a previous version
+    flipped it to 1 once `frac > 0.5`, which forced the renderer to draw the
+    reflex (major, >180 degree) arc instead -- it looped around through the
+    hidden bottom half of the circle, mostly falling outside the viewBox and
+    rendering as a broken-looking fragment (this is exactly what happened once
+    a gauge value crossed 50% of `max_scale`, e.g. Storage above 50%)."""
     w = float(size)
     stroke_w = w * 0.10
     r = w / 2 - stroke_w / 2 - 3
@@ -211,7 +221,7 @@ def svg_gauge(pct: Optional[float], color: str, size: int = 132, max_scale: floa
     frac = clamped / max_scale
     end_deg = 180 - 180 * frac
     xe, ye = polar(end_deg)
-    large_arc = 1 if frac > 0.5 else 0
+    large_arc = 0
     fg_path = f'<path d="M {x0:.1f} {y0:.1f} A {r:.1f} {r:.1f} 0 {large_arc} 1 {xe:.1f} {ye:.1f}" fill="none" stroke="{color}" stroke-width="{stroke_w:.1f}" stroke-linecap="round"/>' if frac > 0.008 else ""
     label = fmt_pct(pct, 0)
     top = f'<text x="{cx:.1f}" y="{h-6:.1f}" text-anchor="middle" font-family="Roboto, Noto Sans, sans-serif" font-size="8.5" font-weight="700" fill="{COLORS["muted"]}" text-transform="uppercase">{esc(label_top)}</text>' if label_top else ""
@@ -503,7 +513,7 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
     ds_status = capacity.get_status_for_pct(model.get("storagePct"), 80, 90)
     gauge_cpu = svg_gauge(model.get("cpuPct"), COLORS[STATUS_COLOR.get(cpu_status["cls"], STATUS_COLOR["na"])[0]])
     gauge_ram = svg_gauge(model.get("ramPct"), COLORS[STATUS_COLOR.get(ram_status["cls"], STATUS_COLOR["na"])[0]])
-    gauge_ds = svg_gauge(model.get("storagePct"), COLORS[STATUS_COLOR.get(ds_status["cls"], STATUS_COLOR["na"])[0]], max_scale=100.0)
+    gauge_ds = svg_gauge(model.get("storagePct"), COLORS[STATUS_COLOR.get(ds_status["cls"], STATUS_COLOR["na"])[0]])
 
     findings_donut = svg_donut([
         {"label": "Nghiêm trọng", "value": sev["critical"], "color": COLORS["crit"]},
