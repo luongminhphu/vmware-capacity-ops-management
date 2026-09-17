@@ -17,6 +17,7 @@ from typing import Any, Dict, List, Optional
 from weasyprint import HTML
 
 from . import capacity
+from .timeutil import now_vn_str, parse_iso_to_vn_str
 
 _SVG_UID = itertools.count()
 
@@ -515,7 +516,9 @@ tbody tr:nth-child(even) {{ background:#fbfcfe; }}
 
 
 def _now_str() -> str:
-    return dt.datetime.now().strftime("%H:%M %d/%m/%Y")
+    # Container clocks commonly run in UTC; PDF reports are read by staff in
+    # Vietnam, so the "generated at" stamp is rendered in Vietnam local time.
+    return now_vn_str()
 
 
 def _overall_status(model: Dict[str, Any]) -> Dict[str, str]:
@@ -829,8 +832,7 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
     if run_meta:
         parts = []
         for rm in run_meta:
-            ts = rm.get("finishedAt")
-            ts_fmt = ts[:16].replace("T", " ") if ts else "—"
+            ts_fmt = parse_iso_to_vn_str(rm.get("finishedAt"))
             parts.append(f"{esc(rm.get('vcenterKey'))} ({ts_fmt})")
         scope_note = " · ".join(parts)
 

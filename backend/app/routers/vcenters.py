@@ -9,6 +9,7 @@ from ..collectors.scheduler import sync_vcenter
 from ..database import get_db
 from ..models import SnapshotRun, User
 from ..security import get_current_user
+from ..timeutil import to_iso_utc
 from ..vcenter.client import VCenterConnectionError
 
 router = APIRouter(prefix="/api/vcenters", tags=["vcenters"])
@@ -27,7 +28,7 @@ def _vcenter_public(cfg, db: Session):
         "name": cfg.name,
         "host": cfg.host,
         "demo": cfg.demo,
-        "lastSyncAt": last_run.finished_at.isoformat() if last_run and last_run.finished_at else None,
+        "lastSyncAt": to_iso_utc(last_run.finished_at) if last_run else None,
         "lastStatus": "ok" if last_run else None,
         "lastError": last_error_run.error_message if last_error_run and (not last_run or last_error_run.id > last_run.id) else None,
     }
@@ -54,7 +55,7 @@ def sync_one(key: str, db: Session = Depends(get_db), user: User = Depends(get_c
     return {
         "ok": True, "runId": run.id, "vcenterKey": key,
         "hostCount": len(run.hosts), "vmCount": len(run.vms), "findingCount": len(run.findings),
-        "finishedAt": run.finished_at.isoformat() if run.finished_at else None,
+        "finishedAt": to_iso_utc(run.finished_at),
     }
 
 

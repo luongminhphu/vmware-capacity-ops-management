@@ -10,6 +10,7 @@ from ..database import get_db
 from ..models import AppSetting, ReportLogo, User
 from ..schemas import LogoUpload, SettingsUpdate
 from ..security import get_current_user
+from ..timeutil import to_iso_utc
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -49,7 +50,7 @@ def get_logo(db: Session = Depends(get_db), user: User = Depends(get_current_use
     return {
         "dataUrl": f"data:{row.mime_type};base64,{row.data_base64}",
         "filename": row.filename,
-        "uploadedAt": row.uploaded_at.isoformat() if row.uploaded_at else None,
+        "uploadedAt": to_iso_utc(row.uploaded_at),
     }
 
 

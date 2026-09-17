@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from . import capacity
 from .config import Settings
 from .models import AppSetting, ComplianceFindingSnapshot, HostSnapshot, SnapshotRun, VmSnapshot
+from .timeutil import to_iso_utc
 
 
 def get_effective_policy(db: Session, settings: Settings) -> "capacity.Policy":
@@ -77,14 +78,14 @@ def get_latest_combined(db: Session, vcenter_keys: Optional[List[str]] = None, i
             continue
         host_rows.extend(_host_to_row(h) for h in run.hosts)
         vm_rows.extend(_vm_to_row(v) for v in run.vms)
-        run_meta.append({"vcenterKey": key, "source": "live", "finishedAt": run.finished_at.isoformat() if run.finished_at else None})
+        run_meta.append({"vcenterKey": key, "source": "live", "finishedAt": to_iso_utc(run.finished_at)})
 
     if include_import:
         run = latest_run_for_key(db, None, source="import")
         if run:
             host_rows.extend(_host_to_row(h) for h in run.hosts)
             vm_rows.extend(_vm_to_row(v) for v in run.vms)
-            run_meta.append({"vcenterKey": "import", "source": "import", "finishedAt": run.finished_at.isoformat() if run.finished_at else None})
+            run_meta.append({"vcenterKey": "import", "source": "import", "finishedAt": to_iso_utc(run.finished_at)})
 
     return host_rows, vm_rows, run_meta
 
@@ -108,7 +109,7 @@ def get_latest_grouped(db: Session, include_import: bool = True) -> Dict[str, An
         host_rows.extend(h)
         vm_rows.extend(v)
         by_vcenter[key] = {"hosts": h, "vms": v}
-        run_meta.append({"vcenterKey": key, "source": "live", "finishedAt": run.finished_at.isoformat() if run.finished_at else None})
+        run_meta.append({"vcenterKey": key, "source": "live", "finishedAt": to_iso_utc(run.finished_at)})
 
     if include_import:
         run = latest_run_for_key(db, None, source="import")
@@ -118,7 +119,7 @@ def get_latest_grouped(db: Session, include_import: bool = True) -> Dict[str, An
             host_rows.extend(h)
             vm_rows.extend(v)
             by_vcenter["import"] = {"hosts": h, "vms": v}
-            run_meta.append({"vcenterKey": "import", "source": "import", "finishedAt": run.finished_at.isoformat() if run.finished_at else None})
+            run_meta.append({"vcenterKey": "import", "source": "import", "finishedAt": to_iso_utc(run.finished_at)})
 
     return {"hosts": host_rows, "vms": vm_rows, "byVcenter": by_vcenter, "runMeta": run_meta}
 

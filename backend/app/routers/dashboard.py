@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import ClusterAggregate, User
 from ..security import get_current_user
+from ..timeutil import to_vn_date
 
 router = APIRouter(prefix="/api/dashboard", tags=["dashboard"])
 
@@ -32,7 +33,7 @@ def trend_history(
     )
     daily = {}
     for row in history_rows:
-        day_key = row.captured_at.date().isoformat()
+        day_key = to_vn_date(row.captured_at).isoformat()  # bucket by VN calendar day, not UTC
         d = daily.setdefault(day_key, {"date": day_key, "usedVcpu": 0.0, "usedRamGB": 0.0, "totalLogicalCores": 0.0, "totalRamGB": 0.0})
         d["usedVcpu"] += row.used_vcpu or 0
         d["usedRamGB"] += row.used_ram_gb or 0
