@@ -118,46 +118,55 @@ def status_pill(status: Optional[Dict[str, str]]) -> str:
             f'border-color:{COLORS[fg_key]}33">{esc(status.get("text", "NA"))}</span>')
 
 
-def bar_cell(pct: Optional[float], cls: str = "ok", width_px: int = 80, height_px: int = 15, max_scale: float = 140.0) -> str:
-    """Progress-bar cell with the percentage label NESTED INSIDE the colored
-    fill, for a compact, professional look.
+def bar_cell(pct: Optional[float], cls: str = "ok", width_px: int = 108, height_px: int = 15, max_scale: float = 100.0) -> str:
+    """Progress-bar cell whose fill width is always a FAITHFUL proportion of
+    `pct / max_scale` -- two different percentages never render as the same
+    bar length. `max_scale` defaults to 100 because every current call site
+    passes an already-computed 0-100 percentage (of an overcommit threshold
+    or of allocated storage); pass a different value only for a metric that
+    is genuinely NOT a plain percentage.
 
-    Rendered as inline SVG (not HTML/CSS). Earlier versions centered the
-    label over the *whole* track and used a stroke-halo double text-draw to
-    keep it legible on top of both the colored fill and the plain track --
-    on WeasyPrint that stroke halo rendered as a smudgy double image. A
-    clip-path variant (white text clipped to the fill, muted text clipped to
-    the track, both centered on the whole bar) avoided the halo but could
-    still split a single glyph in half right at the fill boundary.
-
-    This version instead widens the colored "chip" so it is never narrower
-    than what the label itself needs -- the label is always drawn exactly
-    once, centered, solid white, fully inside the colored fill. The chip
-    still grows with pct (larger values render a visibly longer bar) but
-    never shrinks below the label's own width, so the number is always
-    legibly nested inside the bar instead of spilling onto the plain track.
+    The label is drawn INSIDE the colored fill (solid white, centered) only
+    when the true fill is wide enough to hold it without inflating the bar;
+    otherwise it is drawn just to the right of the fill in muted ink, on the
+    plain track -- the same fallback `svg_ranked_bar_chart` uses -- so a
+    small percentage still reads as a visually short bar instead of being
+    artificially widened to fit its own text.
     """
     fg_key, _ = STATUS_COLOR.get(cls, STATUS_COLOR["na"])
     color = COLORS[fg_key]
     clamped = 0.0 if not _finite(pct) else max(0.0, min(max_scale, pct))
     fill_w = max(0.0, min(1.0, clamped / max_scale)) * width_px
     r = height_px / 2.0
-    cy = height_px / 2.0
     font_size = round(height_px * 0.6, 1)
     label = fmt_pct(pct)
-    text_y = round(cy + font_size * 0.35, 1)
+    text_y = round(height_px / 2.0 + font_size * 0.35, 1)
     label_w_est = len(label) * font_size * 0.62 + 10
-    fill_w_draw = min(width_px, max(height_px, fill_w, label_w_est))
-    cx = fill_w_draw / 2.0
-    return (
+    fill_w_draw = max(height_px if fill_w > 0.5 else 0.0, fill_w)
+    parts = [
         f'<svg width="{width_px}" height="{height_px}" viewBox="0 0 {width_px} {height_px}" '
-        f'style="display:block;vertical-align:middle;">'
-        f'<rect x="0" y="0" width="{width_px}" height="{height_px}" rx="{r:.1f}" fill="{COLORS["track_bg"]}"/>'
-        f'<rect x="0" y="0" width="{fill_w_draw:.1f}" height="{height_px}" rx="{r:.1f}" fill="{color}"/>'
-        f'<text x="{cx:.1f}" y="{text_y}" text-anchor="middle" font-family="Roboto, Noto Sans, sans-serif" '
-        f'font-size="{font_size}" font-weight="700" fill="#ffffff">{esc(label)}</text>'
-        f'</svg>'
-    )
+        f'style="display:block;vertical-align:middle;">',
+        f'<rect x="0" y="0" width="{width_px}" height="{height_px}" rx="{r:.1f}" fill="{COLORS["track_bg"]}"/>',
+        f'<rect x="0" y="0" width="{fill_w_draw:.1f}" height="{height_px}" rx="{r:.1f}" fill="{color}"/>',
+    ]
+    if fill_w_draw >= label_w_est:
+        cx = fill_w_draw / 2.0
+        parts.append(f'<text x="{cx:.1f}" y="{text_y}" text-anchor="middle" font-family="Roboto, Noto Sans, sans-serif" '
+                     f'font-size="{font_size}" font-weight="700" fill="#ffffff">{esc(label)}</text>')
+    else:
+        lx = min(width_px - 2, fill_w_draw + 4)
+        parts.append(f'<text x="{lx:.1f}" y="{text_y}" text-anchor="start" font-family="Roboto, Noto Sans, sans-serif" '
+                     f'font-size="{font_size}" font-weight="700" fill="{COLORS["muted"]}">{esc(label)}</text>')
+    if _finite(pct) and pct > max_scale:
+        # Fill is clamped to the cell's full width above -- mark genuine
+        # over-threshold values with a small notch near the right edge so
+        # "at the cap" and "over the cap" don't look identical.
+        nx = width_px - 7
+        parts.append(f'<path d="M {nx:.1f} {height_px*0.28:.1f} L {nx+4.5:.1f} {height_px/2:.1f} L {nx:.1f} {height_px*0.72:.1f}" '
+                     f'stroke="#ffffff" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round">'
+                     f'<title>V\u01b0\u1ee3t ng\u01b0\u1ee1ng c\u1ea5u h\u00ecnh</title></path>')
+    parts.append('</svg>')
+    return "".join(parts)
 
 
 def svg_donut(segments: List[Dict[str, Any]], size: int = 120, hole: float = 0.62,
@@ -283,7 +292,7 @@ def svg_bar_chart(labels: List[str], series: List[Dict[str, Any]], width: int = 
 
 
 def svg_ranked_bar_chart(rows: List[Dict[str, Any]], width: int = 330, height: Optional[int] = None,
-                          max_scale: float = 140.0, name_max_len: int = 13, top_n: int = 10) -> str:
+                          max_scale: float = 100.0, name_max_len: int = 13, top_n: int = 10) -> str:
     """Generic horizontal ranked bar chart: one row per entity (cluster/host/
     datastore), sorted descending by `pct`. The bar is colored by risk status
     (`cls`) and the % label is embedded INSIDE the colored fill (right-aligned)
@@ -335,11 +344,19 @@ def svg_ranked_bar_chart(rows: List[Dict[str, Any]], width: int = 330, height: O
         else:
             lx = pad_l + fill_w + 5
             parts.append(f'<text x="{lx:.1f}" y="{bar_y+bar_h/2+2.9:.1f}" text-anchor="start" font-size="7.6" font-weight="700" fill="{COLORS["muted"]}">{label}</text>')
+        if pct > max_scale:
+            # Genuine over-threshold value (e.g. "vượt ngưỡng" CPU/RAM) --
+            # the fill itself is clamped to the bar's full width above, so
+            # add a small chevron just past the bar end as a distinct
+            # visual cue that this one is off the top of the scale.
+            ov_x = pad_l + plot_w + 4
+            ov_y = bar_y + bar_h / 2
+            parts.append(f'<path d="M {ov_x:.1f} {ov_y-4:.1f} L {ov_x+5:.1f} {ov_y:.1f} L {ov_x:.1f} {ov_y+4:.1f} Z" fill="{COLORS[fg_key]}"><title>Vượt ngưỡng cấu hình</title></path>')
         badge_n = r.get("badge")
         if badge_n:
             badge_title = r.get("badge_title", "")
             badge_color = COLORS["crit"] if r.get("badge_crit") else COLORS["warn"]
-            bx = pad_l + plot_w + 22
+            bx = pad_l + plot_w + (30 if pct > max_scale else 22)
             parts.append(f'<circle cx="{bx}" cy="{bar_y+bar_h/2:.1f}" r="7" fill="{badge_color}"><title>{esc(badge_title)}</title></circle>')
             parts.append(f'<text x="{bx}" y="{bar_y+bar_h/2+2.8:.1f}" text-anchor="middle" font-size="7.5" font-weight="700" fill="#ffffff">{badge_n}<title>{esc(badge_title)}</title></text>')
     parts.append('</svg>')
@@ -365,6 +382,69 @@ def svg_cluster_risk_chart(cluster_rows: List[Dict[str, Any]], metric: str, find
             "badge": (crit_n + warn_n) or None, "badge_crit": bool(crit_n), "badge_title": badge_title,
         })
     return svg_ranked_bar_chart(rows, width=width, height=height)
+
+
+def svg_radar_chart(categories: List[str], series: List[Dict[str, Any]], size: int = 232, max_value: float = 100.0, rings: int = 4) -> str:
+    """Radar/spider chart comparing several entities (clusters/hosts) across
+    the SAME set of 0-`max_value` metrics on one glance -- a deliberately
+    different chart family from the bars/gauges/donuts used elsewhere in this
+    report, so multi-metric comparisons don't all look like the same widget.
+
+    `categories`: axis labels in order, e.g. ["CPU", "RAM", "Storage"].
+    `series`: [{"name": str, "color": "#hex", "values": [float, ...]}] --
+      `values` aligned to `categories`; a value above `max_value` (e.g. an
+      over-threshold CPU/RAM %) is clamped to the outer ring, the same
+      "cap the fill, keep the real number in the legend" treatment used by
+      `bar_cell`/`svg_ranked_bar_chart`.
+    """
+    n = len(categories)
+    if n < 3 or not series:
+        return '<div style="color:#98a2b3;font-size:11px;padding:8px 0;">Kh\u00f4ng \u0111\u1ee7 d\u1eef li\u1ec7u \u0111\u1ec3 v\u1ebd bi\u1ec3u \u0111\u1ed3.</div>'
+    cx = cy = size / 2
+    r = size / 2 - 30
+
+    def axis_point(i: int, frac: float):
+        angle = -math.pi / 2 + i * 2 * math.pi / n
+        return cx + r * frac * math.cos(angle), cy + r * frac * math.sin(angle)
+
+    # The vertex layout is asymmetric for odd `n` (e.g. n=3 has one axis
+    # pointing straight up and two pointing down-ish), so a square size x size
+    # box centered on (cx, cy) leaves a lot of dead space on whichever side is
+    # shorter. Compute the actual bounding box from the outer label ring and
+    # crop the viewBox tightly to it (plus small text padding) instead.
+    label_pts = [axis_point(i, 1.2) for i in range(n)]
+    pad_x, pad_y = 20, 11
+    min_x = min(p[0] for p in label_pts) - pad_x
+    max_x = max(p[0] for p in label_pts) + pad_x
+    min_y = min(p[1] for p in label_pts) - pad_y
+    max_y = max(p[1] for p in label_pts) + pad_y
+    box_w = max_x - min_x
+    box_h = max_y - min_y
+
+    parts = [f'<svg width="{box_w:.0f}" height="{box_h:.0f}" viewBox="{min_x:.1f} {min_y:.1f} {box_w:.1f} {box_h:.1f}" font-family="Roboto, Noto Sans, sans-serif">']
+    for ring in range(1, rings + 1):
+        frac = ring / rings
+        pts = " ".join(f"{axis_point(i, frac)[0]:.1f},{axis_point(i, frac)[1]:.1f}" for i in range(n))
+        parts.append(f'<polygon points="{pts}" fill="none" stroke="{COLORS["divider"]}" stroke-width="1"/>')
+    for i, cat in enumerate(categories):
+        x, y = axis_point(i, 1.0)
+        parts.append(f'<line x1="{cx:.1f}" y1="{cy:.1f}" x2="{x:.1f}" y2="{y:.1f}" stroke="{COLORS["divider"]}" stroke-width="1"/>')
+        lx, ly = axis_point(i, 1.2)
+        parts.append(f'<text x="{lx:.1f}" y="{ly:.1f}" text-anchor="middle" font-size="8.5" font-weight="700" fill="{COLORS["muted"]}">{esc(cat)}</text>')
+    for s in series:
+        vals = s.get("values", [])
+        color = s.get("color", COLORS["primary"])
+        pts = []
+        for i in range(n):
+            v = vals[i] if i < len(vals) and _finite(vals[i]) else 0
+            frac = max(0.0, min(1.0, v / max_value))
+            pts.append(axis_point(i, frac))
+        pts_str = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
+        parts.append(f'<polygon points="{pts_str}" fill="{color}26" stroke="{color}" stroke-width="1.7"/>')
+        for x, y in pts:
+            parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="2.3" fill="{color}"/>')
+    parts.append('</svg>')
+    return "".join(parts)
 
 
 # ---------------------------------------------------------------------------
@@ -419,6 +499,18 @@ tbody tr:nth-child(even) {{ background:#fbfcfe; }}
 .chart-row {{ display:flex; gap:14px; align-items:flex-start; }}
 .chart-card {{ flex:1; background:{COLORS['surface']}; border:1px solid {COLORS['border']}; border-radius:6px; padding:10px 12px; }}
 .chart-card-title {{ font-size:9.5px; font-weight:700; color:{COLORS['ink']}; margin-bottom:4px; }}
+.headroom-card {{ flex:1; background:{COLORS['surface']}; border:1px solid {COLORS['border']}; border-radius:6px; padding:9px 11px; }}
+.headroom-metric {{ font-size:8px; text-transform:uppercase; letter-spacing:.06em; color:{COLORS['muted']}; font-weight:700; margin-bottom:5px; }}
+.headroom-value {{ font-size:15px; font-weight:800; color:{COLORS['primary_dark']}; }}
+.headroom-value span {{ font-size:9px; font-weight:600; color:{COLORS['muted']}; }}
+.headroom-sub {{ font-size:8.3px; color:{COLORS['muted']}; margin-top:3px; }}
+.priority-pill {{ display:inline-block; padding:1.5px 7px; border-radius:3px; font-size:7.8px; font-weight:700; white-space:nowrap; }}
+.priority-cao {{ background:{COLORS['crit_bg']}; color:{COLORS['crit']}; }}
+.priority-tb {{ background:{COLORS['warn_bg']}; color:{COLORS['warn']}; }}
+.priority-thap {{ background:{COLORS['ok_bg']}; color:{COLORS['ok']}; }}
+.assumption-note {{ background:{COLORS['surface2']}; border:1px dashed {COLORS['border']}; border-radius:5px; padding:6px 10px; font-size:8px; color:{COLORS['muted']}; margin-top:8px; }}
+.radar-legend-item {{ display:flex; align-items:center; gap:5px; font-size:8.3px; color:{COLORS['ink']}; margin-bottom:3px; }}
+.radar-swatch {{ width:9px; height:9px; border-radius:2px; display:inline-block; flex:none; }}
 """
 
 
@@ -485,6 +577,145 @@ def _executive_insights(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]
 
 
 # ---------------------------------------------------------------------------
+# Forward-looking capacity planning content (forecast, headroom, HA/DR check)
+# shared by both the Executive and Technical reports.
+# ---------------------------------------------------------------------------
+METRIC_LABEL_VI = {"cpu": "CPU", "ram": "RAM", "storage": "Storage"}
+
+
+def _fmt_months(months: Optional[float]) -> str:
+    if months is None:
+        return "Ch\u01b0a x\u00e1c \u0111\u1ecbnh (t\u1ed1c \u0111\u1ed9 t\u0103ng tr\u01b0\u1edfng gi\u1ea3 \u0111\u1ecbnh b\u1eb1ng 0 ho\u1eb7c \u00e2m)"
+    if months <= 0.05:
+        return "\u0110\u00e3 \u0111\u1ea1t/v\u01b0\u1ee3t ng\u01b0\u1ee1ng ngay t\u1ea1i th\u1eddi \u0111i\u1ec3m b\u00e1o c\u00e1o"
+    if months > 36:
+        return "> 36 th\u00e1ng"
+    if months < 1:
+        return "< 1 th\u00e1ng"
+    return f"~{months:.0f} th\u00e1ng"
+
+
+def _growth_scenario_rows_html(growth: Dict[str, Any]) -> str:
+    rows = []
+    for key in ("cpu", "ram", "storage"):
+        g = growth.get(key, {})
+        cur = g.get("currentPct")
+        cells = "".join(
+            f'<td>{_fmt_months(sc["months"])}</td>' for sc in g.get("scenarios", [])
+        )
+        rows.append(f"""
+      <tr>
+        <td><b>{METRIC_LABEL_VI[key]}</b></td>
+        <td>{fmt_pct(cur)}</td>
+        {cells}
+      </tr>""")
+    return "".join(rows)
+
+
+def _headroom_cards_html(headroom: Dict[str, Any]) -> str:
+    cpu, ram, storage = headroom["cpu"], headroom["ram"], headroom["storage"]
+
+    def vms_fit_text(v: Optional[int]) -> str:
+        if v is None:
+            return "\u2014"
+        return f"~{v} VM" if v < 9999 else "> 9,999 VM"
+
+    return f"""
+    <div class="chart-row">
+      <div class="headroom-card">
+        <div class="headroom-metric">D\u01b0 \u0111\u1ecba CPU t\u1edbi ng\u01b0\u1ee1ng c\u1ea5u h\u00ecnh</div>
+        <div class="headroom-value">{fmt_int(cpu['freeVcpu'])} <span>vCPU tr\u1ed1ng / {fmt_int(cpu['maxVcpu'])} vCPU t\u1ed1i \u0111a</span></div>
+        <div class="headroom-sub">\u01af\u1edbc t\u00ednh th\u00eam \u0111\u01b0\u1ee3c {vms_fit_text(cpu['vmsFit'])} c\u1ee1 trung b\u00ecnh hi\u1ec7n t\u1ea1i tr\u01b0\u1edbc khi ch\u1ea1m ng\u01b0\u1ee1ng overcommit CPU.</div>
+      </div>
+      <div class="headroom-card">
+        <div class="headroom-metric">D\u01b0 \u0111\u1ecba RAM t\u1edbi ng\u01b0\u1ee1ng c\u1ea5u h\u00ecnh</div>
+        <div class="headroom-value">{fmt_int(ram['freeRamGB'])} <span>GB tr\u1ed1ng / {fmt_int(ram['maxRamGB'])} GB t\u1ed1i \u0111a</span></div>
+        <div class="headroom-sub">\u01af\u1edbc t\u00ednh th\u00eam \u0111\u01b0\u1ee3c {vms_fit_text(ram['vmsFit'])} c\u1ee1 trung b\u00ecnh hi\u1ec7n t\u1ea1i tr\u01b0\u1edbc khi ch\u1ea1m ng\u01b0\u1ee1ng overcommit RAM.</div>
+      </div>
+      <div class="headroom-card">
+        <div class="headroom-metric">D\u01b0 \u0111\u1ecba Storage t\u1edbi ng\u01b0\u1ee1ng 90%</div>
+        <div class="headroom-value">{fmt_int(storage['freeStorageGB'])} <span>GB tr\u1ed1ng</span></div>
+        <div class="headroom-sub">\u01af\u1edbc t\u00ednh th\u00eam \u0111\u01b0\u1ee3c {vms_fit_text(storage['vmsFit'])} c\u1ee1 trung b\u00ecnh hi\u1ec7n t\u1ea1i tr\u01b0\u1edbc khi datastore g\u1ea7n \u0111\u1ea7y.</div>
+      </div>
+    </div>
+    <div class="small-note" style="margin-top:6px;">VM \"c\u1ee1 trung b\u00ecnh\" t\u00ednh theo footprint b\u00ecnh qu\u00e2n c\u1ee7a c\u00e1c VM \u0111ang b\u1eadt trong ph\u1ea1m vi b\u00e1o c\u00e1o: {fmt_num(headroom['avg']['avgVcpu'],1)} vCPU \u00b7 {fmt_num(headroom['avg']['avgRamGB'],1)} GB RAM \u00b7 {fmt_num(headroom['avg']['avgStorageGB'],1)} GB storage.</div>
+    """
+
+
+def _ha_table_html(ha_rows: List[Dict[str, Any]]) -> str:
+    rows = []
+    for r in ha_rows:
+        if not r.get("eligible"):
+            rows.append(f"""
+      <tr><td><b>{esc(r['cluster'])}</b></td><td colspan="3" class="small-note">Ch\u1ec9 c\u00f3 {fmt_int(r['hosts'])} host \u2014 kh\u00f4ng \u0111\u1ee7 \u0111\u1ec3 ki\u1ec3m tra d\u1ef1 ph\u00f2ng N+1.</td></tr>""")
+            continue
+        survives = r.get("survives")
+        pill = ('<span class="pill" style="color:%s;background:%s;border-color:%s33">%s</span>' % (
+            COLORS["ok"], COLORS["ok_bg"], COLORS["ok"], "\u0110\u00e1p \u1ee9ng") if survives else
+            '<span class="pill" style="color:%s;background:%s;border-color:%s33">%s</span>' % (
+            COLORS["crit"], COLORS["crit_bg"], COLORS["crit"], "Kh\u00f4ng \u0111\u00e1p \u1ee9ng"))
+        rows.append(f"""
+      <tr>
+        <td><b>{esc(r['cluster'])}</b></td>
+        <td>{esc(r.get('largestHost') or '\u2014')}</td>
+        <td>{fmt_pct(r.get('cpuPctAfter'))} / {fmt_pct(r.get('ramPctAfter'))}</td>
+        <td>{pill}</td>
+      </tr>""")
+    return "".join(rows)
+
+
+def _technical_headroom_actions(cluster_rows: List[Dict[str, Any]], policy: capacity.Policy) -> List[Dict[str, Any]]:
+    """Per-cluster extra-core / extra-RAM-GB required to bring a cluster
+    currently OVER its policy overcommit ratio back to exactly the policy
+    max, plus a priority tag. Only clusters at/above the warn threshold
+    (80%) are returned, ranked worst first."""
+    ht_factor = max(1.0, policy.ht_factor or 2.0)
+    out = []
+    for c in cluster_rows:
+        m = c["model"]
+        cpu_pct, ram_pct = m.get("cpuPct"), m.get("ramPct")
+        worst = max(cpu_pct if _finite(cpu_pct) else -1, ram_pct if _finite(ram_pct) else -1)
+        if worst < 80:
+            continue
+        extra_logical_cores = 0.0
+        if _finite(cpu_pct) and cpu_pct > 100 and policy.cpu_overcommit_max > 0:
+            extra_logical_cores = max(0.0, m["usedVcpu"] / policy.cpu_overcommit_max - m["totalLogicalCores"])
+        extra_ram_gb = 0.0
+        if _finite(ram_pct) and ram_pct > 100 and policy.ram_overcommit_max > 0:
+            extra_ram_gb = max(0.0, m["usedRamGB"] / policy.ram_overcommit_max - m["totalRamGB"])
+        priority = "cao" if worst >= 100 else ("tb" if worst >= 90 else "thap")
+        out.append({
+            "cluster": c["name"], "cpuPct": cpu_pct, "ramPct": ram_pct,
+            "extraPhysCores": extra_logical_cores / ht_factor, "extraRamGB": extra_ram_gb,
+            "priority": priority,
+        })
+    return sorted(out, key=lambda r: max(r["cpuPct"] if _finite(r["cpuPct"]) else -1, r["ramPct"] if _finite(r["ramPct"]) else -1), reverse=True)
+
+
+def _technical_actions_html(actions: List[Dict[str, Any]]) -> str:
+    if not actions:
+        return '<tr><td colspan="6" class="small-note">Kh\u00f4ng c\u00f3 cluster n\u00e0o \u1edf m\u1ee9c c\u1ea3nh b\u00e1o tr\u1edf l\u00ean.</td></tr>'
+    prio_label = {"cao": "Cao", "tb": "Trung b\u00ecnh", "thap": "Th\u1ea5p"}
+    rows = []
+    for a in actions:
+        need = []
+        if a["extraPhysCores"] > 0.05:
+            need.append(f"+{a['extraPhysCores']:.1f} core v\u1eadt l\u00fd (CPU)")
+        if a["extraRamGB"] > 0.5:
+            need.append(f"+{a['extraRamGB']:.0f} GB RAM")
+        need_text = "; ".join(need) if need else "Ch\u01b0a v\u01b0\u1ee3t ng\u01b0\u1ee1ng \u2014 theo d\u00f5i th\u00eam"
+        rows.append(f"""
+      <tr>
+        <td><b>{esc(a['cluster'])}</b></td>
+        <td>{fmt_pct(a['cpuPct'])}</td>
+        <td>{fmt_pct(a['ramPct'])}</td>
+        <td><span class="priority-pill priority-{a['priority']}">{prio_label[a['priority']]}</span></td>
+        <td>{esc(need_text)}</td>
+      </tr>""")
+    return "".join(rows)
+
+
+# ---------------------------------------------------------------------------
 # Executive report
 # ---------------------------------------------------------------------------
 def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]], policy: capacity.Policy,
@@ -533,6 +764,35 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
         c["model"]["cpuPct"] if _finite(c["model"]["cpuPct"]) else -1,
         c["model"]["ramPct"] if _finite(c["model"]["ramPct"]) else -1), reverse=True)[:8]
 
+    # Forward-looking capacity planning content: headroom in absolute units,
+    # assumption-based growth-to-threshold scenarios, and an N+1 host-loss
+    # resiliency check -- gives leadership concrete runway/investment framing
+    # instead of only point-in-time utilization numbers.
+    headroom = capacity.estimate_capacity_headroom(model, vms, policy)
+    growth = capacity.estimate_growth_scenarios(model)
+    ha_rows = capacity.evaluate_ha_headroom(hosts, vms, policy)
+
+    # Chart-variety additions: a grouped bar chart and a radar chart, both a
+    # different chart family from the gauges/donuts/progress-bars used
+    # elsewhere, comparing the same top-risk clusters across CPU/RAM/Storage.
+    multi_cluster_rows = top_risk_clusters[:6]
+    radar_palette = [COLORS["primary"], COLORS["warn"], COLORS["accent"], COLORS["ok"], COLORS["crit"], COLORS["bad"]]
+    radar_series = [{
+        "name": c["name"], "color": radar_palette[i % len(radar_palette)],
+        "values": [
+            c["model"]["cpuPct"] if _finite(c["model"]["cpuPct"]) else 0,
+            c["model"]["ramPct"] if _finite(c["model"]["ramPct"]) else 0,
+            c["model"]["storagePct"] if _finite(c["model"]["storagePct"]) else 0,
+        ],
+    } for i, c in enumerate(multi_cluster_rows)]
+    radar_chart = svg_radar_chart(["CPU", "RAM", "Storage"], radar_series, size=210)
+    radar_legend = "".join(
+        f'<div class="radar-legend-item"><span class="radar-swatch" style="background:{s["color"]}"></span>{esc(s["name"])}</div>'
+        for s in radar_series)
+    growth_rows_html = _growth_scenario_rows_html(growth)
+    headroom_html = _headroom_cards_html(headroom)
+    ha_html = _ha_table_html(ha_rows)
+
     cluster_rows_html = "".join(f"""
       <tr>
         <td><b>{esc(c['name'])}</b></td>
@@ -555,6 +815,15 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
     insights_html = "".join(f"""
       <div class="insight-box{' risk' if ins['risk'] else ''}"><b>{esc(ins['title'])}</b><br/>{esc(ins['body'])}</div>
     """ for ins in insights)
+
+    ha_eligible = [r for r in ha_rows if r.get("eligible")]
+    ha_fail = [r for r in ha_eligible if not r.get("survives")]
+    ha_summary_html = (
+        f'<div class="insight-box risk"><b>{len(ha_fail)}/{len(ha_eligible)} cluster c\u00f3 \u2265 2 host s\u1ebd v\u01b0\u1ee3t ng\u01b0\u1ee1ng overcommit n\u1ebfu m\u1ea5t 1 host</b><br/>'
+        f'Cluster r\u1ee7i ro: {esc(", ".join(r["cluster"] for r in ha_fail[:6]))}. C\u1ea7n b\u1ed5 sung d\u1ef1 ph\u00f2ng N+1 ho\u1eb7c chu\u1ea9n b\u1ecb k\u1ebf ho\u1ea1ch failover th\u1ee7 c\u00f4ng cho c\u00e1c cluster n\u00e0y.</div>'
+        if ha_fail else
+        '<div class="insight-box"><b>To\u00e0n b\u1ed9 cluster \u0111\u1ee7 \u0111i\u1ec1u ki\u1ec7n \u0111\u1ec1u \u0111\u00e1p \u1ee9ng d\u1ef1 ph\u00f2ng N+1</b><br/>H\u1ec7 th\u1ed1ng v\u1eabn gi\u1eef \u0111\u01b0\u1ee3c ng\u01b0\u1ee1ng overcommit c\u1ea5u h\u00ecnh n\u1ebfu m\u1ea5t 1 host b\u1ea5t k\u1ef3 trong m\u1ed7i cluster.</div>'
+    ) if ha_eligible else '<div class="insight-box"><b>Ch\u01b0a \u0111\u1ee7 d\u1eef li\u1ec7u \u0111\u1ec3 \u0111\u00e1nh gi\u00e1 d\u1ef1 ph\u00f2ng N+1</b><br/>Kh\u00f4ng c\u00f3 cluster n\u00e0o c\u00f3 t\u1eeb 2 host tr\u1edf l\u00ean trong ph\u1ea1m vi b\u00e1o c\u00e1o.</div>'
 
     scope_note = ""
     if run_meta:
@@ -606,6 +875,28 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
   <div class="section">
     <div class="section-title">Nhận định &amp; đề xuất đầu tư</div>
     {insights_html}
+  </div>
+
+  <div class="section">
+    <div class="section-title">Dự báo Capacity &amp; Kế hoạch tiếp theo</div>
+    <div class="section-sub">Dư địa còn lại tính theo số liệu snapshot hiện tại; các kịch bản tăng trưởng là giả định để tham khảo, không phải dự báo dựa trên chuỗi lịch sử (dữ liệu lịch sử hiện chưa đủ dài để khớp xu hướng).</div>
+    {headroom_html}
+    <div class="two-col" style="margin-top:10px;">
+      <div style="flex:1;">
+        <table>
+          <thead><tr><th>Chỉ số</th><th>Hiện tại</th><th>Tăng 5%/quý</th><th>Tăng 10%/quý</th><th>Tăng 20%/quý</th></tr></thead>
+          <tbody>{growth_rows_html}</tbody>
+        </table>
+        <div class="assumption-note">Số tháng ước tính tới khi chạm ngưỡng cấu hình (100% với CPU/RAM, 90% với Storage), giả định tăng trưởng đều theo quý — chỉ mang tính tham khảo cho kế hoạch ngân sách, không phải cam kết.</div>
+      </div>
+      <div style="flex:0 0 250px;text-align:center;">
+        <div class="chart-card-title">So sánh Top cluster (CPU/RAM/Storage)</div>
+        {radar_chart}
+        <div style="text-align:left;margin-top:4px;">{radar_legend}</div>
+      </div>
+    </div>
+    <div class="section-title" style="font-size:10.5px;border-left:none;padding-left:0;margin-top:12px;">Khả năng chịu lỗi mất 1 host (N+1)</div>
+    {ha_summary_html}
   </div>
 
   <div class="section">
@@ -691,6 +982,31 @@ def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
     policy_note = (f"Ngưỡng overcommit CPU {policy.cpu_overcommit_max:.1f}x · RAM {policy.ram_overcommit_max:.1f}x · "
                    f"Hệ số HT {policy.ht_factor:.1f}x · Ngưỡng idle {policy.idle_days} ngày")
 
+    headroom = capacity.estimate_capacity_headroom(model, vms, policy)
+    growth = capacity.estimate_growth_scenarios(model)
+    ha_rows = capacity.evaluate_ha_headroom(hosts, vms, policy)
+    expansion_actions = _technical_headroom_actions(cluster_rows, policy)
+    headroom_html = _headroom_cards_html(headroom)
+    growth_rows_html = _growth_scenario_rows_html(growth)
+    ha_full_html = _ha_table_html(ha_rows)
+    actions_html = _technical_actions_html(expansion_actions)
+
+    top_cluster_names = [c["name"] for c in sorted(
+        cluster_rows, key=lambda c: max(
+            c["model"]["cpuPct"] if _finite(c["model"]["cpuPct"]) else -1,
+            c["model"]["ramPct"] if _finite(c["model"]["ramPct"]) else -1), reverse=True)[:8]]
+    top_clusters_for_chart = [c for c in cluster_rows if c["name"] in top_cluster_names]
+    cluster_comparison_chart = svg_bar_chart(
+        [c["name"] for c in top_clusters_for_chart],
+        [
+            {"name": "CPU", "color": COLORS["primary"],
+             "values": [c["model"]["cpuPct"] if _finite(c["model"]["cpuPct"]) else 0 for c in top_clusters_for_chart]},
+            {"name": "RAM", "color": COLORS["accent"],
+             "values": [c["model"]["ramPct"] if _finite(c["model"]["ramPct"]) else 0 for c in top_clusters_for_chart]},
+            {"name": "Storage", "color": COLORS["warn"],
+             "values": [c["model"]["storagePct"] if _finite(c["model"]["storagePct"]) else 0 for c in top_clusters_for_chart]},
+        ], width=680, height=230, max_value=140)
+
     cluster_html = "".join(f"""
       <tr>
         <td><b>{esc(c['name'])}</b></td><td>{fmt_int(c['hosts'])}</td><td>{fmt_int(c['vms'])}</td>
@@ -767,6 +1083,41 @@ def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
     <table>
       <thead><tr><th>Cluster</th><th>Hosts</th><th>VMs</th><th>CPU x</th><th>% CPU</th><th>RAM x</th><th>% RAM</th><th>% Storage</th><th>Trạng thái</th></tr></thead>
       <tbody>{cluster_html}</tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-title">So sánh CPU/RAM/Storage theo Cluster</div>
+    <div class="section-sub">Biểu đồ cột nhóm — mỗi cluster có 3 cột (CPU/RAM/Storage) tính theo % ngưỡng cấu hình, để đối chiếu nhanh giữa các chỉ số thay vì chỉ xem từng bảng riêng lẻ.</div>
+    <div class="chart-card">{cluster_comparison_chart}</div>
+    <div class="legend">
+      <span><span class="dot" style="background:{COLORS['primary']}"></span>% CPU</span>
+      <span><span class="dot" style="background:{COLORS['accent']}"></span>% RAM</span>
+      <span><span class="dot" style="background:{COLORS['warn']}"></span>% Storage</span>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Phân tích Headroom &amp; Khuyến nghị mở rộng</div>
+    <div class="section-sub">Dư địa tuyệt đối theo đơn vị thực tế (vCPU/GB), số VM cỡ trung bình còn nạp được, và số core/RAM vật lý cần bổ sung cho các cluster đã vượt ngưỡng cấu hình.</div>
+    {headroom_html}
+    <table style="margin-top:10px;">
+      <thead><tr><th>Chỉ số</th><th>Hiện tại</th><th>Tăng 5%/quý</th><th>Tăng 10%/quý</th><th>Tăng 20%/quý</th></tr></thead>
+      <tbody>{growth_rows_html}</tbody>
+    </table>
+    <div class="assumption-note">Kịch bản tăng trưởng là GIẢ ĐỊNH (không khớp xu hướng lịch sử — dữ liệu snapshot hiện có chưa đủ chuỗi thời gian để khớp mô hình) dùng cho lập kế hoạch sơ bộ; số tháng tính tới khi chạm ngưỡng cấu hình (100% CPU/RAM, 90% Storage).</div>
+    <table style="margin-top:10px;">
+      <thead><tr><th>Cluster</th><th>% CPU</th><th>% RAM</th><th>Ưu tiên</th><th>Đề xuất bổ sung</th></tr></thead>
+      <tbody>{actions_html}</tbody>
+    </table>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Kiểm tra dự phòng N+1 (mất 1 host)</div>
+    <div class="section-sub">Giả lập mất host lớn nhất trong từng cluster (theo core × hệ số HT + RAM), giữ nguyên toàn bộ VM đang bật, tính lại % overcommit trên các host còn lại.</div>
+    <table>
+      <thead><tr><th>Cluster</th><th>Host lớn nhất (giả lập mất)</th><th>% CPU / RAM sau khi mất host</th><th>Đáp ứng ngưỡng</th></tr></thead>
+      <tbody>{ha_full_html}</tbody>
     </table>
   </div>
 

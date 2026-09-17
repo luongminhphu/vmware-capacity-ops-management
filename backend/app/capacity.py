@@ -232,3 +232,115 @@ def build_compliance_findings(hosts, vms, policy: Policy) -> List[Dict[str, Any]
             })
 
     return findings
+
+
+# ---------------------------------------------------------------------------
+# Forward-looking capacity planning helpers (report_pdf.py "Executive" /
+# "Technical" additions). All numbers here are DERIVED from the current
+# snapshot only -- this deployment currently retains a single snapshot per
+# vCenter (no repeated time-series captures yet), so there is no real
+# historical trend to fit. Growth-scenario projections are therefore
+# explicitly assumption-based (a stated quarterly growth %) rather than
+# regression on history, and every caller must render them as such.
+# ---------------------------------------------------------------------------
+def estimate_avg_vm_footprint(vms: List[Dict[str, Any]]) -> Dict[str, float]:
+    powered_on = [v for v in vms if v.get("isPoweredOn")]
+    n_on = len(powered_on) or 1
+    n_all = len(vms) or 1
+    return {
+        "avgVcpu": sum(v.get("vcpu", 0) or 0 for v in powered_on) / n_on,
+        "avgRamGB": sum(v.get("ramGB", 0) or 0 for v in powered_on) / n_on,
+        "avgStorageGB": sum(v.get("diskProvGB", 0) or 0 for v in vms) / n_all,
+    }
+
+
+def estimate_capacity_headroom(model: Dict[str, Any], vms: List[Dict[str, Any]], policy: Policy) -> Dict[str, Any]:
+    """Absolute-unit headroom remaining before CPU/RAM/Storage would breach
+    its policy threshold, plus how many more 'average-sized' VMs (based on
+    the current fleet's own average footprint) each resource could still
+    absorb. Storage ceiling uses the same 90% used/allocated threshold as
+    `get_status_for_pct`'s storage warning band elsewhere in this file."""
+    avg = estimate_avg_vm_footprint(vms)
+    max_vcpu = model["totalLogicalCores"] * policy.cpu_overcommit_max
+    free_vcpu = max(0.0, max_vcpu - model["usedVcpu"])
+    max_ram = model["totalRamGB"] * policy.ram_overcommit_max
+    free_ram = max(0.0, max_ram - model["usedRamGB"])
+    storage_ceiling = model["provStorageGB"] * 0.90
+    free_storage = max(0.0, storage_ceiling - model["usedStorageGB"])
+
+    def vms_fit(free_val, avg_val):
+        if not _finite(free_val) or not _finite(avg_val) or avg_val <= 0:
+            return None
+        return int(math.floor(free_val / avg_val))
+
+    return {
+        "avg": avg,
+        "cpu": {"freeVcpu": free_vcpu, "maxVcpu": max_vcpu, "vmsFit": vms_fit(free_vcpu, avg["avgVcpu"])},
+        "ram": {"freeRamGB": free_ram, "maxRamGB": max_ram, "vmsFit": vms_fit(free_ram, avg["avgRamGB"])},
+        "storage": {"freeStorageGB": free_storage, "ceilingGB": storage_ceiling, "vmsFit": vms_fit(free_storage, avg["avgStorageGB"])},
+    }
+
+
+def _months_to_target(current: Optional[float], target: float, growth_pct_per_quarter: float) -> Optional[float]:
+    """Months until `current` compounds up to `target` at `growth_pct_per_quarter`
+    (quarterly compounding). None when inputs are non-finite/non-positive or
+    growth is zero/negative (never reaches target)."""
+    if not _finite(current) or current is None or current <= 0 or target <= 0:
+        return None
+    if current >= target:
+        return 0.0
+    g = growth_pct_per_quarter / 100.0
+    if g <= 0:
+        return None
+    quarters = math.log(target / current) / math.log(1 + g)
+    return max(0.0, quarters * 3)
+
+
+def estimate_growth_scenarios(model: Dict[str, Any], scenarios=(5.0, 10.0, 20.0)) -> Dict[str, Any]:
+    """For CPU/RAM (already '% of overcommit threshold', ceiling=100) and
+    Storage ('% used of allocated', ceiling=90 -- matching the storage
+    warning band used across this app), estimate months-to-threshold under
+    each assumed quarterly growth-rate scenario. ASSUMPTION-BASED planning
+    aid, not a fit to historical data -- label it as such at render time."""
+    metrics = [("cpu", model.get("cpuPct"), 100.0), ("ram", model.get("ramPct"), 100.0),
+               ("storage", model.get("storagePct"), 90.0)]
+    out = {}
+    for key, pct, target in metrics:
+        out[key] = {
+            "currentPct": pct, "target": target,
+            "scenarios": [{"growthPct": g, "months": _months_to_target(pct, target, g)} for g in scenarios],
+        }
+    return out
+
+
+def evaluate_ha_headroom(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]], policy: Policy) -> List[Dict[str, Any]]:
+    """Per-cluster 'lose the largest host' resiliency check (N+1-style DR
+    read): recompute CPU/RAM overcommit against the cluster's REMAINING hosts
+    assuming every powered-on VM must still be accommodated (worst case, no
+    VM is evicted/decommissioned). Clusters with fewer than 2 hosts have no
+    redundancy to test and are flagged as such rather than scored."""
+    out = []
+    ht_factor = max(1.0, policy.ht_factor or 2.0)
+    for name in get_cluster_list(hosts, vms):
+        c_hosts = [h for h in hosts if h.get("cluster") == name]
+        c_vms = [v for v in vms if v.get("cluster") == name]
+        if len(c_hosts) < 2:
+            out.append({"cluster": name, "eligible": False, "hosts": len(c_hosts)})
+            continue
+        largest = max(c_hosts, key=lambda h: (h.get("cores", 0) or 0) * ht_factor + (h.get("ramGB", 0) or 0) * 1e-6)
+        remaining = [h for h in c_hosts if h is not largest]
+        remaining_logical = sum((h.get("cores", 0) or 0) for h in remaining) * ht_factor
+        remaining_ram = sum((h.get("ramGB", 0) or 0) for h in remaining)
+        model_now = build_capacity_model(c_hosts, c_vms, policy)
+        used_vcpu, used_ram = model_now["usedVcpu"], model_now["usedRamGB"]
+        cpu_oc_after = (used_vcpu / remaining_logical) if remaining_logical > 0 else float("inf")
+        ram_oc_after = (used_ram / remaining_ram) if remaining_ram > 0 else float("inf")
+        cpu_pct_after = (cpu_oc_after / policy.cpu_overcommit_max * 100) if policy.cpu_overcommit_max > 0 else float("nan")
+        ram_pct_after = (ram_oc_after / policy.ram_overcommit_max * 100) if policy.ram_overcommit_max > 0 else float("nan")
+        out.append({
+            "cluster": name, "eligible": True, "hosts": len(c_hosts),
+            "largestHost": largest.get("host"),
+            "cpuPctAfter": cpu_pct_after, "ramPctAfter": ram_pct_after,
+            "survives": _finite(cpu_pct_after) and _finite(ram_pct_after) and cpu_pct_after <= 100 and ram_pct_after <= 100,
+        })
+    return out
