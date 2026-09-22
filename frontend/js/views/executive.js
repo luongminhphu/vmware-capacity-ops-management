@@ -252,5 +252,6 @@ async function renderExecutiveBrief() {
 async function renderExecutiveView() {
   renderExecutiveKpis();
   renderExecutiveTopRisk();
-  await Promise.all([renderExecutiveTrendChart(), renderExecutiveByVcenterChart(), renderExecutiveBrief()]);
+  await Promise.all([renderExecutiveTrendChart(), renderExecutiveByVcenterChart(), renderExecutiveBrief(),
+    renderHistoryPanel('execHistoryMount', { showVmChanges: false })]);
 }

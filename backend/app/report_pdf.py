@@ -13,7 +13,7 @@ import html
 import itertools
 import math
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from weasyprint import HTML
 
@@ -554,6 +554,281 @@ def svg_radar_chart(categories: List[str], series: List[Dict[str, Any]], size: i
 # ---------------------------------------------------------------------------
 # Shared page chrome
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Snapshot-history section (CPU/RAM change over the last 3/6/12 months) and
+# the VM added/removed appendix. Both consume the dicts produced by
+# app.history so the PDF always agrees with the web panel.
+# ---------------------------------------------------------------------------
+HISTORY_SERIES_COLORS = ["#2563eb", "#0891b2", "#7c3aed", "#db2777", "#ea580c", "#16a34a", "#ca8a04", "#64748b"]
+
+
+def _fmt_short_date(iso: Optional[str]) -> str:
+    if not iso:
+        return "—"
+    try:
+        return dt.date.fromisoformat(iso[:10]).strftime("%d/%m/%Y")
+    except ValueError:
+        return iso
+
+
+def _fmt_delta(v: Optional[float], decimals: int = 1, unit: str = "") -> str:
+    if not _finite(v):
+        return "—"
+    sign = "+" if v > 0 else ("−" if v < 0 else "±")
+    return f"{sign}{abs(v):.{decimals}f}{unit}"
+
+
+def _delta_color(v: Optional[float]) -> str:
+    if not _finite(v) or abs(v) < 0.05:
+        return COLORS["muted"]
+    return COLORS["warn"] if v > 0 else COLORS["ok"]
+
+
+def svg_line_chart(dates: List[str], series: List[Dict[str, Any]], width: int = 320, height: int = 170,
+                   threshold: Optional[float] = 100.0, threshold_label: str = "Ngưỡng", unit: str = "%") -> str:
+    """series: [{name, color, values (aligned to dates, None = gap), dashed}].
+
+    Same visual language as svg_bar_chart: soft plot background, white grid
+    lines, 'nice' auto scale that always shows the threshold, dashed red
+    threshold line, sparse dd/mm date labels and a value tag on the latest
+    point of every solid line so the reader sees "now" without a legend."""
+    if not dates or len(dates) < 2:
+        return '<div style="color:#98a2b3;font-size:9px;padding:8px 0;">Chưa đủ dữ liệu lịch sử.</div>'
+    pad_l, pad_r, pad_t, pad_b = 32, 8, 14, 20
+    plot_w = width - pad_l - pad_r
+    plot_h = height - pad_t - pad_b
+    all_vals = [v for srs in series for v in srs["values"] if _finite(v)]
+    data_max = max(all_vals) if all_vals else 0.0
+    target = max(data_max * 1.15, (threshold or 0) * 1.1, 10.0)
+    mx = _nice_ceiling(target) or 1.0
+    n = len(dates)
+
+    def x_of(i: int) -> float:
+        return pad_l + plot_w * (i / (n - 1))
+
+    def y_of(v: float) -> float:
+        return pad_t + plot_h * (1 - max(0.0, min(1.0, v / mx)))
+
+    parts = [f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" font-family="Roboto, Noto Sans, sans-serif">']
+    parts.append(f'<rect x="{pad_l}" y="{pad_t}" width="{plot_w:.1f}" height="{plot_h:.1f}" rx="4" fill="{COLORS["surface2"]}"/>')
+    steps = 4
+    for i in range(steps + 1):
+        frac = i / steps
+        y = pad_t + plot_h * (1 - frac)
+        parts.append(f'<line x1="{pad_l}" y1="{y:.1f}" x2="{width-pad_r}" y2="{y:.1f}" stroke="#ffffff" stroke-width="1.2"/>')
+        parts.append(f'<text x="{pad_l-4}" y="{y+3:.1f}" text-anchor="end" font-size="7.4" fill="{COLORS["muted"]}">{mx*frac:.0f}{esc(unit)}</text>')
+    if threshold is not None and 0 < threshold <= mx:
+        ty = y_of(threshold)
+        parts.append(f'<line x1="{pad_l}" y1="{ty:.1f}" x2="{width-pad_r}" y2="{ty:.1f}" stroke="{COLORS["crit"]}" stroke-width="1.1" stroke-dasharray="4 3"/>')
+        parts.append(f'<text x="{width-pad_r-2}" y="{ty-3:.1f}" text-anchor="end" font-size="6.8" font-weight="700" fill="{COLORS["crit"]}">{esc(threshold_label)} {threshold:.0f}{esc(unit)}</text>')
+    n_labels = min(6, n)
+    label_idx = sorted({int(round(i * (n - 1) / (n_labels - 1))) for i in range(n_labels)}) if n_labels > 1 else [0]
+    for i in label_idx:
+        x = x_of(i)
+        anchor = "start" if i == 0 else ("end" if i == n - 1 else "middle")
+        parts.append(f'<line x1="{x:.1f}" y1="{pad_t+plot_h:.1f}" x2="{x:.1f}" y2="{pad_t+plot_h+3:.1f}" stroke="{COLORS["border"]}" stroke-width="1"/>')
+        parts.append(f'<text x="{x:.1f}" y="{pad_t+plot_h+12:.1f}" text-anchor="{anchor}" font-size="7.2" fill="{COLORS["muted"]}">{esc(_fmt_short_date(dates[i])[:5])}</text>')
+    end_labels: List[Tuple[float, float, str, str]] = []
+    for srs in series:
+        pts = [(x_of(i), y_of(v)) for i, v in enumerate(srs["values"]) if _finite(v)]
+        if len(pts) < 2:
+            continue
+        d = " ".join(f'{"M" if k == 0 else "L"} {x:.1f} {y:.1f}' for k, (x, y) in enumerate(pts))
+        dash = ' stroke-dasharray="5 3"' if srs.get("dashed") else ""
+        parts.append(f'<path d="{d}" fill="none" stroke="{srs["color"]}" stroke-width="{1.4 if srs.get("dashed") else 1.9}" stroke-linejoin="round" stroke-linecap="round"{dash}/>')
+        if not srs.get("dashed"):
+            xe, ye = pts[-1]
+            last_val = [v for v in srs["values"] if _finite(v)][-1]
+            parts.append(f'<circle cx="{xe:.1f}" cy="{ye:.1f}" r="2.4" fill="#ffffff" stroke="{srs["color"]}" stroke-width="1.6"/>')
+            end_labels.append((ye, xe, f"{last_val:.0f}{unit}", srs["color"]))
+    # End-value tags: place from the top down, skipping any that would
+    # collide with an already-placed tag (lines that end close together are
+    # still readable from the table below).
+    last_y = -100.0
+    for ye, xe, text, color in sorted(end_labels):
+        if ye - last_y < 8.5:
+            continue
+        parts.append(f'<text x="{xe-4:.1f}" y="{ye-4:.1f}" text-anchor="end" font-size="6.8" font-weight="700" fill="{color}">{esc(text)}</text>')
+        last_y = ye
+    parts.append("</svg>")
+    return "".join(parts)
+
+
+def _history_legend_html(history: Dict[str, Any]) -> str:
+    items = []
+    groups = history.get("groups", [])
+    for i, g in enumerate(groups):
+        color = HISTORY_SERIES_COLORS[i % len(HISTORY_SERIES_COLORS)]
+        items.append(f'<span><span class="dot" style="background:{color};"></span>{esc(g["label"])}</span>')
+    if len(groups) != 1:
+        items.append(f'<span><span class="dot" style="background:{COLORS["ink"]};height:2px;width:12px;border-radius:0;"></span>Toàn bộ (đường đứt)</span>')
+    return f'<div class="legend" style="margin-top:4px;">{"".join(items)}</div>'
+
+
+def _history_series(history: Dict[str, Any], field: str, max_points: int = 60) -> Tuple[List[str], List[Dict[str, Any]]]:
+    from . import history as history_mod
+    overall = history_mod.downsample(history["overall"]["series"], max_points)
+    dates = [p["date"] for p in overall]
+    groups = history.get("groups", [])
+    series = []
+    for i, g in enumerate(groups):
+        lookup = {p["date"]: p.get(field) for p in g["series"]}
+        series.append({"name": g["label"], "color": HISTORY_SERIES_COLORS[i % len(HISTORY_SERIES_COLORS)],
+                       "values": [lookup.get(d) for d in dates]})
+    if len(groups) != 1:
+        series.append({"name": "Toàn bộ", "color": COLORS["ink"], "dashed": True, "values": [p.get(field) for p in overall]})
+    return dates, series
+
+
+def _history_insights(history: Dict[str, Any]) -> List[str]:
+    """Two or three plain-language sentences a manager can act on."""
+    s = history["overall"]["summary"]
+    d = s.get("delta", {})
+    months = history["months"]
+    out: List[str] = []
+    cpu_d, ram_d = d.get("cpuPct"), d.get("ramPct")
+    vm_d, host_d = d.get("vmCount"), d.get("hostCount")
+    out.append(
+        f"Trong {months} tháng, mức dùng so với ngưỡng overcommit thay đổi <b>{_fmt_delta(cpu_d, 1, ' điểm')}</b> ở CPU "
+        f"({fmt_num(s['first'].get('cpuPct'))}% → {fmt_num(s['last'].get('cpuPct'))}%) và <b>{_fmt_delta(ram_d, 1, ' điểm')}</b> ở RAM "
+        f"({fmt_num(s['first'].get('ramPct'))}% → {fmt_num(s['last'].get('ramPct'))}%); số VM {_fmt_delta(vm_d, 0)} "
+        f"({fmt_int(s['first'].get('vmCount'))} → {fmt_int(s['last'].get('vmCount'))}), số host {_fmt_delta(host_d, 0)}.")
+    if (ram_d or 0) >= (cpu_d or 0):
+        binding_label, binding_delta, binding_last = "RAM", ram_d, s["last"].get("ramPct")
+    else:
+        binding_label, binding_delta, binding_last = "CPU", cpu_d, s["last"].get("cpuPct")
+    if _finite(binding_delta) and binding_delta > 0.3 and _finite(binding_last) and binding_last < 100:
+        pace = binding_delta / months
+        eta = (100 - binding_last) / pace
+        eta_txt = f"khoảng {eta:.0f} tháng" if eta < 60 else "trên 5 năm"
+        out.append(f"Nếu giữ đúng tốc độ {months} tháng vừa qua ({pace:.1f} điểm/tháng), <b>{binding_label}</b> sẽ chạm 100% ngưỡng sau <b>{eta_txt}</b> — mốc nên đối chiếu với kế hoạch ngân sách và thời gian mua sắm thiết bị.")
+    elif _finite(binding_delta) and binding_delta <= 0.3:
+        out.append("Mức sử dụng gần như đi ngang hoặc giảm trong kỳ — xu hướng lịch sử chưa tạo áp lực đầu tư thêm năng lực; ưu tiên tối ưu và thu hồi tài nguyên nhàn rỗi.")
+    groups = [g["summary"] for g in history.get("groups", []) if g["summary"].get("points")]
+    if len(groups) > 1:
+        fastest = max(groups, key=lambda g: max(g["delta"].get("cpuPct") or 0, g["delta"].get("ramPct") or 0))
+        fd = fastest["delta"]
+        top_metric = "RAM" if (fd.get("ramPct") or 0) >= (fd.get("cpuPct") or 0) else "CPU"
+        top_val = fd.get("ramPct") if top_metric == "RAM" else fd.get("cpuPct")
+        if _finite(top_val) and top_val > 0.3:
+            out.append(f"Tăng nhanh nhất là <b>{esc(fastest['label'])}</b> ({top_metric} {_fmt_delta(top_val, 1, ' điểm')}, VM {_fmt_delta(fd.get('vmCount'), 0)}) — nơi nên xem xét mở rộng hoặc cân bằng tải trước.")
+    return out
+
+
+def _history_table_html(history: Dict[str, Any], group_label: str) -> str:
+    rows = [g["summary"] for g in history.get("groups", []) if g["summary"].get("points")]
+    total = None
+    if len(history.get("groups", [])) != 1:
+        total = dict(history["overall"]["summary"])
+        total["label"] = "Toàn bộ"
+
+    def _row(sm: Dict[str, Any], bold: bool = False) -> str:
+        d = sm.get("delta", {})
+        style = f' style="background:{COLORS["surface2"]};font-weight:700;"' if bold else ""
+        return (f'<tr{style}><td><b>{esc(sm["label"])}</b></td>'
+                f'<td>{fmt_num(sm["first"].get("cpuPct"))}% → <b>{fmt_num(sm["last"].get("cpuPct"))}%</b></td>'
+                f'<td style="color:{_delta_color(d.get("cpuPct"))};font-weight:700;">{_fmt_delta(d.get("cpuPct"), 1, " đ")}</td>'
+                f'<td>{fmt_num(sm["first"].get("ramPct"))}% → <b>{fmt_num(sm["last"].get("ramPct"))}%</b></td>'
+                f'<td style="color:{_delta_color(d.get("ramPct"))};font-weight:700;">{_fmt_delta(d.get("ramPct"), 1, " đ")}</td>'
+                f'<td>{fmt_num(sm.get("peakCpuPct"), 0)}% / {fmt_num(sm.get("peakRamPct"), 0)}%</td>'
+                f'<td>{fmt_int(sm["first"].get("hostCount"))} → {fmt_int(sm["last"].get("hostCount"))} ({_fmt_delta(d.get("hostCount"), 0)})</td>'
+                f'<td>{fmt_int(sm["first"].get("vmCount"))} → {fmt_int(sm["last"].get("vmCount"))} ({_fmt_delta(d.get("vmCount"), 0)})</td></tr>')
+
+    body = "".join(_row(r) for r in rows) + (_row(total, True) if total else "")
+    return (f'<table style="margin-top:8px;"><thead><tr><th>{esc(group_label)}</th><th>CPU đầu kỳ → nay</th><th>Δ CPU</th>'
+            f'<th>RAM đầu kỳ → nay</th><th>Δ RAM</th><th>Đỉnh CPU / RAM</th><th>Hosts</th><th>VMs</th></tr></thead><tbody>{body}</tbody></table>')
+
+
+def _history_section_html(history: Optional[Dict[str, Any]], vm_changes: Optional[Dict[str, Any]] = None,
+                          audience: str = "executive") -> str:
+    """Section 'Biến động tài nguyên N tháng gần nhất'. Returns an explanatory
+    empty-state when fewer than two snapshot days exist in the window."""
+    months = (history or {}).get("months", 12)
+    title = f"Biến động tài nguyên {months} tháng gần nhất"
+    if not history or not history.get("available"):
+        count = (history or {}).get("pointCount", 0)
+        msg = ("Hệ thống mới có 1 ngày snapshot trong khoảng thời gian này — biểu đồ biến động sẽ xuất hiện từ lần đồng bộ tiếp theo."
+               if count == 1 else "Chưa có snapshot nào trong khoảng thời gian này. Lịch sử được tích lũy tự động sau mỗi lần đồng bộ vCenter.")
+        return ('<div class="section"><div class="section-title">' + esc(title) + '</div>'
+                '<div class="assumption-note">' + esc(msg) + '</div></div>')
+    group_label = "Cluster" if history.get("groupBy") == "cluster" else "vCenter"
+    s = history["overall"]["summary"]
+    cpu_dates, cpu_series = _history_series(history, "cpuPct")
+    ram_dates, ram_series = _history_series(history, "ramPct")
+    insight_html = "".join(f"<div style=\"margin-bottom:3px;\">{t}</div>" for t in _history_insights(history))
+    vm_line = ""
+    if vm_changes and vm_changes.get("available"):
+        a, r = vm_changes["addedTotals"], vm_changes["removedTotals"]
+        tail = " — danh sách chi tiết ở Phụ lục A." if audience == "technical" else " — danh sách chi tiết nằm trong phụ lục Báo cáo Kỹ thuật."
+        vm_line = (f'<div class="small-note" style="margin-top:6px;">Biến động VM trong kỳ: <b style="color:{COLORS["ok"]};">+{a["count"]} thêm mới</b> '
+                   f'({fmt_int(a["vcpu"])} vCPU · {fmt_int(a["ramGB"])} GB RAM) · <b style="color:{COLORS["warn"]};">−{r["count"]} loại bỏ</b> '
+                   f'({fmt_int(r["vcpu"])} vCPU · {fmt_int(r["ramGB"])} GB RAM){tail}</div>')
+    sub = (f"So sánh {_fmt_short_date(s.get('firstDate'))} → {_fmt_short_date(s.get('lastDate'))} qua {fmt_int(history.get('pointCount'))} ngày có snapshot; "
+           f"% tính theo ngưỡng overcommit đang áp dụng, nên 100% = chạm chính sách, không phải hết tài nguyên vật lý.")
+    cpu_chart = svg_line_chart(cpu_dates, cpu_series, width=318, height=168)
+    ram_chart = svg_line_chart(ram_dates, ram_series, width=318, height=168)
+    return (
+        '<div class="section">'
+        f'<div class="section-title">{esc(title)}</div>'
+        f'<div class="section-sub">{esc(sub)}</div>'
+        '<div class="chart-row">'
+        f'<div class="chart-card soft"><div class="chart-card-title">CPU — % ngưỡng overcommit theo {esc(group_label)}</div>{cpu_chart}</div>'
+        f'<div class="chart-card soft"><div class="chart-card-title">RAM — % ngưỡng overcommit theo {esc(group_label)}</div>{ram_chart}</div>'
+        '</div>'
+        f'{_history_legend_html(history)}'
+        f'{_history_table_html(history, group_label)}'
+        f'<div class="insight-box" style="margin-top:8px;">{insight_html}{vm_line}</div>'
+        '</div>')
+
+
+def _vm_changes_appendix_html(vm_changes: Optional[Dict[str, Any]]) -> str:
+    months = (vm_changes or {}).get("months", 12)
+    title = f"Phụ lục A — VM thêm mới / loại bỏ trong {months} tháng gần nhất"
+    if not vm_changes or not vm_changes.get("available"):
+        return ('<div class="section"><div class="section-title">' + esc(title) + '</div>'
+                '<div class="assumption-note">Chưa đủ snapshot trong khoảng thời gian này để so sánh danh sách VM (cần ít nhất 2 lần đồng bộ thành công).</div></div>')
+
+    def _date(v: Optional[str]) -> str:
+        return parse_iso_to_vn_str(v, "%d/%m/%Y") if v else "—"
+
+    def _rows(items: List[Dict[str, Any]], date_field: str) -> str:
+        if not items:
+            return '<tr><td colspan="8" style="color:#98a2b3;">Không có VM nào.</td></tr>'
+        out = []
+        for r in items:
+            if r.get("isPoweredOn"):
+                pill = f'<span class="pill" style="color:{COLORS["ok"]};border-color:{COLORS["ok"]};background:{COLORS["ok_bg"]};">Powered On</span>'
+            else:
+                pill = f'<span class="pill" style="color:{COLORS["muted"]};border-color:{COLORS["border"]};background:{COLORS["surface2"]};">{esc(r.get("powerState") or "Powered Off")}</span>'
+            out.append(f'<tr><td><b>{esc(r.get("vm"))}</b></td><td>{esc(r.get("vcenterLabel"))}</td><td>{esc(r.get("cluster") or "—")}</td>'
+                       f'<td>{esc(r.get("host") or "—")}</td><td>{pill}</td><td>{fmt_int(r.get("vcpu"))}</td><td>{fmt_num(r.get("ramGB"), 0)}</td>'
+                       f'<td>{esc(_date(r.get(date_field)))}</td></tr>')
+        return "".join(out)
+
+    a, rm = vm_changes["addedTotals"], vm_changes["removedTotals"]
+    scope_rows = "".join(
+        f'<tr><td><b>{esc(sc["vcenterLabel"])}</b></td><td>{esc(_date(sc.get("baselineAt")))}</td><td>{esc(_date(sc.get("currentAt")))}</td>'
+        f'<td>{fmt_int(sc.get("baselineVmCount"))}</td><td>{fmt_int(sc.get("currentVmCount"))}</td>'
+        f'<td style="color:{COLORS["ok"]};font-weight:700;">+{fmt_int(sc.get("added"))}</td>'
+        f'<td style="color:{COLORS["warn"]};font-weight:700;">−{fmt_int(sc.get("removed"))}</td></tr>'
+        for sc in vm_changes.get("scopes", []) if sc.get("available"))
+    header = "<tr><th>VM</th><th>vCenter</th><th>Cluster</th><th>Host</th><th>Trạng thái</th><th>vCPU</th><th>RAM (GB)</th><th style=\"white-space:nowrap;\">{}</th></tr>"
+    sub_title_style = 'style="font-size:10.5px;border-left:none;padding-left:0;margin-top:12px;"'
+    return (
+        '<div class="section breakable" style="break-before:page;">'
+        f'<div class="section-title">{esc(title)}</div>'
+        '<div class="section-sub">Đối chiếu snapshot đầu kỳ với snapshot mới nhất của từng vCenter theo tên VM. "Thêm mới" = có ở snapshot mới nhất nhưng chưa có ở đầu kỳ; '
+        '"Loại bỏ" = có ở đầu kỳ nhưng không còn ở snapshot mới nhất (đã xóa, đổi tên hoặc chuyển sang vCenter khác).</div>'
+        '<table><thead><tr><th>vCenter</th><th>Snapshot đầu kỳ</th><th>Snapshot mới nhất</th><th>VM đầu kỳ</th><th>VM hiện tại</th><th>Thêm mới</th><th>Loại bỏ</th></tr></thead>'
+        f'<tbody>{scope_rows}</tbody></table>'
+        f'<div class="section-title" {sub_title_style}>A.1 VM thêm mới ({fmt_int(a["count"])} VM · {fmt_int(a["vcpu"])} vCPU · {fmt_int(a["ramGB"])} GB RAM · {fmt_int(a["poweredOn"])} đang bật)</div>'
+        f'<table class="appendix-table"><thead>{header.format("Xuất hiện từ")}</thead><tbody>{_rows(vm_changes.get("added", []), "firstSeen")}</tbody></table>'
+        f'<div class="section-title" {sub_title_style}>A.2 VM đã loại bỏ ({fmt_int(rm["count"])} VM · {fmt_int(rm["vcpu"])} vCPU · {fmt_int(rm["ramGB"])} GB RAM)</div>'
+        f'<table class="appendix-table"><thead>{header.format("Thấy lần cuối")}</thead><tbody>{_rows(vm_changes.get("removed", []), "lastSeen")}</tbody></table>'
+        '</div>')
+
+
 def _base_css(report_title: str, generated_at: str) -> str:
     return f"""
 @page {{
@@ -650,6 +925,8 @@ tbody tr:nth-child(even) {{ background:#fbfcfe; }}
 .gauge-card.na {{ background:{COLORS['surface2']}; }}
 .gauge-caption {{ font-size:8.3px; color:{COLORS['muted']}; margin-top:1px; }}
 .chart-card.soft {{ background:{COLORS['surface']}; }}
+.appendix-table td:nth-child(-n+3), .appendix-table td:nth-child(n+5) {{ white-space:nowrap; }}
+.appendix-table td:nth-child(4) {{ word-break:break-all; }}
 """
 
 
@@ -1128,7 +1405,12 @@ def _technical_actions_html(actions: List[Dict[str, Any]]) -> str:
 # ---------------------------------------------------------------------------
 def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]], policy: capacity.Policy,
                            scope_label: str, run_meta: Optional[List[Dict[str, Any]]] = None,
-                           include_types: Optional[List[str]] = None, logo_data_url: Optional[str] = None) -> str:
+                           include_types: Optional[List[str]] = None, logo_data_url: Optional[str] = None,
+                           history: Optional[Dict[str, Any]] = None, vm_changes: Optional[Dict[str, Any]] = None) -> str:
+    history_html = _history_section_html(history, vm_changes, audience="executive")
+    history_ok = bool(history and history.get("available"))
+    forecast_hist_note = (" — tốc độ tăng thực tế đo được trong kỳ xem ở mục Biến động tài nguyên bên dưới" if history_ok
+                          else ", không phải dự báo dựa trên chuỗi lịch sử (dữ liệu lịch sử hiện chưa đủ dài để khớp xu hướng)")
     model = capacity.build_capacity_model(hosts, vms, policy)
     cluster_rows = capacity.build_cluster_rows(hosts, vms, policy)
     all_findings = capacity.build_compliance_findings(hosts, vms, policy)
@@ -1333,7 +1615,7 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
 
   <div class="section">
     <div class="section-title">Dự báo Capacity &amp; Kế hoạch tiếp theo</div>
-    <div class="section-sub">Dư địa còn lại tính theo số liệu snapshot hiện tại; các kịch bản tăng trưởng là giả định để tham khảo, không phải dự báo dựa trên chuỗi lịch sử (dữ liệu lịch sử hiện chưa đủ dài để khớp xu hướng).</div>
+    <div class="section-sub">Dư địa còn lại tính theo số liệu snapshot hiện tại; các kịch bản tăng trưởng là giả định để tham khảo{forecast_hist_note}.</div>
     {headroom_html}
     <div class="two-col" style="margin-top:10px;">
       <div style="flex:1;">
@@ -1352,6 +1634,8 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
     <div class="section-title" style="font-size:10.5px;border-left:none;padding-left:0;margin-top:12px;">Khả năng chịu lỗi mất 1 host (N+1)</div>
     {ha_summary_html}
   </div>
+
+{history_html}
 
   <div class="section">
     <div class="section-title">Rủi ro theo Cluster</div>
@@ -1415,7 +1699,10 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
 # ---------------------------------------------------------------------------
 def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]], policy: capacity.Policy,
                            scope_label: str, run_meta: Optional[List[Dict[str, Any]]] = None,
-                           include_types: Optional[List[str]] = None, logo_data_url: Optional[str] = None) -> str:
+                           include_types: Optional[List[str]] = None, logo_data_url: Optional[str] = None,
+                           history: Optional[Dict[str, Any]] = None, vm_changes: Optional[Dict[str, Any]] = None) -> str:
+    history_html = _history_section_html(history, vm_changes, audience="technical")
+    appendix_html = _vm_changes_appendix_html(vm_changes)
     model = capacity.build_capacity_model(hosts, vms, policy)
     cluster_rows = capacity.build_cluster_rows(hosts, vms, policy)
     host_rows = sorted(capacity.build_host_rows(hosts, vms, policy),
@@ -1575,6 +1862,8 @@ def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
     </div>
   </div>
 
+{history_html}
+
   <div class="section">
     <div class="section-title">Phân tích Headroom &amp; Khuyến nghị mở rộng</div>
     <div class="section-sub">Dư địa tuyệt đối theo đơn vị thực tế (vCPU/GB), số VM cỡ trung bình còn nạp được, và số core/RAM vật lý cần bổ sung cho các cluster đã vượt ngưỡng cấu hình.</div>
@@ -1624,6 +1913,7 @@ def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
       <tbody>{findings_html}</tbody>
     </table>
   </div>
+{appendix_html}
 </body></html>"""
 
 
@@ -1633,9 +1923,12 @@ def html_to_pdf_bytes(html_str: str) -> bytes:
 
 def build_report_pdf(view: str, hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]], policy: capacity.Policy,
                       scope_label: str, run_meta: Optional[List[Dict[str, Any]]] = None,
-                      include_types: Optional[List[str]] = None, logo_data_url: Optional[str] = None) -> bytes:
+                      include_types: Optional[List[str]] = None, logo_data_url: Optional[str] = None,
+                      history: Optional[Dict[str, Any]] = None, vm_changes: Optional[Dict[str, Any]] = None) -> bytes:
+    """`history` / `vm_changes` come from app.history; None renders an
+    explanatory empty state so callers without a DB keep working."""
     if view == "technical":
-        html_str = render_technical_html(hosts, vms, policy, scope_label, run_meta, include_types, logo_data_url)
+        html_str = render_technical_html(hosts, vms, policy, scope_label, run_meta, include_types, logo_data_url, history, vm_changes)
     else:
-        html_str = render_executive_html(hosts, vms, policy, scope_label, run_meta, include_types, logo_data_url)
+        html_str = render_executive_html(hosts, vms, policy, scope_label, run_meta, include_types, logo_data_url, history, vm_changes)
     return html_to_pdf_bytes(html_str)

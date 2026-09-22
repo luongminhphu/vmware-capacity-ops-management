@@ -158,6 +158,8 @@
 
     <section class="exec-grid" id="execKpis"></section>
 
+    <div id="execHistoryMount"></div>
+
     <section class="chart-grid" style="grid-template-columns:2fr 1fr;">
       <article class="card chart-card">
         <div class="panel-head"><div><div class="panel-title">Xu hướng sử dụng tài nguyên (toàn hệ thống)</div><p class="panel-sub">Tổng vCPU/RAM đã dùng so với tổng năng lực vật lý theo thời gian, tổng hợp từ lịch sử polling.</p></div></div>
@@ -276,6 +278,8 @@
             <div class="chart-wrap"><canvas id="chartOvercommit"></canvas></div>
           </article>
         </section>
+
+        <div id="techHistoryMount"></div>
 
         <section class="panel">
           <div class="panel-head">
@@ -440,6 +444,7 @@
 
 <script src="js/api.js"></script>
 <script src="js/core.js"></script>
+<script src="js/views/history.js"></script>
 <script src="js/views/executive.js"></script>
 <script src="js/app.js"></script>
 </body>

@@ -46,6 +46,31 @@ và RAM luôn bật. Nút **Tiêu chí đánh giá** ở header cho phép bật 
 - API `GET /api/reports/brief?vcenter=<key|all>&storage=1|0` trả về bản tóm tắt cho Ban lãnh đạo
   dạng JSON (cùng logic với PDF) để Executive View hiển thị.
 
+### Biến động tài nguyên theo thời gian (snapshot history)
+
+Mỗi lần đồng bộ vCenter được lưu thành snapshot, nên ứng dụng có thể vẽ **biến động CPU/RAM theo
+thời gian** cho từng vCenter hoặc cluster, với khoảng nhìn lại **3 / 6 / 12 tháng**:
+
+- Panel "Biến động tài nguyên CPU/RAM theo thời gian" xuất hiện ở cả **Executive View** và tab
+  **Dashboard** (Technical View): 4 ô KPI đầu kỳ → nay (CPU %, RAM %, số VM, số host), hai biểu
+  đồ đường CPU/RAM (% ngưỡng overcommit, có đường ngưỡng 100% và đường "Toàn bộ"), bảng delta
+  từng nhóm và 2–3 câu nhận định ngắn. Technical View có thêm hai bảng **VM thêm mới / VM đã
+  loại bỏ** trong kỳ. Lựa chọn khoảng thời gian và cách nhóm được lưu trên trình duyệt
+  (`vco.historyMonths`, `vco.historyGroup`).
+- Cùng số liệu được đưa vào PDF: Báo cáo Điều hành có mục *"Biến động tài nguyên N tháng gần
+  nhất"* (nhóm theo vCenter; tự chuyển sang cluster khi chỉ chọn 1 vCenter); Báo cáo Kỹ thuật có
+  mục tương tự nhóm theo cluster và **Phụ lục A — VM thêm mới / loại bỏ** (vCenter, cluster,
+  host, trạng thái, vCPU, RAM, ngày xuất hiện/thấy lần cuối). Tham số `&months=3|6|12` của
+  `GET /api/reports/pdf` nhận từ lựa chọn trên giao diện.
+- API: `GET /api/dashboard/history?vcenter=<key|all>&months=3|6|12&group=vcenter|cluster` và
+  `GET /api/dashboard/vm-changes?vcenter=<key|all>&months=3|6|12`. % được tính theo ngưỡng
+  overcommit **đang áp dụng** (một snapshot/ngày, lấy lần đồng bộ cuối trong ngày theo giờ VN);
+  "thêm mới/loại bỏ" so sánh theo tên VM giữa snapshot đầu kỳ và mới nhất của từng vCenter.
+- Cần tối thiểu 2 ngày có snapshot trong khoảng đã chọn; khi chưa đủ, giao diện và PDF hiển thị
+  trạng thái "chưa đủ dữ liệu" thay vì biểu đồ. Với môi trường demo có thể tạo lịch sử giả lập
+  để xem trước: `cd backend && python -m app.seed_history --months 12 --step-days 7` (chỉ áp
+  dụng cho vCenter có `VCENTER_n_DEMO=true`; vCenter thật tích lũy dần qua polling).
+
 Render bằng [WeasyPrint](https://weasyprint.org/) (thuần Python/HTML/CSS, không cần Chromium) —
 đã có sẵn system dependencies trong `backend/Dockerfile`. Font Việt dùng bộ Noto Sans để hiển
 thị đầy đủ dấu tiếng Việt trong PDF.
@@ -224,7 +249,8 @@ kubectl create secret docker-registry ghcr-pull-secret \
 
 - Mỗi lần đồng bộ (thủ công qua "Đồng bộ ngay"/"Sync all", hoặc tự động theo
   `POLL_INTERVAL_MINUTES`, mặc định 60 phút) tạo một `SnapshotRun` mới trong Postgres — đây là
-  nguồn dữ liệu cho biểu đồ xu hướng (Executive View) và dự báo "còn bao lâu thì hết công suất".
+  nguồn dữ liệu cho biểu đồ xu hướng (Executive View), panel "Biến động tài nguyên theo thời
+  gian" (3/6/12 tháng) và dự báo "còn bao lâu thì hết công suất".
 - Import CSV/JSON thủ công cũng được lưu thành `SnapshotRun` riêng (nguồn `import`) nên vẫn góp
   phần vào lịch sử xu hướng.
 - `lastActivityDays`/`powerOffDays` của VM được tính dựa trên **lịch sử polling của chính ứng

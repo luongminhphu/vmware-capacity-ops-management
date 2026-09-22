@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from .. import capacity, data_access, report_pdf
+from .. import capacity, data_access, history, report_pdf
 from ..config import get_settings
 from ..database import get_db
 from ..models import ReportLogo, User
@@ -44,6 +44,7 @@ def export_pdf(
     clusters: Optional[str] = Query(default=None, description="Comma-separated cluster names to include (omit = every cluster)"),
     hosts: Optional[str] = Query(default=None, description="Comma-separated host names to include (omit = every host in scope)"),
     storage: Optional[str] = Query(default=None, description="'1'/'true' to include Storage criteria, '0'/'false' to exclude (omit = use saved setting)"),
+    months: int = Query(default=12, description="Snapshot-history window for the trend section / VM appendix: 3, 6 or 12 months"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -87,8 +88,20 @@ def export_pdf(
     logo_row = db.query(ReportLogo).filter(ReportLogo.id == 1).first()
     logo_data_url = f"data:{logo_row.mime_type};base64,{logo_row.data_base64}" if logo_row else None
 
+    # Snapshot history: Executive groups by vCenter (falls back to cluster when a
+    # single vCenter is in scope); Technical always drills down to cluster.
+    months = history.normalize_months(months)
+    scope_keys = _scope_keys(vcenter)
+    group_by = "cluster" if (view == "technical" or scope_keys is not None) else "vcenter"
     try:
-        pdf_bytes = report_pdf.build_report_pdf(view, host_rows, vm_rows, policy, scope_label, run_meta, include_types, logo_data_url)
+        history_data = history.get_resource_history(db, scope_keys, months, group_by, policy)
+        vm_changes = history.get_vm_changes(db, scope_keys, months)
+    except Exception:  # pragma: no cover - history must never block the report
+        history_data, vm_changes = None, None
+
+    try:
+        pdf_bytes = report_pdf.build_report_pdf(view, host_rows, vm_rows, policy, scope_label, run_meta, include_types, logo_data_url,
+                                                history=history_data, vm_changes=vm_changes)
     except Exception as exc:  # pragma: no cover - surfaced to the UI
         raise HTTPException(status_code=500, detail=f"Không thể tạo PDF: {exc}")
 

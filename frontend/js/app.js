@@ -376,7 +376,8 @@ async function handleExportPdf(view, btn) {
     const findingTypes = getSelectedPdfFindingTypes();
     const clusters = getSelectedPdfClusters();
     const hosts = getSelectedPdfHosts();
-    await api.downloadPdfReport(view, vcenterParam, findingTypes, clusters, hosts, !!appState.policy.includeStorage);
+    const months = (typeof historyState !== 'undefined' && historyState.months) ? historyState.months : 12;
+    await api.downloadPdfReport(view, vcenterParam, findingTypes, clusters, hosts, !!appState.policy.includeStorage, months);
   } catch (err) {
     showValidationBanner([`Không thể xuất báo cáo PDF: ${err.message}`], []);
   } finally {

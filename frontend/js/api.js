@@ -70,8 +70,10 @@ const api = {
 
   /* PDF report is a binary download, not JSON — bypasses apiRequest and
      streams the response straight into a file-save via an object URL. */
-  downloadPdfReport: async (view, vcenter, types, clusters, hosts, includeStorage) => {
+  downloadPdfReport: async (view, vcenter, types, clusters, hosts, includeStorage, months) => {
     const params = { view, vcenter: vcenter || 'all' };
+    // Snapshot-history window (3/6/12 months) for the trend section + VM appendix.
+    if (months) params.months = String(months);
     // Storage criteria toggle: always sent explicitly so the PDF matches what
     // the user currently sees on the dashboard (backend falls back to the
     // persisted setting only when this param is omitted).
@@ -103,6 +105,15 @@ const api = {
     a.href = url; a.download = filename;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
+
+  getResourceHistory: (vcenter, months, group) => {
+    const qs = new URLSearchParams({ vcenter: vcenter || 'all', months: String(months || 12), group: group || 'vcenter' }).toString();
+    return apiRequest(`/dashboard/history?${qs}`);
+  },
+  getVmChanges: (vcenter, months) => {
+    const qs = new URLSearchParams({ vcenter: vcenter || 'all', months: String(months || 12) }).toString();
+    return apiRequest(`/dashboard/vm-changes?${qs}`);
   },
 
   getManagementBrief: (vcenter, includeStorage) => {

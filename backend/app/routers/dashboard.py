@@ -1,9 +1,11 @@
 import datetime as dt
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from .. import data_access, history
+from ..config import get_settings
 from ..database import get_db
 from ..models import ClusterAggregate, User
 from ..security import get_current_user
@@ -114,3 +116,42 @@ def _days_span(trend: List[dict]) -> float:
     d1 = dt.date.fromisoformat(trend[-1]["date"])
     span_days = max(1, (d1 - d0).days)
     return span_days / max(1, len(trend) - 1)
+
+
+def _scope_keys(vcenter: Optional[str]):
+    if not vcenter or vcenter == "all":
+        return None
+    if vcenter in ("import", "__none__", "none"):
+        return [None]
+    return [vcenter]
+
+
+@router.get("/history")
+def resource_history(
+    vcenter: Optional[str] = Query(default="all"),
+    months: int = Query(default=12, description="Look-back window: 3, 6 or 12 months"),
+    group: str = Query(default="vcenter", pattern="^(vcenter|cluster)$"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """CPU/RAM change over time per vCenter or cluster, from snapshot history
+    (daily, latest run per day). Percentages use the current overcommit
+    policy so they line up with the rest of the dashboard."""
+    policy = data_access.get_effective_policy(db, get_settings())
+    data = history.get_resource_history(db, _scope_keys(vcenter), months, group, policy)
+    # Same plain-language reading as the PDF section so web and report agree.
+    from .. import report_pdf
+    data["insights"] = report_pdf._history_insights(data) if data.get("available") else []
+    return data
+
+
+@router.get("/vm-changes")
+def vm_changes(
+    vcenter: Optional[str] = Query(default="all"),
+    months: int = Query(default=12),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """VMs added / removed between the first and the latest snapshot inside
+    the look-back window."""
+    return history.get_vm_changes(db, _scope_keys(vcenter), months)

@@ -1495,7 +1495,11 @@ function syncViewSections() {
 }
 
 function renderActiveView() {
-  if (appState.view === 'dashboard') { renderCapacityKpis(); renderDashboardCharts(); renderClusterTable(); bindSortableHeaders('clusterTable','clusterTable',renderClusterTable); highlightSortHeaders('clusterTable','clusterTable'); }
+  if (appState.view === 'dashboard') {
+    renderCapacityKpis(); renderDashboardCharts(); renderClusterTable(); bindSortableHeaders('clusterTable','clusterTable',renderClusterTable); highlightSortHeaders('clusterTable','clusterTable');
+    // Snapshot-history panel (needs the backend; skipped silently in static mode).
+    if (typeof renderHistoryPanel === 'function' && typeof api !== 'undefined') renderHistoryPanel('techHistoryMount', { showVmChanges: true });
+  }
   else if (appState.view === 'compliance') renderComplianceView();
   else if (appState.view === 'inventory') renderInventoryView();
   else if (appState.view === 'whatif') renderWhatifView();
