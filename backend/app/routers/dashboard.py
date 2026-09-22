@@ -159,9 +159,11 @@ def vm_changes(
     vcenter: Optional[str] = Query(default="all"),
     months: int = Query(default=12),
     clusters: Optional[str] = Query(default=None, description="Comma-separated cluster names to include (omit = every cluster)"),
+    hosts: Optional[str] = Query(default=None, description="Comma-separated host names to include (omit = every host)"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """VMs added / removed between the first and the latest snapshot inside
-    the look-back window (optionally limited to the given clusters)."""
-    return history.get_vm_changes(db, _scope_keys(vcenter), months, clusters=_split_csv(clusters))
+    """VMs added / removed per cluster between the first and the latest
+    snapshot inside the look-back window (optionally limited to the given
+    clusters and/or hosts)."""
+    return history.get_vm_changes(db, _scope_keys(vcenter), months, clusters=_split_csv(clusters), hosts=_split_csv(hosts))

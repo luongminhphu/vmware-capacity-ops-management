@@ -197,21 +197,34 @@ def _vm_row(v: VmSnapshot) -> Dict[str, Any]:
 
 def get_vm_changes(db: Session, vcenter_keys: Optional[List[str]], months: int,
                    include_import: bool = True,
-                   clusters: Optional[List[str]] = None) -> Dict[str, Any]:
-    """VMs added / removed inside the window, per vCenter.
+                   clusters: Optional[List[str]] = None,
+                   hosts: Optional[List[str]] = None) -> Dict[str, Any]:
+    """VMs added / removed inside the window, compared **per cluster** and
+    optionally narrowed to a set of hosts (same cluster/host scope as the
+    rest of the report).
 
     Baseline = earliest successful run inside the window; current = latest
-    successful run. A VM present now but not in the baseline is "added"
-    (first-seen date taken from its earliest snapshot in the window); a VM in
-    the baseline but absent now is "removed" (last-seen date = the last
-    snapshot that still contained it)."""
+    successful run (per vCenter). Membership is keyed by (cluster, VM name),
+    so each cluster — one project team — gets its own added/removed list:
+    a VM present now in cluster X but not in X's baseline is "added" to X
+    (with `movedFrom` when the same name existed in another cluster at
+    baseline); a VM in X's baseline but no longer in X is "removed" from X
+    (with `movedTo` when the same name now lives in another cluster).
+    Cross-cluster moves therefore appear once on each side, flagged so the
+    reader can tell a migration from a real create/delete."""
     months = normalize_months(months)
     since = window_start(months)
     clusters = _norm_clusters(clusters)
+    hosts = _norm_clusters(hosts)
     cluster_set = set(clusters) if clusters is not None else None
+    host_set = set(hosts) if hosts is not None else None
 
     def _in_scope(v: VmSnapshot) -> bool:
-        return cluster_set is None or (v.cluster in cluster_set)
+        if cluster_set is not None and v.cluster not in cluster_set:
+            return False
+        if host_set is not None and v.host not in host_set:
+            return False
+        return True
 
     if vcenter_keys is not None:
         scopes: List[Optional[str]] = list(vcenter_keys)
@@ -224,6 +237,25 @@ def get_vm_changes(db: Session, vcenter_keys: Optional[List[str]], months: int,
     added: List[Dict[str, Any]] = []
     removed: List[Dict[str, Any]] = []
     per_scope: List[Dict[str, Any]] = []
+    per_cluster: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    per_host: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+
+    def _host_bucket(vc_key: Optional[str], cluster: str, host: str) -> Dict[str, Any]:
+        k = (vc_key or "import", cluster or "—", host or "—")
+        return per_host.setdefault(k, {
+            "vcenterKey": k[0], "vcenterLabel": vcenter_label(vc_key), "cluster": k[1], "host": k[2],
+            "baselineVmCount": 0, "currentVmCount": 0, "added": 0, "removed": 0,
+            "addedVcpu": 0.0, "addedRamGB": 0.0, "removedVcpu": 0.0, "removedRamGB": 0.0,
+        })
+
+    def _cluster_bucket(vc_key: Optional[str], cluster: str) -> Dict[str, Any]:
+        k = (vc_key or "import", cluster or "—")
+        return per_cluster.setdefault(k, {
+            "vcenterKey": k[0], "vcenterLabel": vcenter_label(vc_key), "cluster": k[1],
+            "baselineVmCount": 0, "currentVmCount": 0,
+            "added": 0, "removed": 0, "movedIn": 0, "movedOut": 0,
+            "addedVcpu": 0.0, "addedRamGB": 0.0, "removedVcpu": 0.0, "removedRamGB": 0.0,
+        })
 
     for key in scopes:
         base_q = db.query(SnapshotRun).filter(SnapshotRun.status == "ok", SnapshotRun.finished_at >= since)
@@ -235,27 +267,60 @@ def get_vm_changes(db: Session, vcenter_keys: Optional[List[str]], months: int,
                               "available": False, "runs": 1 if first_run else 0})
             continue
 
-        base_vms = {v.vm: v for v in first_run.vms if _in_scope(v)}
-        cur_vms = {v.vm: v for v in last_run.vms if _in_scope(v)}
+        # Whole-vCenter name maps (unfiltered) so cross-cluster moves can be
+        # recognised even when the other cluster is outside the report scope.
+        base_all = {v.vm: v for v in first_run.vms}
+        cur_all = {v.vm: v for v in last_run.vms}
+        # Per-cluster membership keyed by (cluster, name) inside the scope.
+        base_vms = {(v.cluster or "—", v.vm): v for v in first_run.vms if _in_scope(v)}
+        cur_vms = {(v.cluster or "—", v.vm): v for v in last_run.vms if _in_scope(v)}
 
-        # first/last seen per VM name inside the window (one grouped query).
-        seen_q = db.query(VmSnapshot.vm, func.min(VmSnapshot.captured_at), func.max(VmSnapshot.captured_at)) \
+        for (cl, _n), v in base_vms.items():
+            _cluster_bucket(key, cl)["baselineVmCount"] += 1
+            _host_bucket(key, cl, v.host)["baselineVmCount"] += 1
+        for (cl, _n), v in cur_vms.items():
+            _cluster_bucket(key, cl)["currentVmCount"] += 1
+            _host_bucket(key, cl, v.host)["currentVmCount"] += 1
+
+        # first/last seen per (cluster, VM name) inside the window (one grouped query).
+        seen_q = db.query(VmSnapshot.cluster, VmSnapshot.vm, func.min(VmSnapshot.captured_at), func.max(VmSnapshot.captured_at)) \
             .filter(VmSnapshot.captured_at >= since)
         seen_q = seen_q.filter(VmSnapshot.vcenter_key.is_(None)) if key is None else seen_q.filter(VmSnapshot.vcenter_key == key)
         if cluster_set is not None:
             seen_q = seen_q.filter(VmSnapshot.cluster.in_(list(cluster_set))) if cluster_set else seen_q.filter(False)
-        seen = {name: (mn, mx) for name, mn, mx in seen_q.group_by(VmSnapshot.vm).all()}
+        if host_set is not None:
+            seen_q = seen_q.filter(VmSnapshot.host.in_(list(host_set))) if host_set else seen_q.filter(False)
+        seen = {(cl or "—", name): (mn, mx) for cl, name, mn, mx in seen_q.group_by(VmSnapshot.cluster, VmSnapshot.vm).all()}
 
-        for name, v in sorted(cur_vms.items()):
-            if name not in base_vms:
+        for ck, v in sorted(cur_vms.items()):
+            if ck not in base_vms:
                 row = _vm_row(v)
-                row["firstSeen"] = to_iso_utc(seen.get(name, (v.captured_at, None))[0])
+                row["firstSeen"] = to_iso_utc(seen.get(ck, (v.captured_at, None))[0])
+                prev = base_all.get(v.vm)
+                row["movedFrom"] = prev.cluster if prev is not None and (prev.cluster or "—") != ck[0] else None
+                # Same cluster but a different host at baseline (only visible when narrowing by host).
+                row["movedFromHost"] = prev.host if prev is not None and not row["movedFrom"] and prev.host != v.host else None
                 added.append(row)
-        for name, v in sorted(base_vms.items()):
-            if name not in cur_vms:
+                b = _cluster_bucket(key, ck[0])
+                b["added"] += 1; b["addedVcpu"] += row["vcpu"]; b["addedRamGB"] += row["ramGB"]
+                if row["movedFrom"]:
+                    b["movedIn"] += 1
+                hb = _host_bucket(key, ck[0], v.host)
+                hb["added"] += 1; hb["addedVcpu"] += row["vcpu"]; hb["addedRamGB"] += row["ramGB"]
+        for ck, v in sorted(base_vms.items()):
+            if ck not in cur_vms:
                 row = _vm_row(v)
-                row["lastSeen"] = to_iso_utc(seen.get(name, (None, v.captured_at))[1])
+                row["lastSeen"] = to_iso_utc(seen.get(ck, (None, v.captured_at))[1])
+                now = cur_all.get(v.vm)
+                row["movedTo"] = now.cluster if now is not None and (now.cluster or "—") != ck[0] else None
+                row["movedToHost"] = now.host if now is not None and not row["movedTo"] and now.host != v.host else None
                 removed.append(row)
+                b = _cluster_bucket(key, ck[0])
+                b["removed"] += 1; b["removedVcpu"] += row["vcpu"]; b["removedRamGB"] += row["ramGB"]
+                if row["movedTo"]:
+                    b["movedOut"] += 1
+                hb = _host_bucket(key, ck[0], v.host)
+                hb["removed"] += 1; hb["removedVcpu"] += row["vcpu"]; hb["removedRamGB"] += row["ramGB"]
 
         per_scope.append({
             "vcenterKey": key or "import", "vcenterLabel": vcenter_label(key), "available": True,
@@ -265,15 +330,28 @@ def get_vm_changes(db: Session, vcenter_keys: Optional[List[str]], months: int,
             "removed": sum(1 for r in removed if r["vcenterKey"] == (key or "import")),
         })
 
+    # Cluster first, then VM name — the reader scans by project team.
+    added.sort(key=lambda r: ((r["cluster"] or "—"), r["vcenterLabel"], r["vm"]))
+    removed.sort(key=lambda r: ((r["cluster"] or "—"), r["vcenterLabel"], r["vm"]))
+    cluster_rows = sorted(per_cluster.values(), key=lambda b: (b["cluster"], b["vcenterLabel"]))
+    host_rows = sorted(per_host.values(), key=lambda b: (b["cluster"], b["host"], b["vcenterLabel"]))
+    for b in cluster_rows + host_rows:
+        for f in ("addedVcpu", "addedRamGB", "removedVcpu", "removedRamGB"):
+            b[f] = round(b[f], 0)
+        b["netVm"] = b["currentVmCount"] - b["baselineVmCount"]
+
     def _totals(rows: List[Dict[str, Any]]) -> Dict[str, float]:
         return {"count": len(rows), "vcpu": round(sum(r["vcpu"] for r in rows), 0),
                 "ramGB": round(sum(r["ramGB"] for r in rows), 0),
-                "poweredOn": sum(1 for r in rows if r["isPoweredOn"])}
+                "poweredOn": sum(1 for r in rows if r["isPoweredOn"]),
+                "moved": sum(1 for r in rows if r.get("movedFrom") or r.get("movedTo") or r.get("movedFromHost") or r.get("movedToHost"))}
 
     return {
-        "months": months, "since": to_iso_utc(since), "clusters": clusters,
+        "months": months, "since": to_iso_utc(since), "clusters": clusters, "hosts": hosts,
         "available": any(s.get("available") for s in per_scope),
-        "scopes": per_scope,
+        "scopes": per_scope, "clusterSummary": cluster_rows,
+        # Only meaningful (and only rendered) when the scope is narrowed by host.
+        "hostSummary": host_rows if hosts is not None else [],
         "added": added, "removed": removed,
         "addedTotals": _totals(added), "removedTotals": _totals(removed),
     }

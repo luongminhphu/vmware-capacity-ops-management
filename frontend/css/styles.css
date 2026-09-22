@@ -383,3 +383,4 @@ h1{font-family:var(--font-body);font-size:var(--text-xl);font-weight:700;line-he
 .history-insights{font-size:var(--text-sm);line-height:1.55;padding:var(--space-3) var(--space-4);border-left:3px solid var(--accent);background:var(--surface-2);border-radius:0 var(--radius-sm) var(--radius-sm) 0;margin-bottom:var(--space-3);}
 .history-insights div+div{margin-top:.3rem;}
 .history-insights b{color:var(--primary);}
+.history-vm-card tr.group-row td{background:var(--surface-2);font-size:var(--text-xs);padding:.35rem .75rem;}

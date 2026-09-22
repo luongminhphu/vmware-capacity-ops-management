@@ -113,9 +113,10 @@ const api = {
     if (Array.isArray(clusters)) params.clusters = clusters.join(',');
     return apiRequest(`/dashboard/history?${new URLSearchParams(params).toString()}`);
   },
-  getVmChanges: (vcenter, months, clusters) => {
+  getVmChanges: (vcenter, months, clusters, hosts) => {
     const params = { vcenter: vcenter || 'all', months: String(months || 12) };
     if (Array.isArray(clusters)) params.clusters = clusters.join(',');
+    if (Array.isArray(hosts)) params.hosts = hosts.join(',');
     return apiRequest(`/dashboard/vm-changes?${new URLSearchParams(params).toString()}`);
   },
 

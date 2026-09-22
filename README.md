@@ -65,11 +65,18 @@ phụ:
 - Cùng số liệu được đưa vào PDF, luôn theo cluster và **theo đúng phạm vi cluster đã chọn khi xuất
   báo cáo** (không lấy toàn bộ): Báo cáo Điều hành có mục *"Biến động tài nguyên N tháng gần
   nhất"*; Báo cáo Kỹ thuật có mục tương tự và **Phụ lục A — VM thêm mới / loại bỏ** (vCenter,
-  cluster, host, trạng thái, vCPU, RAM, ngày xuất hiện/thấy lần cuối). Tham số `&months=3|6|12`
-  và `&clusters=A,B` của `GET /api/reports/pdf` nhận từ lựa chọn trên giao diện; bộ lọc host không
-  áp dụng cho phần lịch sử vì snapshot được tổng hợp ở cấp cluster.
+  cluster, host, trạng thái, vCPU, RAM, ngày xuất hiện/thấy lần cuối, ghi chú). Tham số
+  `&months=3|6|12`, `&clusters=A,B` và `&hosts=h1,h2` của `GET /api/reports/pdf` nhận từ lựa chọn
+  trên giao diện. Biểu đồ CPU/RAM luôn ở cấp cluster (đơn vị snapshot được tổng hợp); Phụ lục A
+  theo cả cluster và host.
+- **Phụ lục A so sánh theo từng cluster**: khóa đối chiếu là (cluster, tên VM) giữa snapshot đầu kỳ
+  và mới nhất của từng vCenter, nên mỗi cluster có danh sách thêm mới/loại bỏ riêng và bảng "Tổng
+  hợp theo cluster" (VM đầu kỳ → nay, thêm/bỏ kèm vCPU/RAM, chuyển vào/ra). VM di chuyển giữa
+  cluster xuất hiện ở cả hai phía với ghi chú "Chuyển từ/sang cluster X"; khi thu hẹp theo host,
+  có thêm bảng "Theo host" và ghi chú "Chuyển từ/sang host Y" — để phân biệt di chuyển với tạo
+  mới/xóa thật. Panel trên tab Dashboard cũng đi theo bộ lọc Host của trang cho phần VM thêm/bỏ.
 - API: `GET /api/dashboard/history?vcenter=<key|all>&months=3|6|12&group=cluster|vcenter[&clusters=A,B]`
-  và `GET /api/dashboard/vm-changes?vcenter=<key|all>&months=3|6|12[&clusters=A,B]`. Khi chỉ có 1
+  và `GET /api/dashboard/vm-changes?vcenter=<key|all>&months=3|6|12[&clusters=A,B][&hosts=h1,h2]`. Khi chỉ có 1
   vCenter trong phạm vi, nhãn cluster không kèm tên vCenter. % được tính theo ngưỡng
   overcommit **đang áp dụng** (một snapshot/ngày, lấy lần đồng bộ cuối trong ngày theo giờ VN);
   "thêm mới/loại bỏ" so sánh theo tên VM giữa snapshot đầu kỳ và mới nhất của từng vCenter.

@@ -90,12 +90,13 @@ def export_pdf(
 
     # Snapshot history is always per cluster (one cluster = one project team)
     # and follows the same cluster scope as the rest of the report. Host
-    # narrowing does not apply: history is aggregated at cluster level.
+    # narrowing applies to the VM added/removed appendix; the CPU/RAM series
+    # stay at cluster level (that is the unit snapshots are aggregated at).
     months = history.normalize_months(months)
     scope_keys = _scope_keys(vcenter)
     try:
         history_data = history.get_resource_history(db, scope_keys, months, "cluster", policy, clusters=cluster_list)
-        vm_changes = history.get_vm_changes(db, scope_keys, months, clusters=cluster_list)
+        vm_changes = history.get_vm_changes(db, scope_keys, months, clusters=cluster_list, hosts=host_list)
     except Exception:  # pragma: no cover - history must never block the report
         history_data, vm_changes = None, None
 

@@ -261,11 +261,30 @@ function renderHistoryVmChanges(mountId, changes) {
     box.innerHTML = `<div class="empty-state">Chưa đủ snapshot trong khoảng thời gian này để so sánh danh sách VM (cần ít nhất 2 lần đồng bộ).</div>`;
     return;
   }
+  const moveNote = (r) => r.movedFrom ? `Chuyển từ cluster ${r.movedFrom}`
+    : r.movedTo ? `Chuyển sang cluster ${r.movedTo}`
+    : r.movedFromHost ? `Chuyển từ host ${r.movedFromHost}`
+    : r.movedToHost ? `Chuyển sang host ${r.movedToHost}` : '';
   const vmRow = (r, dateField, dateLabel) => `<tr>
       <td><strong>${esc(r.vm)}</strong></td><td>${esc(r.vcenterLabel)}</td><td>${esc(r.cluster || '—')}</td>
       <td>${esc(r.host || '—')}</td><td><span class="pill ${r.isPoweredOn ? 'ok' : ''}">${esc(r.powerState || '—')}</span></td>
       <td>${fmtInt(r.vcpu)}</td><td>${fmtNum(r.ramGB, 0)}</td><td title="${esc(dateLabel)}">${fmtShortDate(r[dateField])}</td>
+      <td class="muted">${esc(moveNote(r)) || '—'}</td>
     </tr>`;
+  // Rows arrive sorted by cluster; insert one header row per cluster (project team).
+  const groupedRows = (rows, dateField, dateLabel) => {
+    const out = [];
+    let cur = Symbol('none');
+    rows.forEach(r => {
+      if (r.cluster !== cur) {
+        cur = r.cluster;
+        const n = rows.filter(x => x.cluster === cur).length;
+        out.push(`<tr class="group-row"><td colspan="9"><strong>Cluster ${esc(cur || '—')}</strong> · ${n} VM</td></tr>`);
+      }
+      out.push(vmRow(r, dateField, dateLabel));
+    });
+    return out.join('');
+  };
   const table = (title, sub, rows, dateField, dateLabel, tone) => `
     <article class="card history-vm-card ${tone}">
       <div class="panel-head">
@@ -273,17 +292,41 @@ function renderHistoryVmChanges(mountId, changes) {
       </div>
       <div class="table-scroll history-vm-scroll">
         <table class="data-table">
-          <thead><tr><th>VM</th><th>vCenter</th><th>Cluster</th><th>Host</th><th>Trạng thái</th><th>vCPU</th><th>RAM (GB)</th><th>${esc(dateLabel)}</th></tr></thead>
-          <tbody>${rows.length ? rows.map(r => vmRow(r, dateField, dateLabel)).join('') : `<tr><td colspan="8" class="muted">Không có VM nào.</td></tr>`}</tbody>
+          <thead><tr><th>VM</th><th>vCenter</th><th>Cluster</th><th>Host</th><th>Trạng thái</th><th>vCPU</th><th>RAM (GB)</th><th>${esc(dateLabel)}</th><th>Ghi chú</th></tr></thead>
+          <tbody>${rows.length ? groupedRows(rows, dateField, dateLabel) : `<tr><td colspan="9" class="muted">Không có VM nào.</td></tr>`}</tbody>
         </table>
       </div>
     </article>`;
   const a = changes.addedTotals, r = changes.removedTotals;
+  const net = (v) => `<span class="delta ${v > 0 ? 'up' : v < 0 ? 'down' : 'flat'}">${v > 0 ? '+' : ''}${v}</span>`;
+  const summaryRows = (changes.clusterSummary || []).map(b => `<tr>
+      <td><strong>${esc(b.cluster)}</strong></td><td>${esc(b.vcenterLabel)}</td><td>${fmtInt(b.baselineVmCount)} → ${fmtInt(b.currentVmCount)}</td><td>${net(b.netVm)}</td>
+      <td><span class="delta up">+${fmtInt(b.added)}</span> <span class="muted">(${fmtInt(b.addedVcpu)} vCPU · ${fmtInt(b.addedRamGB)} GB)</span></td>
+      <td><span class="delta down">−${fmtInt(b.removed)}</span> <span class="muted">(${fmtInt(b.removedVcpu)} vCPU · ${fmtInt(b.removedRamGB)} GB)</span></td>
+      <td class="muted">${fmtInt(b.movedIn)} / ${fmtInt(b.movedOut)}</td></tr>`).join('');
+  const hostRows = (changes.hostSummary || []).map(b => `<tr>
+      <td><strong>${esc(b.host)}</strong></td><td>${esc(b.cluster)}</td><td>${fmtInt(b.baselineVmCount)} → ${fmtInt(b.currentVmCount)}</td><td>${net(b.netVm)}</td>
+      <td><span class="delta up">+${fmtInt(b.added)}</span> <span class="muted">(${fmtInt(b.addedVcpu)} vCPU · ${fmtInt(b.addedRamGB)} GB)</span></td>
+      <td><span class="delta down">−${fmtInt(b.removed)}</span> <span class="muted">(${fmtInt(b.removedVcpu)} vCPU · ${fmtInt(b.removedRamGB)} GB)</span></td></tr>`).join('');
+  const movedTotal = (a.moved || 0) + (r.moved || 0);
+  const movedNote = movedTotal ? ` Trong đó ${movedTotal} dòng là VM di chuyển giữa cluster/host (xem cột Ghi chú), không phải tạo mới/xóa thật.` : '';
   box.innerHTML = `
     <div class="history-vm-summary">
       Trong ${changes.months} tháng gần nhất: <span class="delta up">+${a.count} VM thêm mới</span> (${fmtInt(a.vcpu)} vCPU · ${fmtInt(a.ramGB)} GB RAM) và
-      <span class="delta down">−${r.count} VM loại bỏ</span> (${fmtInt(r.vcpu)} vCPU · ${fmtInt(r.ramGB)} GB RAM). Cùng danh sách này được đưa vào phụ lục Báo cáo Kỹ thuật.
+      <span class="delta down">−${r.count} VM loại bỏ</span> (${fmtInt(r.vcpu)} vCPU · ${fmtInt(r.ramGB)} GB RAM), so sánh theo từng cluster.${esc(movedNote)} Cùng danh sách này được đưa vào Phụ lục A của Báo cáo Kỹ thuật.
     </div>
+    <div class="table-scroll">
+      <table class="data-table history-table">
+        <thead><tr><th>Cluster</th><th>vCenter</th><th>VM đầu kỳ → nay</th><th>Chênh lệch</th><th>Thêm mới</th><th>Loại bỏ</th><th>Chuyển vào / ra</th></tr></thead>
+        <tbody>${summaryRows || '<tr><td colspan="7" class="muted">Không có cluster nào trong phạm vi.</td></tr>'}</tbody>
+      </table>
+    </div>
+    ${hostRows ? `<div class="table-scroll" style="margin-top:var(--space-3)">
+      <table class="data-table history-table">
+        <thead><tr><th>Host (phạm vi đã chọn)</th><th>Cluster</th><th>VM đầu kỳ → nay</th><th>Chênh lệch</th><th>Thêm mới</th><th>Loại bỏ</th></tr></thead>
+        <tbody>${hostRows}</tbody>
+      </table>
+    </div>` : ''}
     <div class="history-vm-grid">
       ${table('VM thêm mới', 'Có trong snapshot mới nhất nhưng chưa có ở snapshot đầu kỳ.', changes.added, 'firstSeen', 'Xuất hiện từ', 'added')}
       ${table('VM đã loại bỏ', 'Có ở snapshot đầu kỳ nhưng không còn trong snapshot mới nhất.', changes.removed, 'lastSeen', 'Thấy lần cuối', 'removed')}
@@ -320,6 +363,13 @@ function historyClustersParam(opts) {
   return c && c !== 'all' ? [c] : null;
 }
 
+// Host filter only narrows the VM added/removed lists (CPU/RAM series are per cluster).
+function historyHostsParam(opts) {
+  if (!opts || !opts.followClusterFilter) return null;
+  const hst = appState && appState.filters ? appState.filters.host : 'all';
+  return hst && hst !== 'all' ? [hst] : null;
+}
+
 async function renderHistoryPanel(mountId, opts = {}) {
   const mount = document.getElementById(mountId);
   if (!mount) return;
@@ -330,10 +380,11 @@ async function renderHistoryPanel(mountId, opts = {}) {
 
   let data = null, changes = null;
   const clusters = historyClustersParam(opts);
+  const hosts = historyHostsParam(opts);
   try {
     const vcenter = historyVcenterParam();
     const jobs = [api.getResourceHistory(vcenter, historyState.months, historyState.group, clusters)];
-    jobs.push(api.getVmChanges(vcenter, historyState.months, clusters));
+    jobs.push(api.getVmChanges(vcenter, historyState.months, clusters, hosts));
     [data, changes] = await Promise.all(jobs);
   } catch (err) {
     historyEmpty(mountId, `Không tải được lịch sử snapshot: ${err.message || err}`);
@@ -341,7 +392,7 @@ async function renderHistoryPanel(mountId, opts = {}) {
   }
   const sub = document.getElementById(`${mountId}Sub`);
   if (sub) {
-    const scope = clusters ? ` · Cluster: ${clusters.join(', ')}` : '';
+    const scope = (clusters ? ` · Cluster: ${clusters.join(', ')}` : '') + (hosts ? ` · Host (chỉ áp dụng cho VM thêm/bỏ): ${hosts.join(', ')}` : '');
     sub.textContent = `${historyState.months} tháng gần nhất${scope} · ${data.pointCount} ngày có snapshot · % tính theo ngưỡng overcommit hiện tại (CPU ${appState.policy.cpuOvercommitMax}x, RAM ${appState.policy.ramOvercommitMax}x).`;
   }
   if (!data.available) {
