@@ -53,12 +53,21 @@ def vcenter_label(key: Optional[str]) -> str:
     return key
 
 
-def _group_key(row: ClusterAggregate, group_by: str) -> Tuple[str, str]:
+def _group_key(row: ClusterAggregate, group_by: str, single_vcenter: bool = False) -> Tuple[str, str]:
+    """Group key/label. Cluster labels carry the vCenter name only when more
+    than one vCenter is in scope (each cluster = one project team, so the
+    cluster name alone is what management recognises)."""
     vc = row.vcenter_key or "import"
     vc_label = vcenter_label(row.vcenter_key)
     if group_by == "cluster":
-        return f"{vc}::{row.cluster}", f"{row.cluster} ({vc_label})"
+        return f"{vc}::{row.cluster}", (row.cluster if single_vcenter else f"{row.cluster} ({vc_label})")
     return vc, vc_label
+
+
+def _norm_clusters(clusters: Optional[List[str]]) -> Optional[List[str]]:
+    if clusters is None:
+        return None
+    return [c.strip() for c in clusters if c and c.strip()]
 
 
 def _pct(used: float, total: float, oc_max: float) -> Optional[float]:
@@ -69,7 +78,8 @@ def _pct(used: float, total: float, oc_max: float) -> Optional[float]:
 
 def get_resource_history(db: Session, vcenter_keys: Optional[List[str]], months: int,
                          group_by: str, policy: capacity.Policy,
-                         include_import: bool = True) -> Dict[str, Any]:
+                         include_import: bool = True,
+                         clusters: Optional[List[str]] = None) -> Dict[str, Any]:
     """Daily CPU/RAM series per group (vCenter or cluster) plus an org-wide
     "Toàn bộ" series and a first-vs-last delta summary per group.
 
@@ -84,13 +94,19 @@ def get_resource_history(db: Session, vcenter_keys: Optional[List[str]], months:
         q = q.filter(ClusterAggregate.vcenter_key.in_(vcenter_keys))
     elif not include_import:
         q = q.filter(ClusterAggregate.vcenter_key.isnot(None))
+    clusters = _norm_clusters(clusters)
+    if clusters is not None:
+        # Cluster scope (project-team scope): only these clusters feed both the
+        # per-group series and the "total" series.
+        q = q.filter(ClusterAggregate.cluster.in_(clusters)) if clusters else q.filter(False)
     rows = q.order_by(ClusterAggregate.captured_at.asc(), ClusterAggregate.run_id.asc()).all()
+    single_vcenter = len({r.vcenter_key for r in rows}) <= 1
 
     # (group_key, day, vcenter, cluster) -> latest row that day
     latest: Dict[Tuple[str, str, str, str], ClusterAggregate] = {}
     labels: Dict[str, str] = {}
     for r in rows:
-        gkey, glabel = _group_key(r, group_by)
+        gkey, glabel = _group_key(r, group_by, single_vcenter)
         labels[gkey] = glabel
         day = to_vn_date(r.captured_at).isoformat()
         latest[(gkey, day, r.vcenter_key or "import", r.cluster)] = r
@@ -157,12 +173,13 @@ def get_resource_history(db: Session, vcenter_keys: Optional[List[str]], months:
         groups.append({"key": gkey, "label": labels.get(gkey, gkey), "series": s,
                        "summary": _summary(gkey, labels.get(gkey, gkey), s)})
     overall_series = _series(overall)
+    overall_label = "Tổng các cluster đã chọn" if clusters is not None else "Toàn bộ"
     return {
-        "months": months, "groupBy": group_by,
+        "months": months, "groupBy": group_by, "clusters": clusters,
         "since": to_iso_utc(since), "until": to_iso_utc(dt.datetime.utcnow()),
         "available": len(overall_series) >= 2,
         "pointCount": len(overall_series),
-        "overall": {"key": "all", "label": "Toàn bộ", "series": overall_series,
+        "overall": {"key": "all", "label": overall_label, "series": overall_series,
                     "summary": _summary("all", "Toàn bộ", overall_series)},
         "groups": groups,
     }
@@ -179,7 +196,8 @@ def _vm_row(v: VmSnapshot) -> Dict[str, Any]:
 
 
 def get_vm_changes(db: Session, vcenter_keys: Optional[List[str]], months: int,
-                   include_import: bool = True) -> Dict[str, Any]:
+                   include_import: bool = True,
+                   clusters: Optional[List[str]] = None) -> Dict[str, Any]:
     """VMs added / removed inside the window, per vCenter.
 
     Baseline = earliest successful run inside the window; current = latest
@@ -189,6 +207,11 @@ def get_vm_changes(db: Session, vcenter_keys: Optional[List[str]], months: int,
     snapshot that still contained it)."""
     months = normalize_months(months)
     since = window_start(months)
+    clusters = _norm_clusters(clusters)
+    cluster_set = set(clusters) if clusters is not None else None
+
+    def _in_scope(v: VmSnapshot) -> bool:
+        return cluster_set is None or (v.cluster in cluster_set)
 
     if vcenter_keys is not None:
         scopes: List[Optional[str]] = list(vcenter_keys)
@@ -212,13 +235,15 @@ def get_vm_changes(db: Session, vcenter_keys: Optional[List[str]], months: int,
                               "available": False, "runs": 1 if first_run else 0})
             continue
 
-        base_vms = {v.vm: v for v in first_run.vms}
-        cur_vms = {v.vm: v for v in last_run.vms}
+        base_vms = {v.vm: v for v in first_run.vms if _in_scope(v)}
+        cur_vms = {v.vm: v for v in last_run.vms if _in_scope(v)}
 
         # first/last seen per VM name inside the window (one grouped query).
         seen_q = db.query(VmSnapshot.vm, func.min(VmSnapshot.captured_at), func.max(VmSnapshot.captured_at)) \
             .filter(VmSnapshot.captured_at >= since)
         seen_q = seen_q.filter(VmSnapshot.vcenter_key.is_(None)) if key is None else seen_q.filter(VmSnapshot.vcenter_key == key)
+        if cluster_set is not None:
+            seen_q = seen_q.filter(VmSnapshot.cluster.in_(list(cluster_set))) if cluster_set else seen_q.filter(False)
         seen = {name: (mn, mx) for name, mn, mx in seen_q.group_by(VmSnapshot.vm).all()}
 
         for name, v in sorted(cur_vms.items()):
@@ -246,7 +271,7 @@ def get_vm_changes(db: Session, vcenter_keys: Optional[List[str]], months: int,
                 "poweredOn": sum(1 for r in rows if r["isPoweredOn"])}
 
     return {
-        "months": months, "since": to_iso_utc(since),
+        "months": months, "since": to_iso_utc(since), "clusters": clusters,
         "available": any(s.get("available") for s in per_scope),
         "scopes": per_scope,
         "added": added, "removed": removed,

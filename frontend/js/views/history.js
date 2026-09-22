@@ -15,7 +15,7 @@ const HISTORY_SERIES_COLORS = ['#2563eb', '#0891b2', '#7c3aed', '#db2777', '#ea5
 
 const historyState = {
   months: 12,
-  group: 'vcenter',
+  group: 'cluster', // one cluster = one project team; vCenter grouping is the secondary view
   loaded: false,
 };
 
@@ -23,7 +23,7 @@ const historyState = {
   try {
     const m = parseInt(localStorage.getItem('vco.historyMonths') || '', 10);
     if (HISTORY_MONTH_OPTIONS.includes(m)) historyState.months = m;
-    const g = localStorage.getItem('vco.historyGroup');
+    const g = localStorage.getItem('vco.historyGroupV2');
     if (g === 'vcenter' || g === 'cluster') historyState.group = g;
   } catch (e) { /* ignore */ }
   historyState.loaded = true;
@@ -62,7 +62,7 @@ function fmtShortDate(iso) {
 function historyPanelTemplate(mountId, opts) {
   const monthsBtns = HISTORY_MONTH_OPTIONS.map(m =>
     `<button type="button" data-history-months="${m}" class="${historyState.months === m ? 'active' : ''}">${m} tháng</button>`).join('');
-  const groupBtns = [['vcenter', 'Theo vCenter'], ['cluster', 'Theo cluster']].map(([k, label]) =>
+  const groupBtns = [['cluster', 'Theo cluster'], ['vcenter', 'Theo vCenter']].map(([k, label]) =>
     `<button type="button" data-history-group="${k}" class="${historyState.group === k ? 'active' : ''}">${label}</button>`).join('');
   return `
     <section class="panel history-panel" id="${mountId}Panel">
@@ -79,11 +79,11 @@ function historyPanelTemplate(mountId, opts) {
       <div class="history-kpis" id="${mountId}Kpis"></div>
       <div class="chart-grid history-chart-grid">
         <article class="card chart-card">
-          <div class="panel-head"><div><div class="panel-title">CPU — % ngưỡng overcommit</div><p class="panel-sub">Mỗi đường là một ${historyState.group === 'cluster' ? 'cluster' : 'vCenter'}; đường đứt là toàn bộ hệ thống.</p></div></div>
+          <div class="panel-head"><div><div class="panel-title">CPU — % ngưỡng overcommit</div><p class="panel-sub">Mỗi đường là một ${historyState.group === 'cluster' ? 'cluster (nhóm dự án)' : 'vCenter'}; đường đứt là tổng của phạm vi đang xem.</p></div></div>
           <div class="chart-wrap"><canvas id="${mountId}ChartCpu"></canvas></div>
         </article>
         <article class="card chart-card">
-          <div class="panel-head"><div><div class="panel-title">RAM — % ngưỡng overcommit</div><p class="panel-sub">Mỗi đường là một ${historyState.group === 'cluster' ? 'cluster' : 'vCenter'}; đường đứt là toàn bộ hệ thống.</p></div></div>
+          <div class="panel-head"><div><div class="panel-title">RAM — % ngưỡng overcommit</div><p class="panel-sub">Mỗi đường là một ${historyState.group === 'cluster' ? 'cluster (nhóm dự án)' : 'vCenter'}; đường đứt là tổng của phạm vi đang xem.</p></div></div>
           <div class="chart-wrap"><canvas id="${mountId}ChartRam"></canvas></div>
         </article>
       </div>
@@ -173,7 +173,7 @@ function renderHistoryCharts(mountId, data) {
     }));
     if (data.groups.length !== 1) {
       datasets.push({
-        label: 'Toàn bộ', data: data.overall.series.map(p => p[field]),
+        label: data.overall.label || 'Toàn bộ', data: data.overall.series.map(p => p[field]),
         borderColor: colors.text, borderDash: [6, 4], borderWidth: 1.5, pointRadius: 0,
         tension: 0.25, spanGaps: true, fill: false,
       });
@@ -238,7 +238,7 @@ function renderHistoryTable(mountId, data) {
   const tbody = document.querySelector(`#${mountId}Table tbody`);
   if (!tbody) return;
   const rows = data.groups.map(g => g.summary).filter(s => s.points);
-  if (data.groups.length !== 1) rows.push({ ...data.overall.summary, label: 'Toàn bộ', isTotal: true });
+  if (data.groups.length !== 1) rows.push({ ...data.overall.summary, label: data.overall.label || 'Toàn bộ', isTotal: true });
   tbody.innerHTML = rows.map(s => {
     const d = s.delta || {};
     return `<tr class="${s.isTotal ? 'history-total-row' : ''}">
@@ -302,7 +302,7 @@ function bindHistoryControls(mountId, opts) {
     if (gBtn) historyState.group = gBtn.dataset.historyGroup;
     try {
       localStorage.setItem('vco.historyMonths', String(historyState.months));
-      localStorage.setItem('vco.historyGroup', historyState.group);
+      localStorage.setItem('vco.historyGroupV2', historyState.group);
     } catch (err) { /* ignore */ }
     // Re-render every mounted panel so Executive and Technical stay in sync.
     await Promise.all(Object.keys(historyMounts).map(id => renderHistoryPanel(id, historyMounts[id])));
@@ -310,6 +310,15 @@ function bindHistoryControls(mountId, opts) {
 }
 
 const historyMounts = {};
+
+// Technical Dashboard follows the page's cluster filter so the history panel
+// shows the same project-team scope as the tables above it. Executive View has
+// no cluster filter and always shows every cluster in the vCenter scope.
+function historyClustersParam(opts) {
+  if (!opts || !opts.followClusterFilter) return null;
+  const c = appState && appState.filters ? appState.filters.cluster : 'all';
+  return c && c !== 'all' ? [c] : null;
+}
 
 async function renderHistoryPanel(mountId, opts = {}) {
   const mount = document.getElementById(mountId);
@@ -320,17 +329,21 @@ async function renderHistoryPanel(mountId, opts = {}) {
   bindHistoryControls(mountId, opts);
 
   let data = null, changes = null;
+  const clusters = historyClustersParam(opts);
   try {
     const vcenter = historyVcenterParam();
-    const jobs = [api.getResourceHistory(vcenter, historyState.months, historyState.group)];
-    jobs.push(api.getVmChanges(vcenter, historyState.months));
+    const jobs = [api.getResourceHistory(vcenter, historyState.months, historyState.group, clusters)];
+    jobs.push(api.getVmChanges(vcenter, historyState.months, clusters));
     [data, changes] = await Promise.all(jobs);
   } catch (err) {
     historyEmpty(mountId, `Không tải được lịch sử snapshot: ${err.message || err}`);
     return;
   }
   const sub = document.getElementById(`${mountId}Sub`);
-  if (sub) sub.textContent = `${historyState.months} tháng gần nhất · ${data.pointCount} ngày có snapshot · % tính theo ngưỡng overcommit hiện tại (CPU ${appState.policy.cpuOvercommitMax}x, RAM ${appState.policy.ramOvercommitMax}x).`;
+  if (sub) {
+    const scope = clusters ? ` · Cluster: ${clusters.join(', ')}` : '';
+    sub.textContent = `${historyState.months} tháng gần nhất${scope} · ${data.pointCount} ngày có snapshot · % tính theo ngưỡng overcommit hiện tại (CPU ${appState.policy.cpuOvercommitMax}x, RAM ${appState.policy.ramOvercommitMax}x).`;
+  }
   if (!data.available) {
     historyEmpty(mountId, data.pointCount === 1
       ? 'Mới có 1 ngày snapshot trong khoảng này — biểu đồ biến động sẽ xuất hiện sau lần đồng bộ tiếp theo (polling tự động theo lịch).'

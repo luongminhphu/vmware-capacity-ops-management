@@ -107,13 +107,16 @@ const api = {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   },
 
-  getResourceHistory: (vcenter, months, group) => {
-    const qs = new URLSearchParams({ vcenter: vcenter || 'all', months: String(months || 12), group: group || 'vcenter' }).toString();
-    return apiRequest(`/dashboard/history?${qs}`);
+  // `clusters`: null/undefined = every cluster; array = only those clusters (project-team scope).
+  getResourceHistory: (vcenter, months, group, clusters) => {
+    const params = { vcenter: vcenter || 'all', months: String(months || 12), group: group || 'cluster' };
+    if (Array.isArray(clusters)) params.clusters = clusters.join(',');
+    return apiRequest(`/dashboard/history?${new URLSearchParams(params).toString()}`);
   },
-  getVmChanges: (vcenter, months) => {
-    const qs = new URLSearchParams({ vcenter: vcenter || 'all', months: String(months || 12) }).toString();
-    return apiRequest(`/dashboard/vm-changes?${qs}`);
+  getVmChanges: (vcenter, months, clusters) => {
+    const params = { vcenter: vcenter || 'all', months: String(months || 12) };
+    if (Array.isArray(clusters)) params.clusters = clusters.join(',');
+    return apiRequest(`/dashboard/vm-changes?${new URLSearchParams(params).toString()}`);
   },
 
   getManagementBrief: (vcenter, includeStorage) => {

@@ -88,14 +88,14 @@ def export_pdf(
     logo_row = db.query(ReportLogo).filter(ReportLogo.id == 1).first()
     logo_data_url = f"data:{logo_row.mime_type};base64,{logo_row.data_base64}" if logo_row else None
 
-    # Snapshot history: Executive groups by vCenter (falls back to cluster when a
-    # single vCenter is in scope); Technical always drills down to cluster.
+    # Snapshot history is always per cluster (one cluster = one project team)
+    # and follows the same cluster scope as the rest of the report. Host
+    # narrowing does not apply: history is aggregated at cluster level.
     months = history.normalize_months(months)
     scope_keys = _scope_keys(vcenter)
-    group_by = "cluster" if (view == "technical" or scope_keys is not None) else "vcenter"
     try:
-        history_data = history.get_resource_history(db, scope_keys, months, group_by, policy)
-        vm_changes = history.get_vm_changes(db, scope_keys, months)
+        history_data = history.get_resource_history(db, scope_keys, months, "cluster", policy, clusters=cluster_list)
+        vm_changes = history.get_vm_changes(db, scope_keys, months, clusters=cluster_list)
     except Exception:  # pragma: no cover - history must never block the report
         history_data, vm_changes = None, None
 

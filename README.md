@@ -49,21 +49,28 @@ và RAM luôn bật. Nút **Tiêu chí đánh giá** ở header cho phép bật 
 ### Biến động tài nguyên theo thời gian (snapshot history)
 
 Mỗi lần đồng bộ vCenter được lưu thành snapshot, nên ứng dụng có thể vẽ **biến động CPU/RAM theo
-thời gian** cho từng vCenter hoặc cluster, với khoảng nhìn lại **3 / 6 / 12 tháng**:
+thời gian** với khoảng nhìn lại **3 / 6 / 12 tháng**. Đơn vị theo dõi **mặc định là cluster** (mỗi
+cluster = một nhóm dự án độc lập, là cấp đề xuất bổ sung tài nguyên); nhóm theo vCenter là góc nhìn
+phụ:
 
 - Panel "Biến động tài nguyên CPU/RAM theo thời gian" xuất hiện ở cả **Executive View** và tab
   **Dashboard** (Technical View): 4 ô KPI đầu kỳ → nay (CPU %, RAM %, số VM, số host), hai biểu
   đồ đường CPU/RAM (% ngưỡng overcommit, có đường ngưỡng 100% và đường "Toàn bộ"), bảng delta
   từng nhóm và 2–3 câu nhận định ngắn. Technical View có thêm hai bảng **VM thêm mới / VM đã
   loại bỏ** trong kỳ. Lựa chọn khoảng thời gian và cách nhóm được lưu trên trình duyệt
-  (`vco.historyMonths`, `vco.historyGroup`).
-- Cùng số liệu được đưa vào PDF: Báo cáo Điều hành có mục *"Biến động tài nguyên N tháng gần
-  nhất"* (nhóm theo vCenter; tự chuyển sang cluster khi chỉ chọn 1 vCenter); Báo cáo Kỹ thuật có
-  mục tương tự nhóm theo cluster và **Phụ lục A — VM thêm mới / loại bỏ** (vCenter, cluster,
-  host, trạng thái, vCPU, RAM, ngày xuất hiện/thấy lần cuối). Tham số `&months=3|6|12` của
-  `GET /api/reports/pdf` nhận từ lựa chọn trên giao diện.
-- API: `GET /api/dashboard/history?vcenter=<key|all>&months=3|6|12&group=vcenter|cluster` và
-  `GET /api/dashboard/vm-changes?vcenter=<key|all>&months=3|6|12`. % được tính theo ngưỡng
+  (`vco.historyMonths`, `vco.historyGroupV2`).
+- Panel trên tab Dashboard **đi theo bộ lọc Cluster** của trang: chọn một cluster thì biểu đồ,
+  bảng delta, nhận định và danh sách VM thêm/bỏ chỉ tính cho cluster đó; Executive View luôn hiển
+  thị mọi cluster trong phạm vi vCenter đang chọn.
+- Cùng số liệu được đưa vào PDF, luôn theo cluster và **theo đúng phạm vi cluster đã chọn khi xuất
+  báo cáo** (không lấy toàn bộ): Báo cáo Điều hành có mục *"Biến động tài nguyên N tháng gần
+  nhất"*; Báo cáo Kỹ thuật có mục tương tự và **Phụ lục A — VM thêm mới / loại bỏ** (vCenter,
+  cluster, host, trạng thái, vCPU, RAM, ngày xuất hiện/thấy lần cuối). Tham số `&months=3|6|12`
+  và `&clusters=A,B` của `GET /api/reports/pdf` nhận từ lựa chọn trên giao diện; bộ lọc host không
+  áp dụng cho phần lịch sử vì snapshot được tổng hợp ở cấp cluster.
+- API: `GET /api/dashboard/history?vcenter=<key|all>&months=3|6|12&group=cluster|vcenter[&clusters=A,B]`
+  và `GET /api/dashboard/vm-changes?vcenter=<key|all>&months=3|6|12[&clusters=A,B]`. Khi chỉ có 1
+  vCenter trong phạm vi, nhãn cluster không kèm tên vCenter. % được tính theo ngưỡng
   overcommit **đang áp dụng** (một snapshot/ngày, lấy lần đồng bộ cuối trong ngày theo giờ VN);
   "thêm mới/loại bỏ" so sánh theo tên VM giữa snapshot đầu kỳ và mới nhất của từng vCenter.
 - Cần tối thiểu 2 ngày có snapshot trong khoảng đã chọn; khi chưa đủ, giao diện và PDF hiển thị

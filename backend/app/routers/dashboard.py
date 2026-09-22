@@ -118,6 +118,13 @@ def _days_span(trend: List[dict]) -> float:
     return span_days / max(1, len(trend) - 1)
 
 
+def _split_csv(value: Optional[str]) -> Optional[list]:
+    """None when the param is omitted; [] when given but empty (explicit "none")."""
+    if value is None:
+        return None
+    return [v.strip() for v in value.split(",") if v.strip()]
+
+
 def _scope_keys(vcenter: Optional[str]):
     if not vcenter or vcenter == "all":
         return None
@@ -130,15 +137,17 @@ def _scope_keys(vcenter: Optional[str]):
 def resource_history(
     vcenter: Optional[str] = Query(default="all"),
     months: int = Query(default=12, description="Look-back window: 3, 6 or 12 months"),
-    group: str = Query(default="vcenter", pattern="^(vcenter|cluster)$"),
+    group: str = Query(default="cluster", pattern="^(vcenter|cluster)$"),
+    clusters: Optional[str] = Query(default=None, description="Comma-separated cluster names to include (omit = every cluster)"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    """CPU/RAM change over time per vCenter or cluster, from snapshot history
-    (daily, latest run per day). Percentages use the current overcommit
-    policy so they line up with the rest of the dashboard."""
+    """CPU/RAM change over time per cluster (default — one cluster = one
+    project team) or per vCenter, from snapshot history (daily, latest run
+    per day). Percentages use the current overcommit policy so they line up
+    with the rest of the dashboard."""
     policy = data_access.get_effective_policy(db, get_settings())
-    data = history.get_resource_history(db, _scope_keys(vcenter), months, group, policy)
+    data = history.get_resource_history(db, _scope_keys(vcenter), months, group, policy, clusters=_split_csv(clusters))
     # Same plain-language reading as the PDF section so web and report agree.
     from .. import report_pdf
     data["insights"] = report_pdf._history_insights(data) if data.get("available") else []
@@ -149,9 +158,10 @@ def resource_history(
 def vm_changes(
     vcenter: Optional[str] = Query(default="all"),
     months: int = Query(default=12),
+    clusters: Optional[str] = Query(default=None, description="Comma-separated cluster names to include (omit = every cluster)"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     """VMs added / removed between the first and the latest snapshot inside
-    the look-back window."""
-    return history.get_vm_changes(db, _scope_keys(vcenter), months)
+    the look-back window (optionally limited to the given clusters)."""
+    return history.get_vm_changes(db, _scope_keys(vcenter), months, clusters=_split_csv(clusters))

@@ -662,7 +662,7 @@ def _history_legend_html(history: Dict[str, Any]) -> str:
         color = HISTORY_SERIES_COLORS[i % len(HISTORY_SERIES_COLORS)]
         items.append(f'<span><span class="dot" style="background:{color};"></span>{esc(g["label"])}</span>')
     if len(groups) != 1:
-        items.append(f'<span><span class="dot" style="background:{COLORS["ink"]};height:2px;width:12px;border-radius:0;"></span>Toàn bộ (đường đứt)</span>')
+        items.append(f'<span><span class="dot" style="background:{COLORS["ink"]};height:2px;width:12px;border-radius:0;"></span>{esc(history["overall"].get("label") or "Toàn bộ")} (đường đứt)</span>')
     return f'<div class="legend" style="margin-top:4px;">{"".join(items)}</div>'
 
 
@@ -677,7 +677,7 @@ def _history_series(history: Dict[str, Any], field: str, max_points: int = 60) -
         series.append({"name": g["label"], "color": HISTORY_SERIES_COLORS[i % len(HISTORY_SERIES_COLORS)],
                        "values": [lookup.get(d) for d in dates]})
     if len(groups) != 1:
-        series.append({"name": "Toàn bộ", "color": COLORS["ink"], "dashed": True, "values": [p.get(field) for p in overall]})
+        series.append({"name": history["overall"].get("label") or "Toàn bộ", "color": COLORS["ink"], "dashed": True, "values": [p.get(field) for p in overall]})
     return dates, series
 
 
@@ -712,7 +712,8 @@ def _history_insights(history: Dict[str, Any]) -> List[str]:
         top_metric = "RAM" if (fd.get("ramPct") or 0) >= (fd.get("cpuPct") or 0) else "CPU"
         top_val = fd.get("ramPct") if top_metric == "RAM" else fd.get("cpuPct")
         if _finite(top_val) and top_val > 0.3:
-            out.append(f"Tăng nhanh nhất là <b>{esc(fastest['label'])}</b> ({top_metric} {_fmt_delta(top_val, 1, ' điểm')}, VM {_fmt_delta(fd.get('vmCount'), 0)}) — nơi nên xem xét mở rộng hoặc cân bằng tải trước.")
+            gword = "Cluster" if history.get("groupBy") == "cluster" else "vCenter"
+            out.append(f"Tăng nhanh nhất là {gword.lower()} <b>{esc(fastest['label'])}</b> ({top_metric} {_fmt_delta(top_val, 1, ' điểm')}, VM {_fmt_delta(fd.get('vmCount'), 0)}) — nơi nên ưu tiên đề xuất bổ sung tài nguyên hoặc cân bằng tải trước.")
     return out
 
 
@@ -721,7 +722,7 @@ def _history_table_html(history: Dict[str, Any], group_label: str) -> str:
     total = None
     if len(history.get("groups", [])) != 1:
         total = dict(history["overall"]["summary"])
-        total["label"] = "Toàn bộ"
+        total["label"] = history["overall"].get("label") or "Toàn bộ"
 
     def _row(sm: Dict[str, Any], bold: bool = False) -> str:
         d = sm.get("delta", {})
@@ -764,8 +765,14 @@ def _history_section_html(history: Optional[Dict[str, Any]], vm_changes: Optiona
         vm_line = (f'<div class="small-note" style="margin-top:6px;">Biến động VM trong kỳ: <b style="color:{COLORS["ok"]};">+{a["count"]} thêm mới</b> '
                    f'({fmt_int(a["vcpu"])} vCPU · {fmt_int(a["ramGB"])} GB RAM) · <b style="color:{COLORS["warn"]};">−{r["count"]} loại bỏ</b> '
                    f'({fmt_int(r["vcpu"])} vCPU · {fmt_int(r["ramGB"])} GB RAM){tail}</div>')
-    sub = (f"So sánh {_fmt_short_date(s.get('firstDate'))} → {_fmt_short_date(s.get('lastDate'))} qua {fmt_int(history.get('pointCount'))} ngày có snapshot; "
-           f"% tính theo ngưỡng overcommit đang áp dụng, nên 100% = chạm chính sách, không phải hết tài nguyên vật lý.")
+    scope_clusters = history.get("clusters")
+    scope_txt = ""
+    if scope_clusters is not None:
+        shown = ", ".join(scope_clusters[:4]) + (f" và {len(scope_clusters) - 4} cluster khác" if len(scope_clusters) > 4 else "")
+        scope_txt = f" Phạm vi: cluster {shown}." if scope_clusters else " Phạm vi: không có cluster nào được chọn."
+    sub = (f"Mỗi {group_label.lower()} được theo dõi như một nhóm dự án độc lập. "
+           f"So sánh {_fmt_short_date(s.get('firstDate'))} → {_fmt_short_date(s.get('lastDate'))} qua {fmt_int(history.get('pointCount'))} ngày có snapshot; "
+           f"% tính theo ngưỡng overcommit đang áp dụng, nên 100% = chạm chính sách, không phải hết tài nguyên vật lý.{scope_txt}")
     cpu_chart = svg_line_chart(cpu_dates, cpu_series, width=318, height=168)
     ram_chart = svg_line_chart(ram_dates, ram_series, width=318, height=168)
     return (
@@ -813,13 +820,17 @@ def _vm_changes_appendix_html(vm_changes: Optional[Dict[str, Any]]) -> str:
         f'<td style="color:{COLORS["ok"]};font-weight:700;">+{fmt_int(sc.get("added"))}</td>'
         f'<td style="color:{COLORS["warn"]};font-weight:700;">−{fmt_int(sc.get("removed"))}</td></tr>'
         for sc in vm_changes.get("scopes", []) if sc.get("available"))
+    sc_clusters = vm_changes.get("clusters")
+    scope_note = ""
+    if sc_clusters is not None:
+        scope_note = (" Phạm vi: cluster " + ", ".join(sc_clusters) + ".") if sc_clusters else " Phạm vi: không có cluster nào được chọn."
     header = "<tr><th>VM</th><th>vCenter</th><th>Cluster</th><th>Host</th><th>Trạng thái</th><th>vCPU</th><th>RAM (GB)</th><th style=\"white-space:nowrap;\">{}</th></tr>"
     sub_title_style = 'style="font-size:10.5px;border-left:none;padding-left:0;margin-top:12px;"'
     return (
         '<div class="section breakable" style="break-before:page;">'
         f'<div class="section-title">{esc(title)}</div>'
         '<div class="section-sub">Đối chiếu snapshot đầu kỳ với snapshot mới nhất của từng vCenter theo tên VM. "Thêm mới" = có ở snapshot mới nhất nhưng chưa có ở đầu kỳ; '
-        '"Loại bỏ" = có ở đầu kỳ nhưng không còn ở snapshot mới nhất (đã xóa, đổi tên hoặc chuyển sang vCenter khác).</div>'
+        f'"Loại bỏ" = có ở đầu kỳ nhưng không còn ở snapshot mới nhất (đã xóa, đổi tên hoặc chuyển sang vCenter khác).{esc(scope_note)}</div>'
         '<table><thead><tr><th>vCenter</th><th>Snapshot đầu kỳ</th><th>Snapshot mới nhất</th><th>VM đầu kỳ</th><th>VM hiện tại</th><th>Thêm mới</th><th>Loại bỏ</th></tr></thead>'
         f'<tbody>{scope_rows}</tbody></table>'
         f'<div class="section-title" {sub_title_style}>A.1 VM thêm mới ({fmt_int(a["count"])} VM · {fmt_int(a["vcpu"])} vCPU · {fmt_int(a["ramGB"])} GB RAM · {fmt_int(a["poweredOn"])} đang bật)</div>'
