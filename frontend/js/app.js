@@ -251,6 +251,45 @@ function bindPdfFindingFilterDropdown() {
   updatePdfFindingFilterSummary();
 }
 
+/* ---------- Assessment criteria (Storage on/off) ---------- */
+function setCriteriaStatus(message, kind) {
+  const el = $('#criteriaStatus');
+  if (!el) return;
+  el.textContent = message || '';
+  el.classList.remove('ok', 'error');
+  if (kind) el.classList.add(kind);
+}
+
+function updateCriteriaSummary() {
+  const dropdown = $('#criteriaFilterDropdown');
+  const summary = dropdown && dropdown.querySelector('summary');
+  if (!summary) return;
+  summary.textContent = appState.policy.includeStorage ? 'Tiêu chí đánh giá (CPU · RAM · Storage)' : 'Tiêu chí đánh giá (CPU · RAM — Storage tắt)';
+  const cb = $('#criteriaStorageToggle');
+  if (cb) cb.checked = !!appState.policy.includeStorage;
+}
+
+async function handleStorageCriteriaToggle(e) {
+  const enabled = !!e.target.checked;
+  appState.policy.includeStorage = enabled;
+  try { localStorage.setItem('vco.includeStorage', enabled ? '1' : '0'); } catch (err) { /* ignore */ }
+  updateCriteriaSummary();
+  refreshAll();
+  if (appState.perspective === 'executive') await renderExecutiveView();
+  try {
+    await api.updateSettings({ include_storage: enabled });
+    setCriteriaStatus(enabled ? 'Đã bật đánh giá Storage (đã lưu cho toàn hệ thống).' : 'Đã tắt đánh giá Storage (đã lưu cho toàn hệ thống).', 'ok');
+  } catch (err) {
+    setCriteriaStatus(`Áp dụng cục bộ; không lưu được lên server: ${err.message}`, 'error');
+  }
+}
+
+function bindCriteriaDropdown() {
+  const cb = $('#criteriaStorageToggle');
+  if (cb) cb.addEventListener('change', handleStorageCriteriaToggle);
+  updateCriteriaSummary();
+}
+
 /* ---------- Company logo upload (embedded on PDF report covers) ---------- */
 function setLogoStatus(message, kind) {
   const el = $('#logoUploadStatus');
@@ -337,7 +376,7 @@ async function handleExportPdf(view, btn) {
     const findingTypes = getSelectedPdfFindingTypes();
     const clusters = getSelectedPdfClusters();
     const hosts = getSelectedPdfHosts();
-    await api.downloadPdfReport(view, vcenterParam, findingTypes, clusters, hosts);
+    await api.downloadPdfReport(view, vcenterParam, findingTypes, clusters, hosts, !!appState.policy.includeStorage);
   } catch (err) {
     showValidationBanner([`Không thể xuất báo cáo PDF: ${err.message}`], []);
   } finally {
@@ -429,12 +468,19 @@ async function initAppData() {
       appState.policy.cpuOvercommitMax = policy.cpu_overcommit_max ?? policy.cpuOvercommitMax ?? appState.policy.cpuOvercommitMax;
       appState.policy.ramOvercommitMax = policy.ram_overcommit_max ?? policy.ramOvercommitMax ?? appState.policy.ramOvercommitMax;
       appState.policy.htFactor = policy.ht_factor ?? policy.htFactor ?? appState.policy.htFactor;
+      if (policy.include_storage !== undefined || policy.includeStorage !== undefined) {
+        appState.policy.includeStorage = !!(policy.include_storage ?? policy.includeStorage);
+      }
       $('#idleThresholdInput').value = appState.policy.idleDays;
       $('#cpuOvercommitInput').value = appState.policy.cpuOvercommitMax;
       $('#ramOvercommitInput').value = appState.policy.ramOvercommitMax;
       $('#htFactorInput').value = appState.policy.htFactor;
     }
-  } catch (err) { /* fall back to client defaults */ }
+  } catch (err) {
+    // Server unreachable — fall back to the last locally chosen criteria.
+    try { const v = localStorage.getItem('vco.includeStorage'); if (v !== null) appState.policy.includeStorage = v === '1'; } catch (e) { /* ignore */ }
+  }
+  updateCriteriaSummary();
 
   await refreshVcenterList();
   await loadLiveData();
@@ -450,6 +496,7 @@ function bindTopBarInteractions() {
   bindPdfFindingFilterDropdown();
   bindPdfScopeFilterDropdown();
   bindLogoUploadDropdown();
+  bindCriteriaDropdown();
   $('#vcenterSelect').addEventListener('change', e => {
     currentVcenterFilter = e.target.value;
     loadLiveData();

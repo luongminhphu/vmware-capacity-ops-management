@@ -13,11 +13,29 @@ from typing import Any, Dict, List, Optional
 
 
 class Policy:
-    def __init__(self, cpu_overcommit_max=6.0, ram_overcommit_max=1.0, ht_factor=2.0, idle_days=30):
+    def __init__(self, cpu_overcommit_max=6.0, ram_overcommit_max=1.0, ht_factor=2.0, idle_days=30,
+                 include_storage=False):
         self.cpu_overcommit_max = cpu_overcommit_max
         self.ram_overcommit_max = ram_overcommit_max
         self.ht_factor = ht_factor
         self.idle_days = idle_days
+        # Whether Storage (provisioned/used % per datastore & cluster) is part
+        # of the capacity assessment. Defaults to False because the reference
+        # environment runs on shared SAN storage where thick-provisioned VMs
+        # make "used / provisioned" sit near 100% regardless of real SAN
+        # headroom -- a misleading signal for investment decisions. When
+        # False, dashboards and PDF reports omit every storage KPI/chart/table
+        # and state explicitly that Storage is out of scope.
+        self.include_storage = bool(include_storage)
+
+
+def parse_bool(value, default: bool = False) -> bool:
+    """Lenient bool parser for env vars / app_settings string values."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
 
 
 def _finite(v) -> bool:

@@ -24,6 +24,7 @@ def get_effective_policy(db: Session, settings: Settings) -> "capacity.Policy":
         ram_overcommit_max=float(overrides.get("ram_overcommit_max", settings.ram_overcommit_max)),
         ht_factor=float(overrides.get("ht_factor", settings.ht_factor)),
         idle_days=int(float(overrides.get("idle_days", settings.idle_days))),
+        include_storage=capacity.parse_bool(overrides.get("include_storage"), default=bool(settings.include_storage)),
     )
 
 

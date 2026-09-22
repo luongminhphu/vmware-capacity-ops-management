@@ -58,6 +58,17 @@
     </div>
     <div class="header-actions">
       <button class="btn btn-secondary" id="btnExportCsv" type="button">Export CSV</button>
+      <details class="finding-filter-dropdown" id="criteriaFilterDropdown">
+        <summary class="btn btn-secondary" title="Chọn tiêu chí tài nguyên được đưa vào đánh giá trên dashboard và báo cáo PDF">Tiêu chí đánh giá</summary>
+        <div class="finding-filter-panel criteria-filter-panel">
+          <label class="finding-filter-item criteria-locked" title="CPU luôn được đánh giá"><input type="checkbox" checked disabled><span>CPU (overcommit vCPU:pCPU)</span></label>
+          <label class="finding-filter-item criteria-locked" title="RAM luôn được đánh giá"><input type="checkbox" checked disabled><span>RAM (overcommit vRAM:pRAM)</span></label>
+          <div class="finding-filter-sep"></div>
+          <label class="finding-filter-item"><input type="checkbox" id="criteriaStorageToggle"><span>Storage (Used / Provisioned theo datastore)</span></label>
+          <p class="criteria-hint">Tắt khi dùng SAN dùng chung: VM thick provisioning làm % storage luôn tiệm cận 100% và không phản ánh dung lượng SAN thực còn trống. Khi tắt, mọi KPI, biểu đồ, bảng và nội dung PDF về storage sẽ được loại khỏi đánh giá và báo cáo ghi rõ "Storage: không đánh giá".</p>
+          <p class="criteria-status" id="criteriaStatus"></p>
+        </div>
+      </details>
       <details class="finding-filter-dropdown" id="pdfScopeFilterDropdown">
         <summary class="btn btn-secondary" title="Chọn cluster/host sẽ được đưa vào báo cáo PDF">Phạm vi cluster/host cho PDF</summary>
         <div class="finding-filter-panel scope-filter-panel">
@@ -141,6 +152,10 @@
 
   <!-- ================= EXECUTIVE VIEW ================= -->
   <div id="executiveView" class="perspective-view hidden">
+    <section class="card exec-brief-card" id="execBrief" aria-live="polite">
+      <div class="empty-state">Đang tổng hợp nhận định cho Ban lãnh đạo...</div>
+    </section>
+
     <section class="exec-grid" id="execKpis"></section>
 
     <section class="chart-grid" style="grid-template-columns:2fr 1fr;">
@@ -162,6 +177,23 @@
         <div><div class="panel-title">Top cluster rủi ro cao nhất</div><p class="panel-sub">Xếp hạng theo % ngưỡng overcommit CPU/RAM đã dùng — ưu tiên đầu tư/mở rộng.</p></div>
       </div>
       <div id="execTopRisk"></div>
+    </section>
+
+    <section class="panel" id="execRecommendationsPanel">
+      <div class="panel-head">
+        <div><div class="panel-title">Nhận định &amp; đề xuất cho Ban lãnh đạo</div><p class="panel-sub">Mỗi đề xuất trả lời: điều này có nghĩa gì với hoạt động kinh doanh, chúng tôi đề xuất làm gì, và điều gì xảy ra nếu chưa hành động.</p></div>
+      </div>
+      <div id="execRecommendations"></div>
+    </section>
+
+    <section class="panel" id="execDecisionPanel">
+      <div class="panel-head">
+        <div><div class="panel-title">Danh mục quyết định trình Ban lãnh đạo</div><p class="panel-sub">Các nội dung cần phê duyệt hoặc ghi nhận chủ trương, xếp theo mức ưu tiên.</p></div>
+      </div>
+      <div class="table-wrap"><table class="data-table" id="execDecisionTable">
+        <thead><tr><th>#</th><th>Nội dung quyết định</th><th>Ưu tiên</th><th>Thời điểm</th><th>Rủi ro tránh được / lợi ích</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
     </section>
   </div>
 
@@ -221,7 +253,7 @@
 
         <section class="chart-grid">
           <article class="card chart-card">
-            <div class="panel-head"><div><div class="panel-title">Utilization theo Cluster</div><p class="panel-sub">CPU / RAM / Storage % sử dụng theo từng cluster.</p></div></div>
+            <div class="panel-head"><div><div class="panel-title">Utilization theo Cluster</div><p class="panel-sub" id="clusterUtilSub">CPU / RAM / Storage % sử dụng theo từng cluster.</p></div></div>
             <div class="chart-wrap"><canvas id="chartClusterUtil"></canvas></div>
           </article>
           <article class="card chart-card">
@@ -234,8 +266,8 @@
           </article>
         </section>
 
-        <section class="chart-grid" style="grid-template-columns:1fr 1fr;">
-          <article class="card chart-card">
+        <section class="chart-grid" id="datastoreChartGrid" style="grid-template-columns:1fr 1fr;">
+          <article class="card chart-card" id="datastoreChartCard">
             <div class="panel-head"><div><div class="panel-title">Phân bổ tài nguyên theo Datastore</div><p class="panel-sub">Provisioned vs Used theo datastore.</p></div></div>
             <div class="chart-wrap"><canvas id="chartDatastore"></canvas></div>
           </article>
@@ -253,7 +285,7 @@
             <table class="data-table" id="clusterTable">
               <thead><tr>
                 <th data-key="name">Cluster</th><th data-key="hosts">Hosts</th><th data-key="vms">VMs</th>
-                <th data-key="cpuPct" title="% ngưỡng overcommit CPU đã dùng = overcommit CPU thực tế ÷ ngưỡng overcommit CPU × 100. Overcommit CPU = vCPU dùng / pCPU logic (pCPU logic = CPU Cores vật lý × hệ số Hyperthreading)">CPU % (theo overcommit)</th><th data-key="ramPct" title="% ngưỡng overcommit RAM đã dùng = overcommit RAM thực tế ÷ ngưỡng overcommit RAM × 100">RAM % (theo overcommit)</th><th data-key="storagePct">Storage %</th>
+                <th data-key="cpuPct" title="% ngưỡng overcommit CPU đã dùng = overcommit CPU thực tế ÷ ngưỡng overcommit CPU × 100. Overcommit CPU = vCPU dùng / pCPU logic (pCPU logic = CPU Cores vật lý × hệ số Hyperthreading)">CPU % (theo overcommit)</th><th data-key="ramPct" title="% ngưỡng overcommit RAM đã dùng = overcommit RAM thực tế ÷ ngưỡng overcommit RAM × 100">RAM % (theo overcommit)</th><th data-key="storagePct" class="col-storage">Storage %</th>
                 <th data-key="cpuOvercommit">CPU Overcommit</th><th data-key="ramOvercommit">RAM Overcommit</th><th data-key="status">Status</th>
               </tr></thead>
               <tbody></tbody>

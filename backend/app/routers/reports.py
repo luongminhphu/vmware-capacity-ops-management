@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from .. import data_access, report_pdf
+from .. import capacity, data_access, report_pdf
 from ..config import get_settings
 from ..database import get_db
 from ..models import ReportLogo, User
@@ -43,11 +43,16 @@ def export_pdf(
     types: Optional[str] = Query(default=None, description="Comma-separated finding types to include (omit = all types)"),
     clusters: Optional[str] = Query(default=None, description="Comma-separated cluster names to include (omit = every cluster)"),
     hosts: Optional[str] = Query(default=None, description="Comma-separated host names to include (omit = every host in scope)"),
+    storage: Optional[str] = Query(default=None, description="'1'/'true' to include Storage criteria, '0'/'false' to exclude (omit = use saved setting)"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
     settings = get_settings()
     policy = data_access.get_effective_policy(db, settings)
+    if storage is not None:
+        # Explicit per-export override from the UI toggle; otherwise the
+        # persisted app setting (include_storage) decides.
+        policy.include_storage = capacity.parse_bool(storage, default=policy.include_storage)
     host_rows, vm_rows, run_meta = data_access.get_latest_combined(db, _scope_keys(vcenter))
 
     if not host_rows and not vm_rows:
@@ -94,3 +99,26 @@ def export_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get("/brief")
+def management_brief(
+    vcenter: Optional[str] = Query(default="all"),
+    storage: Optional[str] = Query(default=None, description="'1'/'true' to include Storage criteria, '0'/'false' to exclude (omit = use saved setting)"),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Management-friendly brief (headline, key points, recommendations,
+    decision register) for the web Executive View -- same logic as the
+    Executive PDF."""
+    settings = get_settings()
+    policy = data_access.get_effective_policy(db, settings)
+    if storage is not None:
+        policy.include_storage = capacity.parse_bool(storage, default=policy.include_storage)
+    host_rows, vm_rows, _run_meta = data_access.get_latest_combined(db, _scope_keys(vcenter))
+    if not host_rows and not vm_rows:
+        return {"available": False, "scope": _scope_label(vcenter)}
+    brief = report_pdf.build_management_brief(host_rows, vm_rows, policy)
+    brief["available"] = True
+    brief["scope"] = _scope_label(vcenter)
+    return brief

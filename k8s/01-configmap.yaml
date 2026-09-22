@@ -11,6 +11,9 @@ data:
   CORS_ORIGINS: "*"
   ENABLE_SCHEDULER: "true"
   POLL_INTERVAL_MINUTES: "60"
+  # Storage criteria off by default (shared SAN + thick provisioning makes
+  # datastore "% allocated" misleading); toggle in UI under "Tiêu chí đánh giá".
+  INCLUDE_STORAGE: "false"
 
   # ---- vCenter #1..#4 — phần KHÔNG nhạy cảm ----
   # Dùng chung tài khoản read-only infra.mon@vsphere.local trên cả 4 vCenter.

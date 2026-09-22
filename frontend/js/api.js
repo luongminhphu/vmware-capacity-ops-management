@@ -70,8 +70,12 @@ const api = {
 
   /* PDF report is a binary download, not JSON — bypasses apiRequest and
      streams the response straight into a file-save via an object URL. */
-  downloadPdfReport: async (view, vcenter, types, clusters, hosts) => {
+  downloadPdfReport: async (view, vcenter, types, clusters, hosts, includeStorage) => {
     const params = { view, vcenter: vcenter || 'all' };
+    // Storage criteria toggle: always sent explicitly so the PDF matches what
+    // the user currently sees on the dashboard (backend falls back to the
+    // persisted setting only when this param is omitted).
+    if (includeStorage !== null && includeStorage !== undefined) params.storage = includeStorage ? '1' : '0';
     if (types && types.length) params.types = types.join(',');
     // clusters/hosts: null means "no filter" (omit param entirely). A non-null
     // array means the user explicitly scoped the export, so send the param even
@@ -99,6 +103,11 @@ const api = {
     a.href = url; a.download = filename;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
+
+  getManagementBrief: (vcenter, includeStorage) => {
+    const qs = new URLSearchParams({ vcenter: vcenter || 'all', storage: includeStorage ? '1' : '0' }).toString();
+    return apiRequest(`/reports/brief?${qs}`);
   },
 
   getLogo: () => apiRequest('/settings/logo'),

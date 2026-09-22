@@ -32,6 +32,7 @@ class SettingsUpdate(BaseModel):
     ram_overcommit_max: Optional[float] = None
     ht_factor: Optional[float] = None
     idle_days: Optional[int] = None
+    include_storage: Optional[bool] = None
 
 
 class LogoUpload(BaseModel):

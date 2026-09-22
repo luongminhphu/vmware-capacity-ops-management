@@ -4,8 +4,11 @@
 live tới 4 vCenter (đọc chỉ đọc)** song song với import CSV/JSON thủ công, lưu lịch sử theo thời
 gian bằng PostgreSQL, và giao diện chia hai góc nhìn:
 
-- **Executive View** — KPI tổng năng lực CPU/RAM, xu hướng sử dụng theo thời gian, dự báo bao lâu
-  nữa hết công suất, top cluster rủi ro cao nhất. Dành cho lãnh đạo ra quyết định đầu tư/mở rộng.
+- **Executive View** — "Tóm tắt 30 giây cho Ban lãnh đạo" (trạng thái sức khỏe, thông điệp chính,
+  điểm cần biết, quyết định cần đưa ra), KPI tổng năng lực CPU/RAM, xu hướng sử dụng theo thời
+  gian, dự báo bao lâu nữa hết công suất, top cluster rủi ro cao nhất, các thẻ **Nhận định & đề
+  xuất** (điều này có nghĩa gì / chúng tôi đề xuất / nếu chưa hành động / đề nghị Ban lãnh đạo) và
+  **Danh mục quyết định trình Ban lãnh đạo**. Dành cho lãnh đạo ra quyết định đầu tư/mở rộng.
 - **Technical View** — dashboard capacity chi tiết, bảng host/VM, compliance findings, what-if
   simulation (Add Host, Add VM, Resize VM, Decommission Idle VM + 6 scenario template dựng sẵn).
 
@@ -18,11 +21,30 @@ Hai nút **Xuất PDF · Điều hành** và **Xuất PDF · Kỹ thuật** ở 
 A4 (in được trực tiếp) từ `GET /api/reports/pdf?view=executive|technical&vcenter=<key|all>`
 (yêu cầu đăng nhập), theo scope vCenter đang chọn trên thanh lọc:
 
-- **Báo cáo Điều hành** — KPI CPU/RAM/Storage/Host-VM tổng quan, đánh giá rủi ro tổng thể,
-  insight đầu tư/rủi ro tự sinh, biểu đồ utilization theo cluster + VM power-state, top cluster
-  cần quan tâm nhất, top 10 compliance findings. Gọn trong ~2 trang, dành cho lãnh đạo.
+- **Báo cáo Điều hành** — hộp "Tóm tắt 30 giây cho Ban lãnh đạo", đồng hồ (gauge) CPU/RAM có
+  dải màu an toàn / cần lên kế hoạch / vượt ngưỡng, KPI tổng quan, các thẻ nhận định & đề xuất
+  viết bằng ngôn ngữ quản trị (ý nghĩa kinh doanh, hành động đề xuất, tác động nếu chưa làm, thời
+  điểm, mức ưu tiên), **Danh mục quyết định trình Ban lãnh đạo** có ô ký ý kiến, dự báo dư địa &
+  kế hoạch tiếp theo, kiểm tra dự phòng N+1, biểu đồ so sánh cluster có đường ngưỡng và xếp hạng
+  rủi ro theo cluster, top compliance findings. Khoảng 4 trang, dành cho lãnh đạo.
 - **Báo cáo Kỹ thuật** — bảng overcommit theo cluster, chi tiết từng host, từng datastore, và
   toàn bộ compliance findings (sắp xếp theo severity). Dài hơn, dành cho đội kỹ thuật.
+
+### Tiêu chí đánh giá — bật/tắt Storage (môi trường SAN)
+
+Với SAN Storage dùng chung, nhiều VM cấp phát **thick provisioning** nên tỷ lệ "đã dùng / cấp
+phát" của datastore luôn tiệm cận 100% dù dung lượng SAN thực còn trống — đưa vào báo cáo sẽ gây
+cảm giác thiếu an toàn không đúng thực tế. Vì vậy Storage **mặc định không được đánh giá**; CPU
+và RAM luôn bật. Nút **Tiêu chí đánh giá** ở header cho phép bật lại Storage khi cần:
+
+- Khi tắt: KPI Storage hiển thị "Không đánh giá", cột %Storage trong bảng cluster, biểu đồ
+  datastore, các finding datastore và khối Storage trong what-if simulation đều được ẩn; PDF ghi
+  rõ "Storage: không đánh giá trong báo cáo này" kèm giải thích cho người đọc.
+- Lựa chọn được lưu vào cài đặt ứng dụng (`include_storage`, chung cho mọi người dùng) và gửi
+  theo mỗi lần xuất PDF (`&storage=1|0`); giá trị khởi tạo lấy từ biến môi trường
+  `INCLUDE_STORAGE` (mặc định `false`).
+- API `GET /api/reports/brief?vcenter=<key|all>&storage=1|0` trả về bản tóm tắt cho Ban lãnh đạo
+  dạng JSON (cùng logic với PDF) để Executive View hiển thị.
 
 Render bằng [WeasyPrint](https://weasyprint.org/) (thuần Python/HTML/CSS, không cần Chromium) —
 đã có sẵn system dependencies trong `backend/Dockerfile`. Font Việt dùng bộ Noto Sans để hiển

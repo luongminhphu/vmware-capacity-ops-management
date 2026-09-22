@@ -172,8 +172,85 @@ async function renderExecutiveByVcenterChart() {
   });
 }
 
+/* ---- Management brief (headline, key points, recommendations, decision
+   register). Fetched from the backend so the web view shows exactly the same
+   wording as the Executive PDF; degrades gracefully when unavailable. ---- */
+const PRIORITY_PILL_CLS = { cao: 'prio-cao', tb: 'prio-tb', thap: 'prio-thap', info: 'prio-info' };
+
+function briefPriorityPill(rec) {
+  const cls = PRIORITY_PILL_CLS[rec.priority] || 'prio-info';
+  return `<span class="pill ${cls}">${esc(rec.priority_label || rec.priority || '')}</span>`;
+}
+
+function renderExecutiveBriefCard(brief) {
+  const card = $('#execBrief');
+  if (!card) return;
+  if (!brief || !brief.available) {
+    card.className = 'card exec-brief-card';
+    card.innerHTML = `<div class="empty-state">${esc((brief && brief.message) || 'Chưa có dữ liệu để tổng hợp nhận định. Hãy đồng bộ vCenter hoặc import dữ liệu trước.')}</div>`;
+    return;
+  }
+  card.className = `card exec-brief-card ${brief.health_cls || ''}`;
+  const storageNote = brief.include_storage ? '' : `<span class="pill">Storage: không đánh giá (SAN)</span>`;
+  card.innerHTML = `
+    <div class="exec-brief-head">
+      <span class="pill ${esc(brief.health_cls || '')}">${esc(brief.health_word || '')}</span>
+      <span class="exec-brief-kicker">Tóm tắt 30 giây cho Ban lãnh đạo · ${esc(brief.scope || '')}</span>
+      ${storageNote}
+    </div>
+    <div class="exec-brief-headline">${esc(brief.headline || '')}</div>
+    <ul class="exec-brief-points">${(brief.points || []).map(p => `<li>${esc(p)}</li>`).join('')}</ul>
+    <div class="exec-brief-decision"><strong>Quyết định cần từ Ban lãnh đạo:</strong> ${esc(brief.decision_line || '')}</div>`;
+}
+
+function renderExecutiveRecommendations(brief) {
+  const box = $('#execRecommendations');
+  const panel = $('#execRecommendationsPanel');
+  if (!box) return;
+  const recs = (brief && brief.available && brief.recommendations) || [];
+  panel.classList.toggle('hidden', !recs.length);
+  box.innerHTML = `<div class="rec-grid-web">${recs.map(r => `
+    <article class="rec-card-web prio-${esc(r.priority)} tone-${esc(r.tone || 'neutral')}">
+      <div class="rec-head"><span class="rec-num">${r.index}</span><div class="rec-title">${esc(r.title)}</div></div>
+      <div class="rec-meta">${briefPriorityPill(r)}<span class="pill">${esc(r.timeframe || '')}</span></div>
+      <div class="rec-block"><span class="rec-label">Điều này có nghĩa</span>${esc(r.meaning)}</div>
+      <div class="rec-block"><span class="rec-label">Chúng tôi đề xuất</span>${esc(r.action)}</div>
+      <div class="rec-block"><span class="rec-label">Nếu chưa hành động</span>${esc(r.impact)}</div>
+      <div class="rec-decision"><strong>Đề nghị Ban lãnh đạo:</strong> ${esc(r.decision)}</div>
+    </article>`).join('')}</div>`;
+}
+
+function renderExecutiveDecisionRegister(brief) {
+  const panel = $('#execDecisionPanel');
+  const tbody = document.querySelector('#execDecisionTable tbody');
+  if (!tbody) return;
+  const recs = ((brief && brief.available && brief.recommendations) || []).filter(r => r.priority !== 'info');
+  panel.classList.toggle('hidden', !recs.length);
+  tbody.innerHTML = recs.map((r, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td class="decision-cell"><strong>${esc(r.decision)}</strong><span class="sub">${esc(r.title)}</span></td>
+      <td>${briefPriorityPill(r)}</td>
+      <td>${esc(r.timeframe || '')}</td>
+      <td class="decision-cell">${esc(r.impact)}</td>
+    </tr>`).join('');
+}
+
+async function renderExecutiveBrief() {
+  let brief = null;
+  try {
+    const vcenter = (typeof currentVcenterFilter !== 'undefined' && currentVcenterFilter !== 'import') ? currentVcenterFilter : 'all';
+    brief = await api.getManagementBrief(vcenter, !!appState.policy.includeStorage);
+  } catch (err) {
+    brief = { available: false, message: `Không tải được nhận định cho Ban lãnh đạo: ${err.message || err}` };
+  }
+  renderExecutiveBriefCard(brief);
+  renderExecutiveRecommendations(brief);
+  renderExecutiveDecisionRegister(brief);
+}
+
 async function renderExecutiveView() {
   renderExecutiveKpis();
   renderExecutiveTopRisk();
-  await Promise.all([renderExecutiveTrendChart(), renderExecutiveByVcenterChart()]);
+  await Promise.all([renderExecutiveTrendChart(), renderExecutiveByVcenterChart(), renderExecutiveBrief()]);
 }

@@ -29,11 +29,14 @@ def get_current_thresholds(db: Session = Depends(get_db), user: User = Depends(g
 def update_thresholds(payload: SettingsUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     updates = payload.dict(exclude_none=True)
     for key, value in updates.items():
+        # Booleans are stored as "true"/"false" so capacity.parse_bool reads
+        # them back unambiguously; numbers keep their plain str() form.
+        stored = ("true" if value else "false") if isinstance(value, bool) else str(value)
         row = db.query(AppSetting).filter(AppSetting.key == key).first()
         if row:
-            row.value = str(value)
+            row.value = stored
         else:
-            db.add(AppSetting(key=key, value=str(value)))
+            db.add(AppSetting(key=key, value=stored))
     db.commit()
     settings = get_settings()
     policy = data_access.get_effective_policy(db, settings)

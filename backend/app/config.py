@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     ram_overcommit_max: float = 1.0
     ht_factor: float = 2.0
     idle_days: int = 30
+    # Storage assessment is OFF by default: shared SAN + thick provisioning
+    # makes per-VM "used / provisioned" meaningless for capacity planning.
+    # Can be toggled at runtime from the UI ("Tiêu chí đánh giá" dropdown).
+    include_storage: bool = False
 
     # Up to 4 vCenters configured via env vars VCENTER_1_* .. VCENTER_4_*
     vcenter_count: int = Field(default=4)

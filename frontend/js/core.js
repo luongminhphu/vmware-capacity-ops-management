@@ -14,7 +14,7 @@ const appState = {
   hostTableSearch: '',
   vmTableSearch: '',
   vmStatusFilter: 'all',
-  policy: { idleDays: 30, cpuWarn: 50, cpuHigh: 80, ramWarn: 50, ramHigh: 80, dsWarn: 70, dsHigh: 85, dsCrit: 95, cpuOvercommitMax: 6, ramOvercommitMax: 1.0, htFactor: 2 },
+  policy: { idleDays: 30, cpuWarn: 50, cpuHigh: 80, ramWarn: 50, ramHigh: 80, dsWarn: 70, dsHigh: 85, dsCrit: 95, cpuOvercommitMax: 6, ramOvercommitMax: 1.0, htFactor: 2, includeStorage: false },
   charts: {},
   simHistory: [],
   whatif: { cluster: null, tab: 'addHost', drafts: {} },
@@ -622,10 +622,14 @@ function renderCapacityKpis() {
       sub: `Free: ${fmtNum(model.freeRamGB,0)} GB · Overcommit ${isFinite(model.ramOvercommit) ? model.ramOvercommit.toFixed(2)+'x' : 'NA'}`,
       pct: model.ramPct, status: ramStatus
     },
-    {
+    appState.policy.includeStorage ? {
       label: 'Storage — Provisioned / Used / Free', value: `${fmtNum(model.usedStorageGB,0)} / ${fmtNum(model.provStorageGB,0)} <span class="mono" style="font-size:.6em;color:var(--muted)">GB</span>`,
       sub: `Free: ${fmtNum(model.freeStorageGB,0)} GB`,
       pct: model.storagePct, status: dsStatus
+    } : {
+      label: 'Storage — không đánh giá', value: 'Quản lý ở tầng SAN dùng chung',
+      sub: 'Thick provisioning làm % usage không phản ánh dung lượng thực. Bật lại trong "Tiêu chí đánh giá".',
+      pct: null, status: null, muted: true
     },
     {
       label: 'Hosts / VMs', value: `${fmtInt(model.hostCount)} <span class="mono" style="font-size:.6em;color:var(--muted)">hosts</span>`,
@@ -635,7 +639,7 @@ function renderCapacityKpis() {
   ];
 
   $('#capacityKpis').innerHTML = cards.map(c => `
-    <article class="kpi-card">
+    <article class="kpi-card${c.muted ? ' kpi-muted' : ''}">
       <div class="label">${esc(c.label)}</div>
       <div class="value">${c.value}</div>
       <div class="sub">${esc(c.sub)}</div>
@@ -650,6 +654,8 @@ function renderCapacityKpis() {
 function renderClusterTable() {
   const rows = buildClusterRows().filter(r => appState.filters.cluster === 'all' || r.name === appState.filters.cluster);
   const tbody = $('#clusterTable tbody');
+  const showStorage = !!appState.policy.includeStorage;
+  $$('#clusterTable th.col-storage').forEach(th => th.classList.toggle('hidden', !showStorage));
   if (!rows.length) { tbody.innerHTML = `<tr><td colspan="9"><div class="empty-note">Chưa có dữ liệu cluster.</div></td></tr>`; return; }
 
   const sorted = applySort(rows, 'clusterTable', (r, key) => {
@@ -674,7 +680,7 @@ function renderClusterTable() {
       <td>${r.vms}</td>
       <td>${barCellHtml(r.model.cpuPct)}</td>
       <td>${barCellHtml(r.model.ramPct)}</td>
-      <td>${barCellHtml(r.model.storagePct)}</td>
+      ${showStorage ? `<td>${barCellHtml(r.model.storagePct)}</td>` : ''}
       <td class="mono">${isFinite(r.model.cpuOvercommit) ? r.model.cpuOvercommit.toFixed(2)+'x' : 'NA'}</td>
       <td class="mono">${isFinite(r.model.ramOvercommit) ? r.model.ramOvercommit.toFixed(2)+'x' : 'NA'}</td>
       <td><span class="pill ${r.overall.cls}">${esc(r.overall.text)}</span></td>
@@ -702,6 +708,13 @@ function renderDashboardCharts() {
   const dsRows = buildDatastoreRows().slice(0, 10);
 
   ['clusterUtil','hostUtil','powerState','datastore','overcommit'].forEach(destroyChart);
+  const showStorage = !!appState.policy.includeStorage;
+  const dsCard = $('#datastoreChartCard');
+  const dsGrid = $('#datastoreChartGrid');
+  if (dsCard) dsCard.classList.toggle('hidden', !showStorage);
+  if (dsGrid) dsGrid.classList.toggle('storage-off', !showStorage);
+  const utilSub = $('#clusterUtilSub');
+  if (utilSub) utilSub.textContent = showStorage ? 'CPU / RAM / Storage % sử dụng theo từng cluster.' : 'CPU / RAM % theo ngưỡng overcommit từng cluster (Storage không đánh giá — SAN dùng chung).';
 
   appState.charts.clusterUtil = new Chart($('#chartClusterUtil'), {
     type: 'bar',
@@ -710,7 +723,7 @@ function renderDashboardCharts() {
       datasets: [
         { label:'CPU % (overcommit)', data: clusterRows.map(c => Number((c.model.cpuPct||0).toFixed(1))), backgroundColor: colors.primary, borderRadius: 5 },
         { label:'RAM % (overcommit)', data: clusterRows.map(c => Number((c.model.ramPct||0).toFixed(1))), backgroundColor: colors.accent, borderRadius: 5 },
-        { label:'Storage %', data: clusterRows.map(c => Number((c.model.storagePct||0).toFixed(1))), backgroundColor: colors.warn, borderRadius: 5 }
+        ...(showStorage ? [{ label:'Storage %', data: clusterRows.map(c => Number((c.model.storagePct||0).toFixed(1))), backgroundColor: colors.warn, borderRadius: 5 }] : [])
       ]
     },
     options: { maintainAspectRatio:false, plugins:{legend:{labels:{color:colors.text}}}, scales:{ x:{ticks:{color:colors.muted},grid:{color:colors.divider}}, y:{beginAtZero:true,ticks:{color:colors.muted},grid:{color:colors.divider}} } }
@@ -737,7 +750,7 @@ function renderDashboardCharts() {
     options: { maintainAspectRatio:false, plugins:{legend:{labels:{color:colors.text}}} }
   });
 
-  appState.charts.datastore = new Chart($('#chartDatastore'), {
+  if (showStorage) appState.charts.datastore = new Chart($('#chartDatastore'), {
     type: 'bar',
     data: {
       labels: dsRows.map(d => d.name),
@@ -1014,7 +1027,7 @@ function renderSimResult(clusterName, before, after, extraRows, title) {
         <h5>Before</h5>
         ${renderSingleBlock('CPU %', before.cpuPct, '%')}
         ${renderSingleBlock('RAM %', before.ramPct, '%')}
-        ${renderSingleBlock('Storage %', before.storagePct, '%')}
+        ${appState.policy.includeStorage ? renderSingleBlock('Storage %', before.storagePct, '%') : ''}
         ${renderSingleBlock('CPU overcommit', before.cpuOvercommit, 'x')}
         ${renderSingleBlock('RAM overcommit', before.ramOvercommit, 'x')}
       </div>
@@ -1023,7 +1036,7 @@ function renderSimResult(clusterName, before, after, extraRows, title) {
         <h5>After</h5>
         ${renderCompareBlock('CPU %', before.cpuPct, after.cpuPct, '%')}
         ${renderCompareBlock('RAM %', before.ramPct, after.ramPct, '%')}
-        ${renderCompareBlock('Storage %', before.storagePct, after.storagePct, '%')}
+        ${appState.policy.includeStorage ? renderCompareBlock('Storage %', before.storagePct, after.storagePct, '%') : ''}
         ${renderCompareBlock('CPU overcommit', before.cpuOvercommit, after.cpuOvercommit, 'x')}
         ${renderCompareBlock('RAM overcommit', before.ramOvercommit, after.ramOvercommit, 'x')}
       </div>

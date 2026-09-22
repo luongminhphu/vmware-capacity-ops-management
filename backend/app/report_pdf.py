@@ -12,6 +12,7 @@ import datetime as dt
 import html
 import itertools
 import math
+import re
 from typing import Any, Dict, List, Optional
 
 from weasyprint import HTML
@@ -184,7 +185,9 @@ def svg_donut(segments: List[Dict[str, Any]], size: int = 120, hole: float = 0.6
     radius = r - stroke_w / 2
     circumference = 2 * math.pi * radius
     offset = 0.0
-    arcs = []
+    # Faint full-circle track behind the segments so an all-zero / single
+    # segment donut still reads as a complete ring rather than a lone arc.
+    arcs = [f'<circle cx="{cx}" cy="{cy}" r="{radius}" fill="none" stroke="{COLORS["surface2"]}" stroke-width="{stroke_w}"/>']
     for s in segments:
         val = max(0.0, s.get("value", 0) or 0)
         frac = val / total
@@ -207,87 +210,178 @@ def svg_donut(segments: List[Dict[str, Any]], size: int = 120, hole: float = 0.6
     return f'<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}" font-family="Roboto, Noto Sans, sans-serif">{"".join(arcs)}{center}</svg>'
 
 
+GAUGE_ZONES_CPU_RAM = ((0.0, 80.0, "ok"), (80.0, 100.0, "warn"))
+GAUGE_ZONES_STORAGE = ((0.0, 80.0, "ok"), (80.0, 90.0, "warn"), (90.0, 100.0, "crit"))
+
+
 def svg_gauge(pct: Optional[float], color: str, size: int = 132, max_scale: float = 100.0,
-              label_top: Optional[str] = None) -> str:
-    """Compact semicircular gauge: arc sweep proportional to `pct` (capped at
-    `max_scale`), with the percentage rendered large in the center. Used for
-    headline CPU/RAM/Storage utilization callouts so the Executive report
-    reads at a glance instead of only through KPI numbers.
+              label_top: Optional[str] = None, caption: Optional[str] = None,
+              zones=GAUGE_ZONES_CPU_RAM) -> str:
+    """Semicircular gauge whose track is split into tinted *zones* (safe /
+    watch / over) so a reader sees not only the current value but also how
+    far it sits from the warning band -- the arc sweep is proportional to
+    `pct` (capped at `max_scale`) and drawn in the status `color`.
 
     The drawn arc always sweeps at most 180 degrees (from the 9-o'clock point
     to some point along the top half of the circle), so it is always the
     *minor* arc between its two endpoints -- the SVG large-arc-flag must
-    therefore always be 0. Do not derive it from `frac`: a previous version
-    flipped it to 1 once `frac > 0.5`, which forced the renderer to draw the
-    reflex (major, >180 degree) arc instead -- it looped around through the
-    hidden bottom half of the circle, mostly falling outside the viewBox and
-    rendering as a broken-looking fragment (this is exactly what happened once
-    a gauge value crossed 50% of `max_scale`, e.g. Storage above 50%)."""
+    therefore always be 0 (a previous version flipped it above 50% and the
+    arc rendered as a broken fragment outside the viewBox)."""
     w = float(size)
-    stroke_w = w * 0.10
-    r = w / 2 - stroke_w / 2 - 3
-    cx, cy = w / 2, w / 2 - 2
-    h = w / 2 + stroke_w / 2 + 26
+    stroke_w = w * 0.105
+    r = w / 2 - stroke_w / 2 - 4
+    cx, cy = w / 2, w / 2 + 2
+    h = w / 2 + stroke_w / 2 + (30 if (label_top or caption) else 14)
 
     def polar(deg: float):
         rad = math.radians(deg)
         return cx + r * math.cos(rad), cy - r * math.sin(rad)
 
-    x0, y0 = polar(180)
-    x1, y1 = polar(0)
+    def arc(from_frac: float, to_frac: float, stroke: str, width: float, opacity: float = 1.0, cap: str = "butt") -> str:
+        a0 = 180 - 180 * max(0.0, min(1.0, from_frac))
+        a1 = 180 - 180 * max(0.0, min(1.0, to_frac))
+        xa, ya = polar(a0)
+        xb, yb = polar(a1)
+        return (f'<path d="M {xa:.1f} {ya:.1f} A {r:.1f} {r:.1f} 0 0 1 {xb:.1f} {yb:.1f}" fill="none" stroke="{stroke}" '
+                f'stroke-width="{width:.1f}" stroke-opacity="{opacity}" stroke-linecap="{cap}"/>')
+
+    parts = [f'<svg width="{w:.0f}" height="{h:.0f}" viewBox="0 0 {w:.0f} {h:.0f}" font-family="Roboto, Noto Sans, sans-serif">']
+    # Zone bands (light tints) underneath, so they read as "background".
+    for lo, hi, cls in zones:
+        fg_key, _ = STATUS_COLOR.get(cls, STATUS_COLOR["na"])
+        parts.append(arc(lo / max_scale, hi / max_scale, COLORS[fg_key], stroke_w, opacity=0.22))
+    # Zone boundary ticks.
+    for lo, hi, cls in zones[1:]:
+        deg = 180 - 180 * (lo / max_scale)
+        xi, yi = cx + (r - stroke_w / 2 - 1) * math.cos(math.radians(deg)), cy - (r - stroke_w / 2 - 1) * math.sin(math.radians(deg))
+        xo, yo = cx + (r + stroke_w / 2 + 1) * math.cos(math.radians(deg)), cy - (r + stroke_w / 2 + 1) * math.sin(math.radians(deg))
+        parts.append(f'<line x1="{xi:.1f}" y1="{yi:.1f}" x2="{xo:.1f}" y2="{yo:.1f}" stroke="{COLORS["muted"]}" stroke-width="1"/>')
     clamped = 0.0 if not _finite(pct) else max(0.0, min(max_scale, pct))
     frac = clamped / max_scale
-    end_deg = 180 - 180 * frac
-    xe, ye = polar(end_deg)
-    large_arc = 0
-    fg_path = f'<path d="M {x0:.1f} {y0:.1f} A {r:.1f} {r:.1f} 0 {large_arc} 1 {xe:.1f} {ye:.1f}" fill="none" stroke="{color}" stroke-width="{stroke_w:.1f}" stroke-linecap="round"/>' if frac > 0.008 else ""
+    if frac > 0.008:
+        parts.append(arc(0.0, frac, color, stroke_w * 0.72, cap="round"))
+        xe, ye = polar(180 - 180 * frac)
+        parts.append(f'<circle cx="{xe:.1f}" cy="{ye:.1f}" r="{stroke_w*0.42:.1f}" fill="#ffffff" stroke="{color}" stroke-width="2"/>')
     label = fmt_pct(pct, 0)
-    top = f'<text x="{cx:.1f}" y="{h-6:.1f}" text-anchor="middle" font-family="Roboto, Noto Sans, sans-serif" font-size="8.5" font-weight="700" fill="{COLORS["muted"]}" text-transform="uppercase">{esc(label_top)}</text>' if label_top else ""
-    return f'''<svg width="{w:.0f}" height="{h:.0f}" viewBox="0 0 {w:.0f} {h:.0f}" font-family="Roboto, Noto Sans, sans-serif">
-      <path d="M {x0:.1f} {y0:.1f} A {r:.1f} {r:.1f} 0 0 1 {x1:.1f} {y1:.1f}" fill="none" stroke="{COLORS['track_bg']}" stroke-width="{stroke_w:.1f}" stroke-linecap="round"/>
-      {fg_path}
-      <text x="{cx:.1f}" y="{cy+2:.1f}" text-anchor="middle" font-size="{w*0.155:.1f}" font-weight="800" fill="{COLORS['ink']}">{label}</text>
-      {top}
-    </svg>'''
+    parts.append(f'<text x="{cx:.1f}" y="{cy-2:.1f}" text-anchor="middle" font-size="{w*0.175:.1f}" font-weight="800" fill="{COLORS["ink"]}">{label}</text>')
+    if caption:
+        parts.append(f'<text x="{cx:.1f}" y="{cy+9:.1f}" text-anchor="middle" font-size="7.2" fill="{COLORS["muted"]}">{esc(caption)}</text>')
+    # Scale end labels.
+    x0, y0 = polar(180)
+    x1, y1 = polar(0)
+    parts.append(f'<text x="{x0:.1f}" y="{y0+stroke_w/2+9:.1f}" text-anchor="middle" font-size="6.8" fill="{COLORS["faint"]}">0%</text>')
+    parts.append(f'<text x="{x1:.1f}" y="{y1+stroke_w/2+9:.1f}" text-anchor="middle" font-size="6.8" fill="{COLORS["faint"]}">{max_scale:.0f}%</text>')
+    if label_top:
+        parts.append(f'<text x="{cx:.1f}" y="{h-4:.1f}" text-anchor="middle" font-size="8.5" font-weight="700" fill="{COLORS["muted"]}">{esc(label_top)}</text>')
+    parts.append('</svg>')
+    return "".join(parts)
+
+
+def _nice_ceiling(v: float) -> float:
+    """Round `v` up to a 'nice' axis maximum (…, 50, 60, 80, 100, 120, 150, 200, …)."""
+    if not _finite(v) or v <= 0:
+        return 100.0
+    mag = 10 ** math.floor(math.log10(v))
+    for m in (1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10):
+        if m * mag >= v:
+            return m * mag
+    return 10 * mag
+
+
+def _wrap_label(label: str, max_chars: int, max_lines: int = 2) -> List[str]:
+    """Split a cluster/host name into up to `max_lines` lines on natural
+    separators ('-', '_', ' ', '.') so chart category labels stay legible
+    instead of being truncated to 'PROD-CLUSTE…'."""
+    label = str(label)
+    if len(label) <= max_chars:
+        return [label]
+    tokens = re.split(r"(?<=[-_ .])", label)
+    lines, cur = [], ""
+    for tok in tokens:
+        if cur and len(cur) + len(tok) > max_chars:
+            lines.append(cur)
+            cur = tok
+        else:
+            cur += tok
+    if cur:
+        lines.append(cur)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        lines[-1] = (lines[-1][:max_chars - 1] + "…") if len(lines[-1]) > max_chars - 1 else lines[-1] + "…"
+    return [ln.strip() for ln in lines if ln.strip()] or [label[:max_chars - 1] + "…"]
 
 
 def svg_bar_chart(labels: List[str], series: List[Dict[str, Any]], width: int = 720, height: int = 220,
-                   max_value: Optional[float] = None) -> str:
-    """series: [{name, color, values}] grouped vertical bars, one group per label."""
+                   max_value: Optional[float] = None, threshold: Optional[float] = None,
+                   threshold_label: str = "Ngưỡng", unit: str = "", show_values: bool = True) -> str:
+    """series: [{name, color, values}] grouped vertical bars, one group per label.
+
+    Axis scale is derived from the data (a 'nice' ceiling just above the
+    tallest bar / the threshold) so bars fill the plot instead of huddling
+    at the bottom of a fixed 0-140 range; an optional dashed `threshold`
+    line (e.g. 100% of the overcommit policy) gives the bars a reference,
+    and each bar carries its own value label so no legend lookup is needed."""
     if not labels:
         return '<div style="color:#98a2b3;font-size:11px;padding:8px 0;">Không có dữ liệu.</div>'
-    pad_l, pad_r, pad_t, pad_b = 34, 8, 10, 22
+    n_groups = len(labels)
+    label_chars = max(6, int((width - 60) / n_groups / 5.2))
+    wrapped = [_wrap_label(lb, label_chars) for lb in labels]
+    label_lines = max(len(w) for w in wrapped)
+    pad_l, pad_r, pad_t, pad_b = 36, 10, 14, 10 + 10 * label_lines
+    if threshold is not None:
+        pad_r = max(pad_r, 58)
     plot_w = width - pad_l - pad_r
     plot_h = height - pad_t - pad_b
     all_vals = [v for s in series for v in s["values"] if _finite(v)]
-    mx = max_value if max_value is not None else (max(all_vals) if all_vals else 1.0)
+    data_max = max(all_vals) if all_vals else 0.0
+    if max_value is not None:
+        mx = max_value
+    else:
+        target = max(data_max * 1.15, (threshold or 0) * 1.1, 10.0)
+        mx = _nice_ceiling(target)
     mx = mx if mx > 0 else 1.0
-    n_groups = len(labels)
     n_series = max(1, len(series))
     group_w = plot_w / n_groups
-    bar_gap = group_w * 0.18
+    bar_gap = group_w * 0.28
     bar_w = (group_w - bar_gap) / n_series
+    inner_gap = min(3.0, bar_w * 0.12)
+
+    def y_of(v: float) -> float:
+        return pad_t + plot_h * (1 - max(0.0, min(1.0, v / mx)))
 
     parts = [f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" font-family="Roboto, Noto Sans, sans-serif">']
-    # gridlines + y-axis labels (4 steps)
-    for i in range(5):
-        frac = i / 4
+    # Soft plot background so the chart reads as one visual block.
+    parts.append(f'<rect x="{pad_l}" y="{pad_t}" width="{plot_w:.1f}" height="{plot_h:.1f}" rx="4" fill="{COLORS["surface2"]}"/>')
+    steps = 4
+    for i in range(steps + 1):
+        frac = i / steps
         y = pad_t + plot_h * (1 - frac)
         val = mx * frac
-        parts.append(f'<line x1="{pad_l}" y1="{y:.1f}" x2="{width-pad_r}" y2="{y:.1f}" stroke="{COLORS["divider"]}" stroke-width="1"/>')
-        parts.append(f'<text x="{pad_l-6}" y="{y+3:.1f}" text-anchor="end" font-size="8.5" fill="{COLORS["faint"]}">{val:.0f}</text>')
+        parts.append(f'<line x1="{pad_l}" y1="{y:.1f}" x2="{width-pad_r}" y2="{y:.1f}" stroke="#ffffff" stroke-width="1.2"/>')
+        parts.append(f'<text x="{pad_l-5}" y="{y+3:.1f}" text-anchor="end" font-size="7.8" fill="{COLORS["muted"]}">{val:.0f}{esc(unit)}</text>')
+    if threshold is not None and 0 < threshold <= mx:
+        ty = y_of(threshold)
+        parts.append(f'<line x1="{pad_l}" y1="{ty:.1f}" x2="{width-pad_r}" y2="{ty:.1f}" stroke="{COLORS["crit"]}" stroke-width="1.2" stroke-dasharray="4 3"/>')
+        parts.append(f'<text x="{width-pad_r+4}" y="{ty+3:.1f}" text-anchor="start" font-size="7" font-weight="700" fill="{COLORS["crit"]}">{esc(threshold_label)} {threshold:.0f}{esc(unit)}</text>')
     for gi, label in enumerate(labels):
         gx = pad_l + gi * group_w + bar_gap / 2
-        for si, s in enumerate(series):
-            v = s["values"][gi] if gi < len(s["values"]) else 0
+        for si, srs in enumerate(series):
+            v = srs["values"][gi] if gi < len(srs["values"]) else 0
             v = v if _finite(v) else 0
             bh = max(0.0, min(1.0, v / mx)) * plot_h
-            bx = gx + si * bar_w
+            bx = gx + si * bar_w + inner_gap / 2
+            bw = max(2.0, bar_w - inner_gap)
             by = pad_t + plot_h - bh
-            parts.append(f'<rect x="{bx:.1f}" y="{by:.1f}" width="{max(1,bar_w-2):.1f}" height="{bh:.1f}" rx="1.5" fill="{s["color"]}"/>')
+            over = threshold is not None and v > threshold
+            fill = COLORS["crit"] if over else srs["color"]
+            if bh > 0:
+                parts.append(f'<rect x="{bx:.1f}" y="{by:.1f}" width="{bw:.1f}" height="{bh:.1f}" rx="2.5" fill="{fill}"/>')
+            if show_values:
+                vy = by - 3 if bh > 0 else pad_t + plot_h - 3
+                parts.append(f'<text x="{bx+bw/2:.1f}" y="{vy:.1f}" text-anchor="middle" font-size="7.4" font-weight="700" fill="{COLORS["ink"]}">{v:.0f}{esc(unit)}</text>')
         lx = pad_l + gi * group_w + group_w / 2
-        short = label if len(label) <= 12 else label[:11] + "…"
-        parts.append(f'<text x="{lx:.1f}" y="{height-6}" text-anchor="middle" font-size="8" fill="{COLORS["muted"]}">{esc(short)}</text>')
+        for li, line in enumerate(wrapped[gi]):
+            parts.append(f'<text x="{lx:.1f}" y="{pad_t+plot_h+10+li*9.5:.1f}" text-anchor="middle" font-size="7.6" font-weight="600" fill="{COLORS["muted"]}">{esc(line)}</text>')
     parts.append('</svg>')
     return "".join(parts)
 
@@ -333,7 +427,11 @@ def svg_ranked_bar_chart(rows: List[Dict[str, Any]], width: int = 330, height: O
         clamped = max(0.0, min(max_scale, pct))
         bar_w = clamped / max_scale * plot_w
         name = str(r.get("name", ""))
-        name = name if len(name) <= name_max_len else name[:name_max_len - 1] + "…"
+        if len(name) > name_max_len:
+            # Middle-ellipsis so the distinguishing suffix (e.g. "-esx07",
+            # "-ds02") survives truncation instead of the shared prefix.
+            tail = max(5, min(8, name_max_len // 3))
+            name = name[:name_max_len - tail - 1] + "…" + name[-tail:]
         label = fmt_pct(pct, 0)
         parts.append(f'<text x="{pad_l-6}" y="{bar_y+bar_h/2+3:.1f}" text-anchor="end" font-size="8.3" fill="{COLORS["ink"]}">{esc(name)}</text>')
         parts.append(f'<rect x="{pad_l}" y="{bar_y:.1f}" width="{plot_w:.1f}" height="{bar_h}" rx="{bar_h/2:.1f}" fill="{COLORS["track_bg"]}"/>')
@@ -365,7 +463,7 @@ def svg_ranked_bar_chart(rows: List[Dict[str, Any]], width: int = 330, height: O
 
 
 def svg_cluster_risk_chart(cluster_rows: List[Dict[str, Any]], metric: str, finding_counts: Dict[str, Dict[str, int]],
-                            width: int = 330, height: Optional[int] = None) -> str:
+                            width: int = 330, height: Optional[int] = None, name_max_len: int = 13) -> str:
     """Cluster-specific wrapper around svg_ranked_bar_chart for a single
     metric ('cpu' or 'ram'): colors each bar by that cluster's own risk
     status and attaches a critical/warning finding-count badge at row end."""
@@ -382,7 +480,7 @@ def svg_cluster_risk_chart(cluster_rows: List[Dict[str, Any]], metric: str, find
             "name": c["name"], "pct": c["model"][pct_key], "cls": c[status_key]["cls"],
             "badge": (crit_n + warn_n) or None, "badge_crit": bool(crit_n), "badge_title": badge_title,
         })
-    return svg_ranked_bar_chart(rows, width=width, height=height)
+    return svg_ranked_bar_chart(rows, width=width, height=height, name_max_len=name_max_len)
 
 
 def svg_radar_chart(categories: List[str], series: List[Dict[str, Any]], size: int = 232, max_value: float = 100.0, rings: int = 4) -> str:
@@ -423,10 +521,15 @@ def svg_radar_chart(categories: List[str], series: List[Dict[str, Any]], size: i
     box_h = max_y - min_y
 
     parts = [f'<svg width="{box_w:.0f}" height="{box_h:.0f}" viewBox="{min_x:.1f} {min_y:.1f} {box_w:.1f} {box_h:.1f}" font-family="Roboto, Noto Sans, sans-serif">']
+    outer_pts = " ".join(f"{axis_point(i, 1.0)[0]:.1f},{axis_point(i, 1.0)[1]:.1f}" for i in range(n))
+    parts.append(f'<polygon points="{outer_pts}" fill="{COLORS["surface2"]}" stroke="none"/>')
     for ring in range(1, rings + 1):
         frac = ring / rings
         pts = " ".join(f"{axis_point(i, frac)[0]:.1f},{axis_point(i, frac)[1]:.1f}" for i in range(n))
-        parts.append(f'<polygon points="{pts}" fill="none" stroke="{COLORS["divider"]}" stroke-width="1"/>')
+        parts.append(f'<polygon points="{pts}" fill="none" stroke="#ffffff" stroke-width="1.2"/>')
+        # Ring value label along the first (top) axis so the scale is readable.
+        rx, ry = axis_point(0, frac)
+        parts.append(f'<text x="{rx+4:.1f}" y="{ry+3:.1f}" font-size="6.8" fill="{COLORS["faint"]}">{max_value*frac:.0f}%</text>')
     for i, cat in enumerate(categories):
         x, y = axis_point(i, 1.0)
         parts.append(f'<line x1="{cx:.1f}" y1="{cy:.1f}" x2="{x:.1f}" y2="{y:.1f}" stroke="{COLORS["divider"]}" stroke-width="1"/>')
@@ -509,9 +612,44 @@ tbody tr:nth-child(even) {{ background:#fbfcfe; }}
 .priority-cao {{ background:{COLORS['crit_bg']}; color:{COLORS['crit']}; }}
 .priority-tb {{ background:{COLORS['warn_bg']}; color:{COLORS['warn']}; }}
 .priority-thap {{ background:{COLORS['ok_bg']}; color:{COLORS['ok']}; }}
+.priority-info {{ background:{COLORS['surface2']}; color:{COLORS['primary_dark']}; }}
+.section.breakable {{ break-inside:auto; }}
 .assumption-note {{ background:{COLORS['surface2']}; border:1px dashed {COLORS['border']}; border-radius:5px; padding:6px 10px; font-size:8px; color:{COLORS['muted']}; margin-top:8px; }}
 .radar-legend-item {{ display:flex; align-items:center; gap:5px; font-size:8.3px; color:{COLORS['ink']}; margin-bottom:3px; }}
 .radar-swatch {{ width:9px; height:9px; border-radius:2px; display:inline-block; flex:none; }}
+.exec-brief {{ border:1px solid {COLORS['border']}; border-radius:8px; padding:11px 14px 10px; margin:2px 0 4px; background:{COLORS['surface']}; border-left:5px solid {COLORS['primary']}; }}
+.exec-brief.ok {{ background:#f2faf5; border-left-color:{COLORS['ok']}; }}
+.exec-brief.warn {{ background:#fff8ec; border-left-color:{COLORS['warn']}; }}
+.exec-brief.bad {{ background:#fff3ea; border-left-color:{COLORS['bad']}; }}
+.exec-brief.crit {{ background:#fdf0ef; border-left-color:{COLORS['crit']}; }}
+.exec-brief-head {{ display:flex; align-items:center; gap:8px; margin-bottom:5px; }}
+.exec-brief-title {{ font-size:8.5px; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:{COLORS['muted']}; }}
+.exec-brief-headline {{ font-size:12.5px; font-weight:700; color:{COLORS['ink']}; line-height:1.4; margin-bottom:6px; }}
+.brief-list {{ margin:0 0 6px 0; padding-left:16px; font-size:9.6px; line-height:1.5; }}
+.brief-list li {{ margin-bottom:2px; }}
+.exec-brief-decision {{ font-size:9.6px; padding-top:6px; border-top:1px dashed {COLORS['border']}; color:{COLORS['ink']}; }}
+.exec-brief-decision b {{ color:{COLORS['primary_dark']}; }}
+.rec-card {{ border:1px solid {COLORS['border']}; border-left:4px solid {COLORS['primary']}; border-radius:0 7px 7px 0; padding:8px 11px 7px; margin-bottom:7px; background:{COLORS['surface']}; break-inside:avoid; }}
+.rec-card.prio-cao {{ border-left-color:{COLORS['crit']}; background:#fdf5f4; }}
+.rec-card.prio-tb {{ border-left-color:{COLORS['warn']}; background:#fffaf1; }}
+.rec-card.tone-opportunity {{ border-left-color:{COLORS['accent']}; background:#f0f9fb; }}
+.rec-card.tone-ok {{ border-left-color:{COLORS['ok']}; background:#f2faf5; }}
+.rec-head {{ display:flex; align-items:center; gap:7px; margin-bottom:5px; }}
+.rec-num {{ flex:none; width:16px; height:16px; border-radius:50%; background:{COLORS['ink']}; color:#fff; font-size:8.5px; font-weight:800; text-align:center; line-height:16px; }}
+.rec-title {{ flex:1; font-size:10.6px; font-weight:700; color:{COLORS['ink']}; }}
+.rec-grid {{ display:flex; gap:10px; font-size:8.9px; line-height:1.45; color:{COLORS['ink']}; }}
+.rec-cell {{ flex:1; background:rgba(255,255,255,.7); border:1px solid {COLORS['divider']}; border-radius:5px; padding:5px 7px; }}
+.rec-label {{ font-size:7.4px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:{COLORS['muted']}; margin-bottom:2px; }}
+.rec-decision {{ margin-top:5px; font-size:9px; color:{COLORS['ink']}; }}
+.rec-decision b {{ color:{COLORS['primary_dark']}; }}
+.sign-box {{ display:inline-block; width:64px; height:16px; border:1px dashed {COLORS['border']}; border-radius:3px; }}
+.gauge-card.ok {{ background:#f2faf5; }}
+.gauge-card.warn {{ background:#fff8ec; }}
+.gauge-card.bad {{ background:#fff3ea; }}
+.gauge-card.crit {{ background:#fdf0ef; }}
+.gauge-card.na {{ background:{COLORS['surface2']}; }}
+.gauge-caption {{ font-size:8.3px; color:{COLORS['muted']}; margin-top:1px; }}
+.chart-card.soft {{ background:{COLORS['surface']}; }}
 """
 
 
@@ -534,49 +672,302 @@ def _severity_counts(findings: List[Dict[str, Any]]) -> Dict[str, int]:
     return out
 
 
-def _executive_insights(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]],
-                         findings: List[Dict[str, Any]], policy: capacity.Policy) -> List[Dict[str, str]]:
-    insights = []
+PRIORITY_LABEL_VI = {"cao": "Ưu tiên cao", "tb": "Ưu tiên trung bình", "thap": "Ưu tiên thấp", "info": "Thông tin"}
+PRIORITY_ORDER = {"cao": 0, "tb": 1, "thap": 2, "info": 3}
+
+
+def _quarter_label(months_ahead: Optional[float]) -> str:
+    """'Q3/2027'-style label for a point `months_ahead` months from now."""
+    if months_ahead is None or not _finite(months_ahead):
+        return ""
+    today = dt.date.today()
+    total = today.year * 12 + (today.month - 1) + int(round(months_ahead))
+    y, m = divmod(total, 12)
+    return f"Q{m // 3 + 1}/{y}"
+
+
+def _runway_phrase(months: Optional[float]) -> str:
+    if months is None:
+        return "chưa xác định được (mức sử dụng hiện rất thấp hoặc không tăng)"
+    if months <= 0.05:
+        return "đã chạm ngưỡng ngay tại thời điểm báo cáo"
+    if months < 1:
+        return "dưới 1 tháng"
+    if months > 36:
+        return "trên 3 năm"
+    return f"khoảng {months:.0f} tháng (≈ {_quarter_label(months)})"
+
+
+def _scenario_months(growth: Dict[str, Any], key: str, growth_pct: float = 10.0) -> Optional[float]:
+    for sc in growth.get(key, {}).get("scenarios", []):
+        if abs(sc.get("growthPct", -1) - growth_pct) < 1e-6:
+            return sc.get("months")
+    return None
+
+
+def _reclaimable_from_findings(findings: List[Dict[str, Any]], vms: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Sum the vCPU / RAM footprint of VMs flagged idle or powered-off long
+    term, so the reclaim opportunity can be expressed in concrete units."""
+    names = {f.get("entity") for f in findings if f.get("type") in ("vm_idle", "vm_off")}
+    vcpu = ram = 0.0
+    n = 0
+    for v in vms:
+        if v.get("vm") in names:
+            n += 1
+            vcpu += v.get("vcpu", 0) or 0
+            ram += v.get("ramGB", 0) or 0
+    return {"count": n, "vcpu": vcpu, "ramGB": ram}
+
+
+def _management_brief(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]], findings: List[Dict[str, Any]],
+                      policy: capacity.Policy, vms: List[Dict[str, Any]], hosts: List[Dict[str, Any]],
+                      headroom: Dict[str, Any], growth: Dict[str, Any], ha_rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """Plain-language management brief: a 30-second summary, a ranked list of
+    recommendations (what it means → what we propose → what happens if we
+    wait → the decision requested), and the derived decision register.
+    Written for leadership review, not for operators: business impact,
+    risk and timing first; technical detail only in parentheses."""
+    include_storage = bool(getattr(policy, "include_storage", False))
     cpu_pct, ram_pct, storage_pct = model.get("cpuPct"), model.get("ramPct"), model.get("storagePct")
     sev = _severity_counts(findings)
+    recs: List[Dict[str, Any]] = []
 
-    if _finite(cpu_pct) and cpu_pct >= 100:
-        insights.append({"risk": True, "title": "CPU đã vượt ngưỡng overcommit toàn hệ thống",
-                          "body": f"Overcommit CPU hiện tại {model.get('cpuOvercommit', float('nan')):.2f}x, vượt ngưỡng cấu hình {policy.cpu_overcommit_max:.1f}x. Cần bổ sung năng lực CPU hoặc cân bằng lại tải giữa các cluster trong thời gian ngắn hạn."})
-    elif _finite(cpu_pct) and cpu_pct >= 80:
-        insights.append({"risk": False, "title": "CPU đang tiến gần ngưỡng overcommit",
-                          "body": f"Sử dụng {cpu_pct:.0f}% ngưỡng CPU overcommit cho phép ({policy.cpu_overcommit_max:.1f}x). Nên đưa vào kế hoạch mở rộng trong 1-2 quý tới để tránh nghẽn năng lực."})
+    # --- binding resource & runway (10 %/quarter = "moderate" scenario) ---
+    cpu_m, ram_m = _scenario_months(growth, "cpu"), _scenario_months(growth, "ram")
+    binding = "RAM" if (_finite(ram_pct) and (not _finite(cpu_pct) or ram_pct >= cpu_pct)) else "CPU"
+    binding_pct = ram_pct if binding == "RAM" else cpu_pct
+    binding_months = ram_m if binding == "RAM" else cpu_m
+    binding_fit = headroom["ram"]["vmsFit"] if binding == "RAM" else headroom["cpu"]["vmsFit"]
 
-    if _finite(ram_pct) and ram_pct >= 100:
-        insights.append({"risk": True, "title": "RAM đã vượt ngưỡng overcommit toàn hệ thống",
-                          "body": f"Overcommit RAM hiện tại {model.get('ramOvercommit', float('nan')):.2f}x, vượt ngưỡng cấu hình {policy.ram_overcommit_max:.1f}x. Rủi ro cao về hiệu năng — cần bổ sung RAM vật lý hoặc thu hồi tài nguyên từ VM idle."})
-    elif _finite(ram_pct) and ram_pct >= 80:
-        insights.append({"risk": False, "title": "RAM đang tiến gần ngưỡng overcommit",
-                          "body": f"Sử dụng {ram_pct:.0f}% ngưỡng RAM overcommit cho phép ({policy.ram_overcommit_max:.1f}x). Cân nhắc bổ sung RAM hoặc rà soát VM cấp phát dư thừa."})
+    # --- overall health headline ---
+    worst = max(cpu_pct if _finite(cpu_pct) else 0, ram_pct if _finite(ram_pct) else 0)
+    # Same status vocabulary/thresholds as the "Trạng thái tổng thể" pill
+    # (_overall_status) so the brief never contradicts the header badge.
+    overall = _overall_status(model)
+    health_cls, health_word = overall["cls"], overall["text"]
+    if health_cls == "crit":
+        headline = f"Hạ tầng đang chạy vượt ngưỡng an toàn ở {binding} — cần quyết định bổ sung năng lực ngay trong quý này."
+    elif health_cls == "bad":
+        headline = f"Hạ tầng đã chạm ngưỡng cho phép ở {binding} ({binding_pct:.0f}%) — cần phê duyệt kế hoạch mở rộng ngay trong quý này."
+    elif health_cls == "warn":
+        headline = f"Hạ tầng vẫn an toàn nhưng {binding} đã dùng {binding_pct:.0f}% ngưỡng cho phép — nên đưa mở rộng vào kế hoạch ngân sách kỳ tới."
+    else:
+        headline = "Hạ tầng đang vận hành ổn định, còn dư địa tốt — chưa cần đầu tư phần cứng mới tại thời điểm này."
 
-    if _finite(storage_pct) and storage_pct >= 90:
-        insights.append({"risk": True, "title": "Datastore tổng thể gần đầy",
-                          "body": f"Tỷ lệ sử dụng dung lượng đã cấp phát đạt {storage_pct:.0f}%. Cần rà soát thin-provisioning, dọn snapshot cũ hoặc bổ sung dung lượng."})
+    # --- HA ---
+    ha_eligible = [r for r in ha_rows if r.get("eligible")]
+    ha_fail = [r for r in ha_eligible if not r.get("survives")]
 
-    risky_clusters = [c for c in cluster_rows if c["overall"]["cls"] in ("bad", "crit")]
-    if risky_clusters:
-        names = ", ".join(c["name"] for c in risky_clusters[:5])
-        insights.append({"risk": True, "title": f"{len(risky_clusters)} cluster cần đầu tư/mở rộng ưu tiên",
-                          "body": f"Các cluster có mức sử dụng vượt ngưỡng cảnh báo: {names}. Đề xuất ưu tiên phân bổ ngân sách mở rộng host cho các cluster này trước."})
+    # --- reclaim opportunity ---
+    reclaim = _reclaimable_from_findings(findings, vms)
+    avg_host_ram = (model["totalRamGB"] / model["hostCount"]) if model.get("hostCount") else 0
+    host_equiv = (reclaim["ramGB"] / avg_host_ram) if avg_host_ram > 0 else 0
+    reclaim_pct_ram = (reclaim["ramGB"] / (model["totalRamGB"] * policy.ram_overcommit_max) * 100) if model.get("totalRamGB") else 0
 
+    # --- concrete extra capacity needed for clusters over policy ---
+    actions = _technical_headroom_actions(cluster_rows, policy)
+    extra_cores = sum(a["extraPhysCores"] for a in actions)
+    extra_ram = sum(a["extraRamGB"] for a in actions)
+
+    def add(priority, title, meaning, action, impact, decision, timeframe, tone="risk"):
+        recs.append({"priority": priority, "title": title, "meaning": meaning, "action": action,
+                     "impact": impact, "decision": decision, "timeframe": timeframe, "tone": tone})
+
+    # 1) Over policy right now
+    for label, pct, oc, oc_max, key in (("CPU", cpu_pct, model.get("cpuOvercommit"), policy.cpu_overcommit_max, "cpu"),
+                                        ("RAM", ram_pct, model.get("ramOvercommit"), policy.ram_overcommit_max, "ram")):
+        if not _finite(pct):
+            continue
+        if pct >= 100:
+            need = (f"khoảng +{extra_cores:.0f} core vật lý" if key == "cpu" and extra_cores > 0.5 else
+                    f"khoảng +{extra_ram:,.0f} GB RAM" if key == "ram" and extra_ram > 0.5 else "bổ sung host")
+            add("cao", f"Bổ sung năng lực {label} ngay — hệ thống đang chạy vượt ngưỡng an toàn",
+                f"{label} đang được cấp phát gấp {oc:.2f} lần năng lực vật lý, vượt mức tối đa {oc_max:.1f}x mà chúng ta đã thống nhất. "
+                f"Nói đơn giản: các máy chủ ảo đang 'chia sẻ' {label} nhiều hơn mức an toàn, hiệu năng ứng dụng có thể chậm bất kỳ lúc nào khi tải tăng.",
+                f"Bổ sung {need} cho các cluster đang vượt ngưỡng, đồng thời IT cân bằng lại tải và thu hồi VM không dùng để giảm áp lực tức thời.",
+                "Ứng dụng nghiệp vụ chậm hoặc gián đoạn vào giờ cao điểm; không còn chỗ để khôi phục khi một host gặp sự cố.",
+                f"Phê duyệt ngân sách mở rộng {label} khẩn (mức ưu tiên cao nhất).", "Trong quý này")
+        elif pct >= 80:
+            months = cpu_m if key == "cpu" else ram_m
+            add("tb", f"Lên kế hoạch mở rộng {label} trong 1–2 quý tới",
+                f"{label} đã dùng {pct:.0f}% ngưỡng cho phép. Với tốc độ tăng trưởng vừa phải (10%/quý), dự kiến chạm ngưỡng sau {_runway_phrase(months)}.",
+                f"Đưa hạng mục bổ sung host / {label} vào kế hoạch ngân sách kỳ tới; IT chuẩn bị cấu hình và báo giá để sẵn sàng triển khai khi được duyệt.",
+                "Nếu chờ đến khi chạm ngưỡng mới mua sắm, thời gian đặt hàng – lắp đặt (thường 8–12 tuần) sẽ khiến hệ thống phải chạy quá tải trong lúc chờ.",
+                f"Đồng ý chủ trương mở rộng {label}; giao IT lập dự toán chi tiết.", "1–2 quý tới")
+
+    # 2) Storage (only when assessed)
+    if include_storage and _finite(storage_pct) and storage_pct >= 90:
+        add("cao", "Dung lượng lưu trữ đã cấp phát gần đầy",
+            f"Đã sử dụng {storage_pct:.0f}% dung lượng cấp phát cho các datastore. Khi datastore đầy, VM có thể bị tạm dừng đột ngột.",
+            "Dọn snapshot cũ, rà soát VM cấp phát thừa (thin-provisioning) trước; nếu vẫn thiếu thì bổ sung dung lượng.",
+            "Rủi ro dừng dịch vụ ngoài kế hoạch do datastore đầy.",
+            "Phê duyệt bổ sung dung lượng lưu trữ nếu sau rà soát vẫn thiếu.", "Trong quý này")
+
+    # 3) Risky clusters
+    risky = [c for c in cluster_rows if c["overall"]["cls"] in ("bad", "crit")]
+    if risky:
+        names = ", ".join(c["name"] for c in risky[:5])
+        add("cao" if any(c["overall"]["cls"] == "crit" for c in risky) else "tb",
+            f"{len(risky)} cluster cần được ưu tiên bổ sung host",
+            f"Các cluster {names} đang ở mức cảnh báo/vượt ngưỡng trong khi các cluster còn lại vẫn thoải mái. Đây là điểm nghẽn cục bộ, không phải toàn hệ thống.",
+            "Ưu tiên phân bổ host mới (hoặc điều chuyển VM sang cluster còn dư) cho các cluster này trước khi mở rộng chung.",
+            "Ứng dụng đặt trên các cluster này chịu rủi ro hiệu năng cao hơn phần còn lại của hệ thống.",
+            "Đồng ý ưu tiên ngân sách/host cho các cluster nêu trên.", "Quý này")
+
+    # 4) HA / N+1
+    if ha_eligible and ha_fail:
+        names = ", ".join(r["cluster"] for r in ha_fail[:6])
+        add("cao", f"{len(ha_fail)}/{len(ha_eligible)} cluster không còn dự phòng khi mất 1 host",
+            f"Nếu một host trong cluster {names} hỏng hoặc phải bảo trì, số host còn lại sẽ không đủ chỗ cho toàn bộ máy chủ ảo — tức là không còn 'ghế dự phòng'.",
+            "Bổ sung 1 host dự phòng cho từng cluster nêu trên, hoặc giảm tải bằng cách thu hồi/điều chuyển VM.",
+            "Một sự cố phần cứng đơn lẻ có thể gây gián đoạn dịch vụ thay vì được hệ thống tự động hấp thụ.",
+            "Phê duyệt bổ sung host dự phòng (N+1) cho các cluster nêu trên.", "Trong 1 quý")
+
+    # 5) Critical operational findings
     if sev["critical"] > 0:
-        insights.append({"risk": True, "title": f"{sev['critical']} phát hiện compliance ở mức nghiêm trọng",
-                          "body": "Cần xử lý ngay để giảm rủi ro downtime hoặc mất khả năng đáp ứng SLA. Xem chi tiết tại báo cáo kỹ thuật."})
+        add("tb", f"{sev['critical']} điểm cần IT xử lý ngay ở cấp vận hành",
+            "Đây là các cảnh báo mức nghiêm trọng (host quá tải, VM bỏ không lâu ngày...). Phần lớn xử lý được bằng thao tác vận hành, không cần mua sắm.",
+            "Giao IT xử lý theo danh sách ở phần cuối báo cáo và báo cáo kết quả trong kỳ tới.",
+            "Nếu để lâu, các điểm nhỏ tích tụ thành rủi ro lớn về hiệu năng và chi phí.",
+            "Không cần phê duyệt ngân sách — ghi nhận và theo dõi tiến độ xử lý.", "2–4 tuần", tone="neutral")
 
-    idle_findings = [f for f in findings if f.get("type") in ("vm_idle", "vm_off")]
-    if len(idle_findings) >= 5:
-        insights.append({"risk": False, "title": f"{len(idle_findings)} VM idle/tắt lâu ngày có thể thu hồi",
-                          "body": "Thu hồi tài nguyên từ các VM này giúp giải phóng năng lực mà không cần đầu tư phần cứng mới — nên xem xét trước khi phê duyệt mở rộng."})
+    # 6) Reclaim opportunity
+    if reclaim["count"] >= 3:
+        equiv = f" — tương đương ~{host_equiv:.1f} host" if host_equiv >= 0.3 else ""
+        add("thap", f"Cơ hội tiết kiệm: {reclaim['count']} máy chủ ảo không sử dụng có thể thu hồi",
+            f"Có {reclaim['count']} VM đã bỏ không hoặc tắt lâu ngày nhưng vẫn giữ {fmt_int(reclaim['vcpu'])} vCPU và {fmt_int(reclaim['ramGB'])} GB RAM"
+            f"{equiv}, chiếm khoảng {reclaim_pct_ram:.0f}% dư địa RAM cho phép.",
+            "Xác nhận với chủ sở hữu ứng dụng rồi thu hồi/dừng hẳn. Việc này giải phóng năng lực miễn phí trước khi cân nhắc mua thêm.",
+            "Tiếp tục trả chi phí (license, backup, vận hành) cho tài nguyên không tạo giá trị và phải mua sắm sớm hơn cần thiết.",
+            "Đồng ý chủ trương rà soát và thu hồi VM không sử dụng.", "Trong 1 tháng", tone="opportunity")
 
-    if not insights:
-        insights.append({"risk": False, "title": "Hạ tầng đang trong ngưỡng an toàn",
-                          "body": "Không phát hiện rủi ro trọng yếu về năng lực CPU/RAM/Storage tại thời điểm báo cáo. Tiếp tục theo dõi định kỳ theo chu kỳ polling hiện tại."})
-    return insights[:6]
+    # 7) Over-provisioned VMs
+    overprov = [f for f in findings if f.get("type") == "vm_overprovision"]
+    if len(overprov) >= 3:
+        add("thap", f"{len(overprov)} máy chủ ảo được cấp phát dư so với mức dùng thực",
+            "Các VM này được cấp nhiều vCPU nhưng thực tế dùng rất ít. Cấp phát dư làm 'đầy sổ' năng lực trên giấy dù phần cứng còn rảnh.",
+            "IT phối hợp chủ ứng dụng để giảm cấu hình (right-size) theo lộ trình an toàn.",
+            "Chỉ số overcommit tăng ảo, dẫn tới quyết định mua sắm sớm hơn nhu cầu thật.",
+            "Không cần phê duyệt ngân sách — ủng hộ chủ trương right-size.", "1–2 tháng", tone="opportunity")
+
+    # 8) Healthy → say so, with a forward date
+    if worst < 80:
+        add("info", "Chưa cần đầu tư phần cứng mới — tiếp tục theo dõi định kỳ",
+            f"Cả CPU ({fmt_pct(cpu_pct, 0)}) và RAM ({fmt_pct(ram_pct, 0)}) đều còn xa ngưỡng cho phép. Hệ thống có thể tiếp nhận thêm khoảng {fmt_int(binding_fit) if binding_fit is not None else '—'} VM cỡ trung bình hiện tại.",
+            f"Duy trì báo cáo định kỳ hàng quý. Mốc cần xem xét đầu tư tiếp theo (nếu tăng trưởng 10%/quý): {_runway_phrase(binding_months)} ở {binding}.",
+            "Không có rủi ro trọng yếu tại thời điểm báo cáo.",
+            "Không cần quyết định đầu tư tại thời điểm này.", "Rà soát lại quý sau", tone="ok")
+
+    recs.sort(key=lambda r: PRIORITY_ORDER.get(r["priority"], 9))
+    recs = recs[:6]
+
+    # --- 30-second summary bullets ---
+    points = []
+    if include_storage and _finite(storage_pct):
+        points.append(f"Sức khỏe tổng thể: {health_word}. CPU đang dùng {fmt_pct(cpu_pct, 0)}, RAM {fmt_pct(ram_pct, 0)} và Storage {fmt_pct(storage_pct, 0)} ngưỡng cho phép.")
+    else:
+        points.append(f"Sức khỏe tổng thể: {health_word}. CPU đang dùng {fmt_pct(cpu_pct, 0)} và RAM {fmt_pct(ram_pct, 0)} ngưỡng cho phép (Storage quản lý riêng ở tầng SAN).")
+    if binding_fit is not None:
+        points.append(f"Dư địa: còn tiếp nhận thêm khoảng {fmt_int(binding_fit)} VM cỡ trung bình trước khi {binding} chạm ngưỡng; nguồn lực sẽ hết trước là {binding}.")
+    points.append(f"Xu hướng: nếu tăng trưởng 10%/quý, {binding} dự kiến chạm ngưỡng sau {_runway_phrase(binding_months)} — đây là mốc nên đưa vào kế hoạch ngân sách.")
+    if ha_eligible:
+        points.append(f"Dự phòng sự cố: {len(ha_eligible) - len(ha_fail)}/{len(ha_eligible)} cluster vẫn vận hành bình thường nếu mất 1 host"
+                      + (f"; {len(ha_fail)} cluster chưa đạt ({', '.join(r['cluster'] for r in ha_fail[:4])})." if ha_fail else "."))
+    if reclaim["count"] >= 3:
+        points.append(f"Cơ hội tiết kiệm: thu hồi {reclaim['count']} VM không sử dụng giải phóng ~{fmt_int(reclaim['vcpu'])} vCPU / {fmt_int(reclaim['ramGB'])} GB RAM mà không tốn chi phí.")
+
+    decisions = [r for r in recs if r["priority"] in ("cao", "tb")]
+    if decisions:
+        decision_line = f"Cần Ban lãnh đạo xem xét {len(decisions)} nội dung: " + "; ".join(d["decision"].rstrip(".") for d in decisions[:3]) + "."
+    else:
+        decision_line = "Không có quyết định đầu tư nào cần phê duyệt tại kỳ báo cáo này; các đề xuất còn lại thuộc phạm vi vận hành của IT."
+
+    return {"health_cls": health_cls, "health_word": health_word, "headline": headline, "points": points,
+            "decision_line": decision_line, "recommendations": recs, "binding": binding}
+
+
+def _brief_html(brief: Dict[str, Any]) -> str:
+    fg_key, bg_key = STATUS_COLOR.get(brief["health_cls"], STATUS_COLOR["na"])
+    items = "".join(f'<li>{esc(pt)}</li>' for pt in brief["points"])
+    return f"""
+    <div class="exec-brief {brief['health_cls']}">
+      <div class="exec-brief-head">
+        <span class="pill" style="color:{COLORS[fg_key]};background:{COLORS[bg_key]};border-color:{COLORS[fg_key]}55;font-size:9px;">{esc(brief['health_word'])}</span>
+        <span class="exec-brief-title">Tóm tắt 30 giây cho Ban lãnh đạo</span>
+      </div>
+      <div class="exec-brief-headline">{esc(brief['headline'])}</div>
+      <ul class="brief-list">{items}</ul>
+      <div class="exec-brief-decision"><b>Quyết định cần từ Ban lãnh đạo:</b> {esc(brief['decision_line'])}</div>
+    </div>"""
+
+
+def _recommendations_html(recs: List[Dict[str, Any]]) -> str:
+    cards = []
+    for i, r in enumerate(recs, 1):
+        cards.append(f"""
+      <div class="rec-card tone-{r['tone']} prio-{r['priority']}">
+        <div class="rec-head">
+          <span class="rec-num">{i}</span>
+          <span class="rec-title">{esc(r['title'])}</span>
+          <span class="priority-pill priority-{r['priority']}">{PRIORITY_LABEL_VI.get(r['priority'], '')}</span>
+          <span class="chip">{esc(r['timeframe'])}</span>
+        </div>
+        <div class="rec-grid">
+          <div class="rec-cell"><div class="rec-label">Điều này có nghĩa</div><div>{esc(r['meaning'])}</div></div>
+          <div class="rec-cell"><div class="rec-label">Chúng tôi đề xuất</div><div>{esc(r['action'])}</div></div>
+          <div class="rec-cell"><div class="rec-label">Nếu chưa hành động</div><div>{esc(r['impact'])}</div></div>
+        </div>
+        <div class="rec-decision"><b>Đề nghị Ban lãnh đạo:</b> {esc(r['decision'])}</div>
+      </div>""")
+    return "".join(cards)
+
+
+def _decision_register_html(recs: List[Dict[str, Any]]) -> str:
+    rows = []
+    for i, r in enumerate(recs, 1):
+        rows.append(f"""
+      <tr>
+        <td style="text-align:center;">{i}</td>
+        <td><b>{esc(r['decision'])}</b><div class="small-note" style="margin-top:1px;">{esc(r['title'])}</div></td>
+        <td><span class="priority-pill priority-{r['priority']}">{PRIORITY_LABEL_VI.get(r['priority'], '')}</span></td>
+        <td>{esc(r['timeframe'])}</td>
+        <td>{esc(r['impact'])}</td>
+        <td style="width:74px;"><span class="sign-box"></span></td>
+      </tr>""")
+    if not rows:
+        rows.append('<tr><td colspan="6" class="small-note">Không có nội dung cần phê duyệt.</td></tr>')
+    return "".join(rows)
+
+
+def build_management_brief(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]],
+                           policy: capacity.Policy) -> Dict[str, Any]:
+    """Compute the management brief (headline, key points, recommendations,
+    decision register) as plain JSON for the web Executive View, using the
+    exact same logic as the Executive PDF so both surfaces agree."""
+    model = capacity.build_capacity_model(hosts, vms, policy)
+    cluster_rows = capacity.build_cluster_rows(hosts, vms, policy)
+    findings = capacity.build_compliance_findings(hosts, vms, policy)
+    headroom = capacity.estimate_capacity_headroom(model, vms, policy)
+    growth = capacity.estimate_growth_scenarios(model)
+    ha_rows = capacity.evaluate_ha_headroom(hosts, vms, policy)
+    brief = _management_brief(model, cluster_rows, findings, policy, vms, hosts, headroom, growth, ha_rows)
+    brief["overall"] = _overall_status(model)
+    brief["include_storage"] = bool(getattr(policy, "include_storage", False))
+    brief["generated_at"] = _now_str()
+    brief["counts"] = {"hosts": len(hosts), "vms": len(vms), **_severity_counts(findings)}
+    for i, rec in enumerate(brief["recommendations"], start=1):
+        rec["index"] = i
+        rec["priority_label"] = PRIORITY_LABEL_VI.get(rec["priority"], rec["priority"])
+    return brief
+
+
+def _executive_insights(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]],
+                        findings: List[Dict[str, Any]], policy: capacity.Policy) -> List[Dict[str, str]]:
+    """Backward-compatible flat view of the management brief (title/body/risk)."""
+    headroom = capacity.estimate_capacity_headroom(model, [], policy)
+    growth = capacity.estimate_growth_scenarios(model)
+    brief = _management_brief(model, cluster_rows, findings, policy, [], [], headroom, growth, [])
+    return [{"risk": r["priority"] == "cao", "title": r["title"], "body": f"{r['meaning']} {r['action']}"} for r in brief["recommendations"]]
 
 
 # ---------------------------------------------------------------------------
@@ -584,6 +975,16 @@ def _executive_insights(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]
 # shared by both the Executive and Technical reports.
 # ---------------------------------------------------------------------------
 METRIC_LABEL_VI = {"cpu": "CPU", "ram": "RAM", "storage": "Storage"}
+
+STORAGE_EXCLUDED_NOTE = (
+    "Tiêu chí Storage không thuộc phạm vi đánh giá của báo cáo này: hạ tầng lưu trữ dùng SAN dùng chung, "
+    "nhiều VM cấp phát thick provisioning nên tỷ lệ \"đã dùng / cấp phát\" luôn tiệm cận 100% và không phản ánh "
+    "dung lượng SAN thực còn trống. Năng lực lưu trữ được quản lý và báo cáo riêng ở tầng SAN."
+)
+
+
+def _storage_excluded_html() -> str:
+    return f'<div class="insight-box" style="margin-top:6px;"><b>Storage: không đánh giá trong báo cáo này</b><br/>{esc(STORAGE_EXCLUDED_NOTE)}</div>'
 
 
 def _fmt_months(months: Optional[float]) -> str:
@@ -598,9 +999,9 @@ def _fmt_months(months: Optional[float]) -> str:
     return f"~{months:.0f} th\u00e1ng"
 
 
-def _growth_scenario_rows_html(growth: Dict[str, Any]) -> str:
+def _growth_scenario_rows_html(growth: Dict[str, Any], include_storage: bool = True) -> str:
     rows = []
-    for key in ("cpu", "ram", "storage"):
+    for key in (("cpu", "ram", "storage") if include_storage else ("cpu", "ram")):
         g = growth.get(key, {})
         cur = g.get("currentPct")
         cells = "".join(
@@ -615,13 +1016,21 @@ def _growth_scenario_rows_html(growth: Dict[str, Any]) -> str:
     return "".join(rows)
 
 
-def _headroom_cards_html(headroom: Dict[str, Any]) -> str:
+def _headroom_cards_html(headroom: Dict[str, Any], include_storage: bool = True) -> str:
     cpu, ram, storage = headroom["cpu"], headroom["ram"], headroom["storage"]
 
     def vms_fit_text(v: Optional[int]) -> str:
         if v is None:
             return "\u2014"
         return f"~{v} VM" if v < 9999 else "> 9,999 VM"
+
+    storage_card = f"""
+      <div class="headroom-card">
+        <div class="headroom-metric">D\u01b0 \u0111\u1ecba Storage t\u1edbi ng\u01b0\u1ee1ng 90%</div>
+        <div class="headroom-value">{fmt_int(storage['freeStorageGB'])} <span>GB tr\u1ed1ng</span></div>
+        <div class="headroom-sub">\u01af\u1edbc t\u00ednh th\u00eam \u0111\u01b0\u1ee3c {vms_fit_text(storage['vmsFit'])} c\u1ee1 trung b\u00ecnh hi\u1ec7n t\u1ea1i tr\u01b0\u1edbc khi datastore g\u1ea7n \u0111\u1ea7y.</div>
+      </div>""" if include_storage else ""
+    storage_avg = f" \u00b7 {fmt_num(headroom['avg']['avgStorageGB'],1)} GB storage" if include_storage else ""
 
     return f"""
     <div class="chart-row">
@@ -635,13 +1044,9 @@ def _headroom_cards_html(headroom: Dict[str, Any]) -> str:
         <div class="headroom-value">{fmt_int(ram['freeRamGB'])} <span>GB tr\u1ed1ng / {fmt_int(ram['maxRamGB'])} GB t\u1ed1i \u0111a</span></div>
         <div class="headroom-sub">\u01af\u1edbc t\u00ednh th\u00eam \u0111\u01b0\u1ee3c {vms_fit_text(ram['vmsFit'])} c\u1ee1 trung b\u00ecnh hi\u1ec7n t\u1ea1i tr\u01b0\u1edbc khi ch\u1ea1m ng\u01b0\u1ee1ng overcommit RAM.</div>
       </div>
-      <div class="headroom-card">
-        <div class="headroom-metric">D\u01b0 \u0111\u1ecba Storage t\u1edbi ng\u01b0\u1ee1ng 90%</div>
-        <div class="headroom-value">{fmt_int(storage['freeStorageGB'])} <span>GB tr\u1ed1ng</span></div>
-        <div class="headroom-sub">\u01af\u1edbc t\u00ednh th\u00eam \u0111\u01b0\u1ee3c {vms_fit_text(storage['vmsFit'])} c\u1ee1 trung b\u00ecnh hi\u1ec7n t\u1ea1i tr\u01b0\u1edbc khi datastore g\u1ea7n \u0111\u1ea7y.</div>
-      </div>
+      {storage_card}
     </div>
-    <div class="small-note" style="margin-top:6px;">VM \"c\u1ee1 trung b\u00ecnh\" t\u00ednh theo footprint b\u00ecnh qu\u00e2n c\u1ee7a c\u00e1c VM \u0111ang b\u1eadt trong ph\u1ea1m vi b\u00e1o c\u00e1o: {fmt_num(headroom['avg']['avgVcpu'],1)} vCPU \u00b7 {fmt_num(headroom['avg']['avgRamGB'],1)} GB RAM \u00b7 {fmt_num(headroom['avg']['avgStorageGB'],1)} GB storage.</div>
+    <div class="small-note" style="margin-top:6px;">VM \"c\u1ee1 trung b\u00ecnh\" t\u00ednh theo footprint b\u00ecnh qu\u00e2n c\u1ee7a c\u00e1c VM \u0111ang b\u1eadt trong ph\u1ea1m vi b\u00e1o c\u00e1o: {fmt_num(headroom['avg']['avgVcpu'],1)} vCPU \u00b7 {fmt_num(headroom['avg']['avgRamGB'],1)} GB RAM{storage_avg}.</div>
     """
 
 
@@ -737,7 +1142,16 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
         d[f.get("severity", "info")] = d.get(f.get("severity", "info"), 0) + 1
     overall = _overall_status(model)
     generated_at = _now_str()
-    insights = _executive_insights(model, cluster_rows, findings, policy)
+    include_storage = bool(getattr(policy, "include_storage", False))
+
+    # Forward-looking capacity planning content: headroom in absolute units,
+    # assumption-based growth-to-threshold scenarios, and an N+1 host-loss
+    # resiliency check -- gives leadership concrete runway/investment framing
+    # instead of only point-in-time utilization numbers.
+    headroom = capacity.estimate_capacity_headroom(model, vms, policy)
+    growth = capacity.estimate_growth_scenarios(model)
+    ha_rows = capacity.evaluate_ha_headroom(hosts, vms, policy)
+    brief = _management_brief(model, cluster_rows, findings, policy, vms, hosts, headroom, growth, ha_rows)
 
     powered_on, powered_off = model["poweredOnCount"], model["poweredOffCount"]
     donut = svg_donut([
@@ -745,17 +1159,32 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
         {"label": "Powered Off", "value": powered_off, "color": COLORS["na"]},
     ], size=88, center_label=fmt_int(powered_on + powered_off), center_sub="VM")
 
-    cpu_risk_chart = svg_cluster_risk_chart(cluster_rows, "cpu", cluster_finding_counts, width=246)
-    ram_risk_chart = svg_cluster_risk_chart(cluster_rows, "ram", cluster_finding_counts, width=246)
+    cpu_risk_chart = svg_cluster_risk_chart(cluster_rows, "cpu", cluster_finding_counts, width=238, name_max_len=16)
+    ram_risk_chart = svg_cluster_risk_chart(cluster_rows, "ram", cluster_finding_counts, width=238, name_max_len=16)
 
     # Headline utilization gauges — give the cover-page numbers a chart, not
     # just text, for a livelier and more scannable first impression.
     cpu_status = capacity.get_status_for_pct(model.get("cpuPct"), 80, 100)
     ram_status = capacity.get_status_for_pct(model.get("ramPct"), 80, 100)
-    ds_status = capacity.get_status_for_pct(model.get("storagePct"), 80, 90)
-    gauge_cpu = svg_gauge(model.get("cpuPct"), COLORS[STATUS_COLOR.get(cpu_status["cls"], STATUS_COLOR["na"])[0]])
-    gauge_ram = svg_gauge(model.get("ramPct"), COLORS[STATUS_COLOR.get(ram_status["cls"], STATUS_COLOR["na"])[0]])
-    gauge_ds = svg_gauge(model.get("storagePct"), COLORS[STATUS_COLOR.get(ds_status["cls"], STATUS_COLOR["na"])[0]])
+    gauge_cpu = svg_gauge(model.get("cpuPct"), COLORS[STATUS_COLOR.get(cpu_status["cls"], STATUS_COLOR["na"])[0]], size=150, caption="của ngưỡng cho phép")
+    gauge_ram = svg_gauge(model.get("ramPct"), COLORS[STATUS_COLOR.get(ram_status["cls"], STATUS_COLOR["na"])[0]], size=150, caption="của ngưỡng cho phép")
+    gauge_cpu_cls, gauge_ram_cls = cpu_status["cls"], ram_status["cls"]
+    gauge_ds_html = ""
+    storage_kpi_html = ""
+    if include_storage:
+        ds_status = capacity.get_status_for_pct(model.get("storagePct"), 80, 90)
+        gauge_ds = svg_gauge(model.get("storagePct"), COLORS[STATUS_COLOR.get(ds_status["cls"], STATUS_COLOR["na"])[0]], size=150,
+                             caption="đã dùng / cấp phát", zones=GAUGE_ZONES_STORAGE)
+        gauge_ds_html = (f'<div class="gauge-card {ds_status["cls"]}">{gauge_ds}<div class="kpi-label" style="margin-top:2px;">Storage</div>'
+                         f'<div class="gauge-caption">{esc(ds_status["text"])} · vùng vàng từ 80%, đỏ từ 90%</div></div>')
+        storage_kpi_html = (f'<div class="kpi-card"><div class="kpi-label">Storage (GB)</div><div class="kpi-value">{fmt_int(model["usedStorageGB"])} / {fmt_int(model["provStorageGB"])}</div>'
+                            f'<div class="kpi-sub">{fmt_pct(model["storagePct"])} đã dùng / cấp phát</div></div>')
+    else:
+        # Keep the 4-card KPI grid balanced with an explicit "out of scope" card
+        # so readers see Storage was deliberately excluded, not forgotten.
+        storage_kpi_html = ('<div class="kpi-card" style="opacity:.85;"><div class="kpi-label">Storage</div><div class="kpi-value" style="font-size:12px;line-height:1.35;padding-top:3px;">Không đánh giá</div>'
+                            '<div class="kpi-sub">Quản lý ở tầng SAN dùng chung</div></div>')
+    storage_excluded_html = "" if include_storage else _storage_excluded_html()
 
     findings_donut = svg_donut([
         {"label": "Nghiêm trọng", "value": sev["critical"], "color": COLORS["crit"]},
@@ -767,14 +1196,6 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
         c["model"]["cpuPct"] if _finite(c["model"]["cpuPct"]) else -1,
         c["model"]["ramPct"] if _finite(c["model"]["ramPct"]) else -1), reverse=True)[:8]
 
-    # Forward-looking capacity planning content: headroom in absolute units,
-    # assumption-based growth-to-threshold scenarios, and an N+1 host-loss
-    # resiliency check -- gives leadership concrete runway/investment framing
-    # instead of only point-in-time utilization numbers.
-    headroom = capacity.estimate_capacity_headroom(model, vms, policy)
-    growth = capacity.estimate_growth_scenarios(model)
-    ha_rows = capacity.evaluate_ha_headroom(hosts, vms, policy)
-
     # Chart-variety additions: a grouped bar chart and a radar chart, both a
     # different chart family from the gauges/donuts/progress-bars used
     # elsewhere, comparing the same top-risk clusters across CPU/RAM/Storage.
@@ -785,15 +1206,32 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
         "values": [
             c["model"]["cpuPct"] if _finite(c["model"]["cpuPct"]) else 0,
             c["model"]["ramPct"] if _finite(c["model"]["ramPct"]) else 0,
-            c["model"]["storagePct"] if _finite(c["model"]["storagePct"]) else 0,
-        ],
+        ] + ([c["model"]["storagePct"] if _finite(c["model"]["storagePct"]) else 0] if include_storage else []),
     } for i, c in enumerate(multi_cluster_rows)]
-    radar_chart = svg_radar_chart(["CPU", "RAM", "Storage"], radar_series, size=210)
-    radar_legend = "".join(
-        f'<div class="radar-legend-item"><span class="radar-swatch" style="background:{s["color"]}"></span>{esc(s["name"])}</div>'
-        for s in radar_series)
-    growth_rows_html = _growth_scenario_rows_html(growth)
-    headroom_html = _headroom_cards_html(headroom)
+    if include_storage:
+        compare_title = "So sánh Top cluster (CPU/RAM/Storage)"
+        radar_chart = svg_radar_chart(["CPU", "RAM", "Storage"], radar_series, size=250)
+        radar_legend = "".join(
+            f'<div class="radar-legend-item"><span class="radar-swatch" style="background:{s["color"]}"></span>{esc(s["name"])}</div>'
+            for s in radar_series)
+    else:
+        # A 2-axis radar collapses into a line, so with Storage excluded the
+        # comparison switches to a grouped bar chart (CPU vs RAM per cluster).
+        compare_title = "So sánh Top cluster (CPU/RAM)"
+        radar_chart = svg_bar_chart(
+            [c["name"] for c in multi_cluster_rows],
+            [
+                {"name": "CPU", "color": COLORS["primary"],
+                 "values": [c["model"]["cpuPct"] if _finite(c["model"]["cpuPct"]) else 0 for c in multi_cluster_rows]},
+                {"name": "RAM", "color": COLORS["accent"],
+                 "values": [c["model"]["ramPct"] if _finite(c["model"]["ramPct"]) else 0 for c in multi_cluster_rows]},
+            ], width=300, height=210, threshold=100, threshold_label="Ngưỡng", unit="%")
+        radar_legend = (f'<div class="radar-legend-item"><span class="radar-swatch" style="background:{COLORS["primary"]}"></span>% CPU so với ngưỡng overcommit cho phép</div>'
+                        f'<div class="radar-legend-item"><span class="radar-swatch" style="background:{COLORS["accent"]}"></span>% RAM so với ngưỡng overcommit cho phép</div>'
+                        f'<div class="radar-legend-item"><span class="radar-swatch" style="background:{COLORS["crit"]}"></span>Cột đỏ / đường gạch: đã vượt ngưỡng 100%</div>')
+    growth_rows_html = _growth_scenario_rows_html(growth, include_storage)
+    headroom_html = _headroom_cards_html(headroom, include_storage)
+    growth_threshold_note = "100% với CPU/RAM, 90% với Storage" if include_storage else "100% với CPU/RAM"
     ha_html = _ha_table_html(ha_rows)
 
     cluster_rows_html = "".join(f"""
@@ -815,9 +1253,9 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
         <td style="max-width:230px;">{esc(f.get('recommendation'))}</td>
       </tr>""" for f in top_findings) if top_findings else '<tr><td colspan="4" class="small-note">Không có phát hiện nào.</td></tr>'
 
-    insights_html = "".join(f"""
-      <div class="insight-box{' risk' if ins['risk'] else ''}"><b>{esc(ins['title'])}</b><br/>{esc(ins['body'])}</div>
-    """ for ins in insights)
+    brief_html = _brief_html(brief)
+    recommendations_html = _recommendations_html(brief["recommendations"])
+    decision_rows_html = _decision_register_html([r for r in brief["recommendations"] if r["priority"] in ("cao", "tb", "thap")])
 
     ha_eligible = [r for r in ha_rows if r.get("eligible")]
     ha_fail = [r for r in ha_eligible if not r.get("survives")]
@@ -859,24 +1297,38 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
     <span>Trạng thái tổng thể: {status_pill(overall)}</span>
   </div>
 
+  {brief_html}
+
   <div class="section">
     <div class="section-title">Tổng quan năng lực</div>
+    <div class="section-sub">Các đồng hồ đo thể hiện mức đã dùng so với ngưỡng overcommit cho phép: vùng xanh là an toàn, vùng vàng (từ 80%) cần lên kế hoạch, chạm 100% là vượt ngưỡng.</div>
     <div class="gauge-row">
-      <div class="gauge-card">{gauge_cpu}<div class="kpi-label" style="margin-top:2px;">CPU Usage</div></div>
-      <div class="gauge-card">{gauge_ram}<div class="kpi-label" style="margin-top:2px;">RAM Usage</div></div>
-      <div class="gauge-card">{gauge_ds}<div class="kpi-label" style="margin-top:2px;">Storage Usage</div></div>
+      <div class="gauge-card {gauge_cpu_cls}">{gauge_cpu}<div class="kpi-label" style="margin-top:2px;">CPU</div><div class="gauge-caption">{esc(cpu_status['text'])} · overcommit {fmt_num(model['cpuOvercommit'],2,'x')} / tối đa {fmt_num(policy.cpu_overcommit_max,1,'x')}</div></div>
+      <div class="gauge-card {gauge_ram_cls}">{gauge_ram}<div class="kpi-label" style="margin-top:2px;">RAM</div><div class="gauge-caption">{esc(ram_status['text'])} · overcommit {fmt_num(model['ramOvercommit'],2,'x')} / tối đa {fmt_num(policy.ram_overcommit_max,1,'x')}</div></div>
+      {gauge_ds_html}
     </div>
     <div class="kpi-grid">
       <div class="kpi-card"><div class="kpi-label">CPU (pCPU logic)</div><div class="kpi-value">{fmt_int(model['usedVcpu'])} / {fmt_int(model['totalLogicalCores'])}</div><div class="kpi-sub">Overcommit {fmt_num(model['cpuOvercommit'],2,'x')} · {fmt_pct(model['cpuPct'])} ngưỡng</div></div>
       <div class="kpi-card"><div class="kpi-label">RAM (GB)</div><div class="kpi-value">{fmt_int(model['usedRamGB'])} / {fmt_int(model['totalRamGB'])}</div><div class="kpi-sub">Overcommit {fmt_num(model['ramOvercommit'],2,'x')} · {fmt_pct(model['ramPct'])} ngưỡng</div></div>
-      <div class="kpi-card"><div class="kpi-label">Storage (GB)</div><div class="kpi-value">{fmt_int(model['usedStorageGB'])} / {fmt_int(model['provStorageGB'])}</div><div class="kpi-sub">{fmt_pct(model['storagePct'])} đã dùng / cấp phát</div></div>
+      {storage_kpi_html}
       <div class="kpi-card"><div class="kpi-label">Hosts / VMs</div><div class="kpi-value">{fmt_int(model['hostCount'])} / {fmt_int(model['vmCount'])}</div><div class="kpi-sub">{fmt_int(powered_on)} bật · {fmt_int(powered_off)} tắt</div></div>
     </div>
+    {storage_excluded_html}
+  </div>
+
+  <div class="section breakable">
+    <div class="section-title">Nhận định &amp; đề xuất cho Ban lãnh đạo</div>
+    <div class="section-sub">Mỗi đề xuất được trình bày theo ba câu hỏi: điều này có nghĩa gì với hoạt động kinh doanh, chúng tôi đề xuất làm gì, và điều gì xảy ra nếu chưa hành động — kèm nội dung cụ thể cần Ban lãnh đạo quyết định.</div>
+    {recommendations_html}
   </div>
 
   <div class="section">
-    <div class="section-title">Nhận định &amp; đề xuất đầu tư</div>
-    {insights_html}
+    <div class="section-title">Danh mục quyết định trình Ban lãnh đạo</div>
+    <div class="section-sub">Tổng hợp các nội dung cần phê duyệt hoặc ghi nhận chủ trương, xếp theo mức ưu tiên. Ô cuối dành cho ý kiến/ký duyệt.</div>
+    <table>
+      <thead><tr><th style="width:22px;text-align:center;">#</th><th>Nội dung quyết định</th><th>Ưu tiên</th><th>Thời điểm</th><th>Rủi ro tránh được / lợi ích</th><th>Ý kiến</th></tr></thead>
+      <tbody>{decision_rows_html}</tbody>
+    </table>
   </div>
 
   <div class="section">
@@ -889,10 +1341,10 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
           <thead><tr><th>Chỉ số</th><th>Hiện tại</th><th>Tăng 5%/quý</th><th>Tăng 10%/quý</th><th>Tăng 20%/quý</th></tr></thead>
           <tbody>{growth_rows_html}</tbody>
         </table>
-        <div class="assumption-note">Số tháng ước tính tới khi chạm ngưỡng cấu hình (100% với CPU/RAM, 90% với Storage), giả định tăng trưởng đều theo quý — chỉ mang tính tham khảo cho kế hoạch ngân sách, không phải cam kết.</div>
+        <div class="assumption-note">Số tháng ước tính tới khi chạm ngưỡng cấu hình ({growth_threshold_note}), giả định tăng trưởng đều theo quý — chỉ mang tính tham khảo cho kế hoạch ngân sách, không phải cam kết.</div>
       </div>
-      <div style="flex:0 0 250px;text-align:center;">
-        <div class="chart-card-title">So sánh Top cluster (CPU/RAM/Storage)</div>
+      <div class="chart-card soft" style="flex:0 0 324px;text-align:center;">
+        <div class="chart-card-title">{compare_title}</div>
         {radar_chart}
         <div style="text-align:left;margin-top:4px;">{radar_legend}</div>
       </div>
@@ -905,16 +1357,16 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
     <div class="section-title">Rủi ro theo Cluster</div>
     <div class="section-sub">Màu thanh thể hiện trạng thái rủi ro của từng cluster (không phải màu cố định theo chỉ số). Số trong vòng tròn ở cuối thanh là số finding nghiêm trọng/cảnh báo của cluster đó.</div>
     <div class="two-col">
-      <div>
-        <div class="section-title" style="font-size:10.5px;border-left:none;padding-left:0;">% CPU</div>
+      <div class="chart-card soft">
+        <div class="chart-card-title">% CPU so với ngưỡng</div>
         {cpu_risk_chart}
       </div>
-      <div>
-        <div class="section-title" style="font-size:10.5px;border-left:none;padding-left:0;">% RAM</div>
+      <div class="chart-card soft">
+        <div class="chart-card-title">% RAM so với ngưỡng</div>
         {ram_risk_chart}
       </div>
-      <div style="flex:0 0 118px;text-align:center;">
-        <div class="section-title" style="font-size:10.5px;border-left:none;padding-left:0;text-align:left;">VM Power State</div>
+      <div class="chart-card soft" style="flex:0 0 130px;text-align:center;">
+        <div class="chart-card-title" style="text-align:left;">Trạng thái VM</div>
         {donut}
         <div class="legend" style="justify-content:center;flex-direction:column;gap:2px;"><span><span class="dot" style="background:{COLORS['ok']}"></span>On ({fmt_int(powered_on)})</span><span><span class="dot" style="background:{COLORS['na']}"></span>Off ({fmt_int(powered_off)})</span></div>
       </div>
@@ -938,7 +1390,7 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
   <div class="section">
     <div class="section-title">Rủi ro compliance nổi bật</div>
     <div class="chart-row">
-      <div style="flex:0 0 118px;text-align:center;">
+      <div class="chart-card soft" style="flex:0 0 130px;text-align:center;">
         {findings_donut}
         <div class="legend" style="justify-content:center;flex-direction:column;gap:2px;text-align:left;">
           <span><span class="dot" style="background:{COLORS['crit']}"></span>Nghiêm trọng ({fmt_int(sev['critical'])})</span>
@@ -969,7 +1421,8 @@ def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
     host_rows = sorted(capacity.build_host_rows(hosts, vms, policy),
                         key=lambda h: max(h["cpuPct"] if _finite(h["cpuPct"]) else -1, h["ramPct"] if _finite(h["ramPct"]) else -1),
                         reverse=True)
-    ds_rows = capacity.build_datastore_rows(vms)
+    include_storage = bool(getattr(policy, "include_storage", False))
+    ds_rows = capacity.build_datastore_rows(vms) if include_storage else []
     type_filter = set(include_types) if include_types is not None else None
     findings = sorted(
         [f for f in capacity.build_compliance_findings(hosts, vms, policy) if type_filter is None or f.get("type") in type_filter],
@@ -982,14 +1435,15 @@ def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
         filter_note = f"Đã loại {len(excluded)}/{len(ALL_FINDING_TYPES)} loại finding khỏi báo cáo: {', '.join(excluded)}."
 
     policy_note = (f"Ngưỡng overcommit CPU {policy.cpu_overcommit_max:.1f}x · RAM {policy.ram_overcommit_max:.1f}x · "
-                   f"Hệ số HT {policy.ht_factor:.1f}x · Ngưỡng idle {policy.idle_days} ngày")
+                   f"Hệ số HT {policy.ht_factor:.1f}x · Ngưỡng idle {policy.idle_days} ngày · "
+                   f"Storage: {'có đánh giá' if include_storage else 'không đánh giá (SAN)'}")
 
     headroom = capacity.estimate_capacity_headroom(model, vms, policy)
     growth = capacity.estimate_growth_scenarios(model)
     ha_rows = capacity.evaluate_ha_headroom(hosts, vms, policy)
     expansion_actions = _technical_headroom_actions(cluster_rows, policy)
-    headroom_html = _headroom_cards_html(headroom)
-    growth_rows_html = _growth_scenario_rows_html(growth)
+    headroom_html = _headroom_cards_html(headroom, include_storage)
+    growth_rows_html = _growth_scenario_rows_html(growth, include_storage)
     ha_full_html = _ha_table_html(ha_rows)
     actions_html = _technical_actions_html(expansion_actions)
 
@@ -1005,9 +1459,15 @@ def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
              "values": [c["model"]["cpuPct"] if _finite(c["model"]["cpuPct"]) else 0 for c in top_clusters_for_chart]},
             {"name": "RAM", "color": COLORS["accent"],
              "values": [c["model"]["ramPct"] if _finite(c["model"]["ramPct"]) else 0 for c in top_clusters_for_chart]},
+        ] + ([
             {"name": "Storage", "color": COLORS["warn"],
              "values": [c["model"]["storagePct"] if _finite(c["model"]["storagePct"]) else 0 for c in top_clusters_for_chart]},
-        ], width=680, height=230, max_value=140)
+        ] if include_storage else []), width=650, height=230, threshold=100, threshold_label="Ngưỡng", unit="%")
+    metrics_label = "CPU/RAM/Storage" if include_storage else "CPU/RAM"
+    storage_legend_html = f'<span><span class="dot" style="background:{COLORS["warn"]}"></span>% Storage</span>' if include_storage else ""
+    storage_th_html = "<th>% Storage</th>" if include_storage else ""
+    storage_excluded_html = "" if include_storage else _storage_excluded_html()
+    growth_threshold_note = "100% CPU/RAM, 90% Storage" if include_storage else "100% CPU/RAM"
 
     cluster_html = "".join(f"""
       <tr>
@@ -1016,19 +1476,19 @@ def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
         <td>{bar_cell(c['model']['cpuPct'], c['cpuStatus']['cls'])}</td>
         <td>{fmt_num(c['model']['ramOvercommit'],2,'x')}</td>
         <td>{bar_cell(c['model']['ramPct'], c['ramStatus']['cls'])}</td>
-        <td>{bar_cell(c['model']['storagePct'], capacity.get_status_for_pct(c['model']['storagePct'], 80, 90)['cls'], max_scale=100.0)}</td>
+        {f"<td>{bar_cell(c['model']['storagePct'], capacity.get_status_for_pct(c['model']['storagePct'], 80, 90)['cls'], max_scale=100.0)}</td>" if include_storage else ""}
         <td>{status_pill(c['overall'])}</td>
       </tr>""" for c in cluster_rows)
 
     host_cpu_chart = svg_ranked_bar_chart(
         [{"name": h.get("host"), "pct": h.get("cpuPct"), "cls": h["cpuStatus"]["cls"]} for h in host_rows],
-        width=330, top_n=10)
+        width=320, top_n=10, name_max_len=28)
     host_ram_chart = svg_ranked_bar_chart(
         [{"name": h.get("host"), "pct": h.get("ramPct"), "cls": h["ramStatus"]["cls"]} for h in host_rows],
-        width=330, top_n=10)
+        width=320, top_n=10, name_max_len=28)
     ds_chart = svg_ranked_bar_chart(
         [{"name": d["name"], "pct": d["pct"], "cls": d["status"]["cls"]} for d in ds_rows],
-        width=680, height=None, max_scale=100.0, name_max_len=20, top_n=10)
+        width=680, height=None, max_scale=100.0, name_max_len=20, top_n=10) if include_storage else ""
 
     host_html = "".join(f"""
       <tr>
@@ -1057,13 +1517,28 @@ def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
 
     logo_html = f'<img class="cover-logo" src="{esc(logo_data_url)}"/>' if logo_data_url else ''
 
+    datastore_sections_html = f"""
+  <div class="section">
+    <div class="section-title">Top-10 Datastore theo % sử dụng</div>
+    <div class="chart-card">{ds_chart}</div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Utilization theo Datastore</div>
+    <table>
+      <thead><tr><th>Datastore</th><th>Provisioned GB</th><th>Used GB</th><th>% Storage</th><th>VM</th><th>Trạng thái</th></tr></thead>
+      <tbody>{ds_html}</tbody>
+    </table>
+  </div>
+""" if include_storage else ""
+
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8"/><style>{_base_css('Báo cáo kỹ thuật', generated_at)}</style></head>
 <body>
   <div class="cover-header">
     <div>
       <div class="eyebrow">Infrastructure Capacity Ops · Technical Detail</div>
       <div class="cover-title">Báo cáo Kỹ thuật — Capacity Ops</div>
-      <div class="cover-sub">Chi tiết overcommit, host, datastore và compliance findings phục vụ vận hành kỹ thuật.</div>
+      <div class="cover-sub">Chi tiết overcommit, host{', datastore' if include_storage else ''} và compliance findings phục vụ vận hành kỹ thuật.</div>
     </div>
     {logo_html}
   </div>
@@ -1079,23 +1554,24 @@ def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
     <span class="chip">{fmt_int(sev['warning'])} cảnh báo</span>
     <span class="chip">{fmt_int(sev['info'])} thông tin</span>
   </div>
+  {storage_excluded_html}
 
   <div class="section">
     <div class="section-title">Overcommit theo Cluster</div>
     <table>
-      <thead><tr><th>Cluster</th><th>Hosts</th><th>VMs</th><th>CPU x</th><th>% CPU</th><th>RAM x</th><th>% RAM</th><th>% Storage</th><th>Trạng thái</th></tr></thead>
+      <thead><tr><th>Cluster</th><th>Hosts</th><th>VMs</th><th>CPU x</th><th>% CPU</th><th>RAM x</th><th>% RAM</th>{storage_th_html}<th>Trạng thái</th></tr></thead>
       <tbody>{cluster_html}</tbody>
     </table>
   </div>
 
   <div class="section">
-    <div class="section-title">So sánh CPU/RAM/Storage theo Cluster</div>
-    <div class="section-sub">Biểu đồ cột nhóm — mỗi cluster có 3 cột (CPU/RAM/Storage) tính theo % ngưỡng cấu hình, để đối chiếu nhanh giữa các chỉ số thay vì chỉ xem từng bảng riêng lẻ.</div>
+    <div class="section-title">So sánh {metrics_label} theo Cluster</div>
+    <div class="section-sub">Biểu đồ cột nhóm — mỗi cluster có {3 if include_storage else 2} cột ({metrics_label}) tính theo % ngưỡng cấu hình, để đối chiếu nhanh giữa các chỉ số thay vì chỉ xem từng bảng riêng lẻ.</div>
     <div class="chart-card">{cluster_comparison_chart}</div>
     <div class="legend">
       <span><span class="dot" style="background:{COLORS['primary']}"></span>% CPU</span>
       <span><span class="dot" style="background:{COLORS['accent']}"></span>% RAM</span>
-      <span><span class="dot" style="background:{COLORS['warn']}"></span>% Storage</span>
+      {storage_legend_html}
     </div>
   </div>
 
@@ -1107,7 +1583,7 @@ def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
       <thead><tr><th>Chỉ số</th><th>Hiện tại</th><th>Tăng 5%/quý</th><th>Tăng 10%/quý</th><th>Tăng 20%/quý</th></tr></thead>
       <tbody>{growth_rows_html}</tbody>
     </table>
-    <div class="assumption-note">Kịch bản tăng trưởng là GIẢ ĐỊNH (không khớp xu hướng lịch sử — dữ liệu snapshot hiện có chưa đủ chuỗi thời gian để khớp mô hình) dùng cho lập kế hoạch sơ bộ; số tháng tính tới khi chạm ngưỡng cấu hình (100% CPU/RAM, 90% Storage).</div>
+    <div class="assumption-note">Kịch bản tăng trưởng là GIẢ ĐỊNH (không khớp xu hướng lịch sử — dữ liệu snapshot hiện có chưa đủ chuỗi thời gian để khớp mô hình) dùng cho lập kế hoạch sơ bộ; số tháng tính tới khi chạm ngưỡng cấu hình ({growth_threshold_note}).</div>
     <table style="margin-top:10px;">
       <thead><tr><th>Cluster</th><th>% CPU</th><th>% RAM</th><th>Ưu tiên</th><th>Đề xuất bổ sung</th></tr></thead>
       <tbody>{actions_html}</tbody>
@@ -1140,19 +1616,7 @@ def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
     </table>
   </div>
 
-  <div class="section">
-    <div class="section-title">Top-10 Datastore theo % sử dụng</div>
-    <div class="chart-card">{ds_chart}</div>
-  </div>
-
-  <div class="section">
-    <div class="section-title">Utilization theo Datastore</div>
-    <table>
-      <thead><tr><th>Datastore</th><th>Provisioned GB</th><th>Used GB</th><th>% Storage</th><th>VM</th><th>Trạng thái</th></tr></thead>
-      <tbody>{ds_html}</tbody>
-    </table>
-  </div>
-
+{datastore_sections_html}
   <div class="section">
     <div class="section-title">Compliance Findings đầy đủ ({fmt_int(len(findings))})</div>
     <table>
