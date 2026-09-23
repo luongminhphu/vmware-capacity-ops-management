@@ -103,7 +103,8 @@ def sync_vcenter(db: Session, cfg: VCenterConfig, settings: Optional[Settings] =
         for v in vm_rows:
             db.add(VmSnapshot(
                 run_id=run.id, vcenter_key=cfg.key, cluster=v["cluster"], host=v.get("host"),
-                vm=v["vm"], power_state=v["powerState"], is_powered_on=v["isPoweredOn"],
+                vm=v["vm"], instance_uuid=v.get("instanceUuid"),
+                power_state=v["powerState"], is_powered_on=v["isPoweredOn"],
                 ip_address=v.get("ipAddress"), vcpu=v["vcpu"], ram_gb=v["ramGB"],
                 disk_prov_gb=v["diskProvGB"], disk_used_gb=v["diskUsedGB"], datastore=v["datastore"],
                 cpu_usage_pct_raw=v.get("cpuUsagePctRaw"), ram_usage_pct_raw=v.get("ramUsagePctRaw"),

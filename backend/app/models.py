@@ -68,6 +68,9 @@ class VmSnapshot(Base):
     cluster = Column(String(128), nullable=False, default="UNKNOWN")
     host = Column(String(255), nullable=True)
     vm = Column(String(255), nullable=False)
+    # vCenter instanceUuid: stable across rename / vMotion / cross-cluster
+    # migration, so history can tell a moved VM from a deleted + created one.
+    instance_uuid = Column(String(64), nullable=True, index=True)
     power_state = Column(String(32), default="Powered On")
     is_powered_on = Column(Boolean, default=True)
     ip_address = Column(String(64), nullable=True)

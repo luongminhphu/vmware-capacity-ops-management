@@ -91,21 +91,39 @@ phụ:
 - Cùng số liệu được đưa vào PDF, luôn theo cluster và **theo đúng phạm vi cluster đã chọn khi xuất
   báo cáo** (không lấy toàn bộ): Báo cáo Điều hành có mục *"Biến động tài nguyên N tháng gần
   nhất"*; Báo cáo Kỹ thuật có mục tương tự và **Phụ lục A — VM thêm mới / loại bỏ** (vCenter,
-  cluster, host, trạng thái, vCPU, RAM, ngày xuất hiện/thấy lần cuối, ghi chú). Tham số
+  cluster, host, trạng thái, vCPU, RAM, ngày xuất hiện/thấy lần cuối; mục A.3–A.5 cho VM di
+  chuyển/đổi tên/đổi cấu hình). Tham số
   `&months=3|6|12`, `&clusters=A,B` và `&hosts=h1,h2` của `GET /api/reports/pdf` nhận từ lựa chọn
   trên giao diện. Biểu đồ CPU/RAM luôn ở cấp cluster (đơn vị snapshot được tổng hợp); Phụ lục A
   theo cả cluster và host.
-- **Phụ lục A so sánh theo từng cluster**: khóa đối chiếu là (cluster, tên VM) giữa snapshot đầu kỳ
-  và mới nhất của từng vCenter, nên mỗi cluster có danh sách thêm mới/loại bỏ riêng và bảng "Tổng
-  hợp theo cluster" (VM đầu kỳ → nay, thêm/bỏ kèm vCPU/RAM, chuyển vào/ra). VM di chuyển giữa
-  cluster xuất hiện ở cả hai phía với ghi chú "Chuyển từ/sang cluster X"; khi thu hẹp theo host,
-  có thêm bảng "Theo host" và ghi chú "Chuyển từ/sang host Y" — để phân biệt di chuyển với tạo
-  mới/xóa thật. Panel trên tab Dashboard cũng đi theo bộ lọc Host của trang cho phần VM thêm/bỏ.
+- **Phụ lục A đối chiếu theo định danh VM, loại false positive**: mỗi VM được nhận diện bằng
+  `instanceUuid` của vCenter (cột `vm_snapshots.instance_uuid`, tự thêm khi khởi động qua
+  `ensure_schema()`; import CSV nhận cột `InstanceUuid`/`VM UUID`/`UUID`); snapshot cũ chưa có UUID
+  thì đối chiếu theo tên. *Thêm mới* = định danh chưa có ở **bất kỳ cluster/host nào của vCenter**
+  tại đầu kỳ; *loại bỏ* = định danh không còn ở bất kỳ đâu trong vCenter hiện nay. Nhờ vậy các
+  trường hợp không phát sinh/giảm tài nguyên **không** bị tính là thêm mới/loại bỏ mà được liệt kê
+  riêng để đối soát:
+  - **A.3 VM di chuyển**: vMotion giữa host (chỉ liệt kê khi lọc theo host) và migrate giữa cluster
+    (từ → đến), kèm vCPU/RAM; bảng tổng hợp có cột "Chuyển vào / ra".
+  - **Đổi tên cluster/host**: khi một cluster/host biến mất và cluster/host mới xuất hiện với ≥ 50 %
+    host (hoặc VM) trùng nhau (Jaccard, `RENAME_MATCH_MIN`), tên cũ được gộp về tên hiện tại — biểu
+    đồ lịch sử liên tục dưới tên mới, bảng tổng hợp ghi "trước: TÊN-CŨ", không tính thêm/bỏ.
+  - **A.4 VM đổi tên**: cùng `instanceUuid` nhưng tên khác; khi thiếu UUID dùng heuristic cùng
+    cluster + IP + vCPU + RAM (cột "Căn cứ" ghi rõ).
+  - **A.5 VM đổi cấu hình vCPU/RAM** được tách riêng vì có làm thay đổi tài nguyên đã cấp
+    (trước → nay, delta, tổng tăng/giảm).
+  Dòng tóm tắt trong cả hai báo cáo và panel web nêu số trường hợp đã loại
+  (`excludedFalsePositives`). Bảng "Tổng hợp theo cluster" có VM đầu kỳ → nay, thêm/bỏ kèm
+  vCPU/RAM, chuyển vào/ra, đổi tên VM, đổi cấu hình; khi thu hẹp theo host có thêm bảng theo host.
+  Dữ liệu demo (`seed_history`) dựng sẵn các kịch bản: 3 VM chuyển cluster A → B, 4 VM vMotion,
+  2 VM đổi tên, 3 VM tăng cấu hình, cụm DR đổi tên từ `DR-CLUSTER-OLD`.
 - API: `GET /api/dashboard/history?vcenter=<key|all>&months=3|6|12&group=cluster|vcenter[&clusters=A,B]`
   và `GET /api/dashboard/vm-changes?vcenter=<key|all>&months=3|6|12[&clusters=A,B][&hosts=h1,h2]`. Khi chỉ có 1
   vCenter trong phạm vi, nhãn cluster không kèm tên vCenter. % được tính theo ngưỡng
   overcommit **đang áp dụng** (một snapshot/ngày, lấy lần đồng bộ cuối trong ngày theo giờ VN);
-  "thêm mới/loại bỏ" so sánh theo tên VM giữa snapshot đầu kỳ và mới nhất của từng vCenter.
+  "thêm mới/loại bỏ" so sánh theo định danh VM (instanceUuid, dự phòng theo tên) giữa snapshot đầu
+  kỳ và mới nhất của từng vCenter; phản hồi gồm `added`, `removed`, `moved`, `renamedVms`, `resized`,
+  `renamedClusters`, `renamedHosts` và các tổng `*Totals`.
 - Cần tối thiểu 2 ngày có snapshot trong khoảng đã chọn; khi chưa đủ, giao diện và PDF hiển thị
   trạng thái "chưa đủ dữ liệu" thay vì biểu đồ. Với môi trường demo có thể tạo lịch sử giả lập
   để xem trước: `cd backend && python -m app.seed_history --months 12 --step-days 7` (chỉ áp

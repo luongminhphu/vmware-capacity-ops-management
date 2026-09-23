@@ -131,6 +131,9 @@ def collect_inventory(cfg: VCenterConfig) -> Tuple[List[Dict[str, Any]], List[Di
                 "cluster": _cluster_name_of(runtime.host) if runtime.host else "UNKNOWN",
                 "host": host_name,
                 "vm": summary.config.name if cfgd else vm.name,
+                # instanceUuid is unique per vCenter and survives rename / vMotion /
+                # cross-cluster migration; the BIOS uuid can be duplicated by clones.
+                "instanceUuid": (getattr(cfgd, "instanceUuid", None) or None) if cfgd else None,
                 "powerState": "Powered On" if is_on else "Powered Off",
                 "isPoweredOn": is_on,
                 "ipAddress": summary.guest.ipAddress if summary.guest else None,

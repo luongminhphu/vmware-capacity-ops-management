@@ -9,7 +9,7 @@ from fastapi.staticfiles import StaticFiles
 
 from .collectors.scheduler import scheduler_loop
 from .config import get_settings
-from .database import Base, SessionLocal, engine
+from .database import SessionLocal, ensure_schema
 from .routers import auth, compliance, dashboard, data, export, imports, reports, settings as settings_router, vcenters
 from .security import ensure_bootstrap_admin
 
@@ -24,7 +24,7 @@ _scheduler_task = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
-    Base.metadata.create_all(bind=engine)
+    ensure_schema()
 
     db = SessionLocal()
     try:

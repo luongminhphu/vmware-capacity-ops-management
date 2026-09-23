@@ -387,6 +387,10 @@ td.finding-code{font-weight:700;color:var(--primary);white-space:nowrap;font-siz
 .history-vm-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-4);}
 .history-vm-card{padding:var(--space-4);border-top:3px solid var(--ok);}
 .history-vm-card.removed{border-top-color:var(--warn);}
+.history-vm-card.moved,.history-vm-card.renamed{border-top-color:var(--accent,#3b82f6);}
+.history-vm-card.resized{border-top-color:var(--warn);margin-top:var(--space-4);}
+.history-vm-grid+.history-vm-grid{margin-top:var(--space-4);}
+.history-vm-note{font-size:var(--text-sm);line-height:1.5;padding:var(--space-2) var(--space-4);border-left:3px solid var(--accent,#3b82f6);background:var(--surface-2);border-radius:var(--radius-sm);margin-bottom:var(--space-3);}
 .history-vm-scroll{max-height:360px;}
 @media (max-width:1100px){.history-kpis{grid-template-columns:repeat(2,minmax(0,1fr));}.history-chart-grid,.history-vm-grid{grid-template-columns:1fr;}}
 @media (max-width:640px){.history-kpis{grid-template-columns:1fr;}}

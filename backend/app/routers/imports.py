@@ -41,7 +41,8 @@ def import_data(payload: ImportPayload, db: Session = Depends(get_db), user: Use
     for v in vm_rows:
         db.add(VmSnapshot(
             run_id=run.id, vcenter_key=None, cluster=v.get("cluster", "UNKNOWN"), host=v.get("host"),
-            vm=v.get("vm", "unknown"), power_state=v.get("powerState", "Powered Off"),
+            vm=v.get("vm", "unknown"), instance_uuid=(v.get("instanceUuid") or v.get("uuid") or None),
+            power_state=v.get("powerState", "Powered Off"),
             is_powered_on=bool(v.get("isPoweredOn")), ip_address=v.get("ipAddress"),
             vcpu=v.get("vcpu", 0) or 0, ram_gb=v.get("ramGB", 0) or 0,
             disk_prov_gb=v.get("diskProvGB", 0) or 0, disk_used_gb=v.get("diskUsedGB", 0) or 0,

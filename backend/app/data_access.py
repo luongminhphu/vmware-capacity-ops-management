@@ -38,7 +38,7 @@ def _host_to_row(h: HostSnapshot) -> Dict[str, Any]:
 
 def _vm_to_row(v: VmSnapshot) -> Dict[str, Any]:
     return {
-        "cluster": v.cluster, "host": v.host, "vm": v.vm, "powerState": v.power_state,
+        "cluster": v.cluster, "host": v.host, "vm": v.vm, "instanceUuid": v.instance_uuid, "powerState": v.power_state,
         "isPoweredOn": v.is_powered_on, "ipAddress": v.ip_address, "vcpu": v.vcpu, "ramGB": v.ram_gb,
         "diskProvGB": v.disk_prov_gb, "diskUsedGB": v.disk_used_gb, "datastore": v.datastore,
         "cpuUsagePctRaw": v.cpu_usage_pct_raw, "ramUsagePctRaw": v.ram_usage_pct_raw,

@@ -224,6 +224,9 @@ function normalizeVmRow(row, index) {
   const lastActivity = parseDateSafe(pickField(row, ['Last Activity','LastActivity','Last Seen Active','Last IO','Last Used']));
   const powerOffSince = parseDateSafe(pickField(row, ['Power Off Date','PowerOffDate','Last Power Off','State Change Date']));
   const provisionedDate = parseDateSafe(pickField(row, ['Provisioned Date','Created Date','CreationDate']));
+  // Stable identity (RVTools "VM UUID"/"InstanceUUID", PowerCLI "InstanceUuid") — lets the
+  // history compare snapshots by ID so rename / migrate are not counted as add/remove.
+  const instanceUuid = String(pickField(row, ['InstanceUuid','Instance UUID','InstanceUUID','VM UUID','VM_UUID','instanceUuid','Uuid','UUID']) || '').trim() || null;
 
   if (!vmName) errors.push(`Dòng VM #${index + 1}: thiếu tên VM.`);
   if (!cluster) warnings.push(`VM "${vmName || '#' + (index + 1)}": thiếu Cluster, sẽ gán vào UNKNOWN.`);
@@ -236,6 +239,7 @@ function normalizeVmRow(row, index) {
       host, vm: vmName || `VM-${index + 1}`,
       powerState: power.text, isPoweredOn: power.isPoweredOn,
       ipAddress: normalizeIpAddress(row),
+      instanceUuid,
       vcpu, ramGB, diskProvGB, diskUsedGB, datastore,
       cpuUsagePctRaw: cpuUsagePct, ramUsagePctRaw: ramUsagePct,
       lastActivity, powerOffSince, provisionedDate,

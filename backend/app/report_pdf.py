@@ -764,7 +764,7 @@ def _history_section_html(history: Optional[Dict[str, Any]], vm_changes: Optiona
         tail = " — danh sách chi tiết ở Phụ lục A." if audience == "technical" else " — danh sách chi tiết nằm trong phụ lục Báo cáo Kỹ thuật."
         vm_line = (f'<div class="small-note" style="margin-top:6px;">Biến động VM trong kỳ: <b style="color:{COLORS["ok"]};">+{a["count"]} thêm mới</b> '
                    f'({fmt_int(a["vcpu"])} vCPU · {fmt_int(a["ramGB"])} GB RAM) · <b style="color:{COLORS["warn"]};">−{r["count"]} loại bỏ</b> '
-                   f'({fmt_int(r["vcpu"])} vCPU · {fmt_int(r["ramGB"])} GB RAM){tail}</div>')
+                   f'({fmt_int(r["vcpu"])} vCPU · {fmt_int(r["ramGB"])} GB RAM){esc(_vm_changes_excluded_note(vm_changes))}{tail}</div>')
     scope_clusters = history.get("clusters")
     scope_txt = ""
     if scope_clusters is not None:
@@ -789,9 +789,50 @@ def _history_section_html(history: Optional[Dict[str, Any]], vm_changes: Optiona
         '</div>')
 
 
+EMPTY_CLUSTER_ROW = '<tr><td colspan="12" style="color:#98a2b3;">Không có cluster nào trong phạm vi.</td></tr>'
+
+
+def _vm_changes_excluded_note(vm_changes: Dict[str, Any], compact: bool = False) -> str:
+    """One short clause for the history summary lines: how many rows were
+    recognised as moves / renames (not counted) and how many genuine resizes.
+    ``compact`` keeps the Executive report inside its two-page budget."""
+    bits = []
+    ex = int(vm_changes.get("excludedFalsePositives") or 0)
+    mt, rt, rs = vm_changes.get("movedTotals") or {}, vm_changes.get("renamedTotals") or {}, vm_changes.get("resizedTotals") or {}
+    if compact:
+        if ex:
+            bits.append(f"đã loại {fmt_int(ex)} trường hợp di chuyển/đổi tên không đổi tài nguyên")
+        if rs.get("count"):
+            bits.append(f'{fmt_int(rs["count"])} VM đổi cấu hình ({fmt_signed(rs.get("deltaVcpu"))} vCPU · {fmt_signed(rs.get("deltaRamGB"))} GB)')
+        return ("; " + "; ".join(bits)) if bits else ""
+    if ex:
+        parts = []
+        if mt.get("count"):
+            parts.append(f'{fmt_int(mt["count"])} VM di chuyển')
+        if rt.get("vms"):
+            parts.append(f'{fmt_int(rt["vms"])} VM đổi tên')
+        if rt.get("clusters"):
+            parts.append(f'{fmt_int(rt["clusters"])} cluster đổi tên')
+        if rt.get("hosts"):
+            parts.append(f'{fmt_int(rt["hosts"])} host đổi tên')
+        bits.append("đã loại " + ", ".join(parts) + " khỏi thêm mới/loại bỏ vì không thay đổi tài nguyên")
+    if rs.get("count"):
+        bits.append(f'{fmt_int(rs["count"])} VM đổi cấu hình ({fmt_signed(rs.get("deltaVcpu"))} vCPU · {fmt_signed(rs.get("deltaRamGB"))} GB RAM)')
+    return ("; " + "; ".join(bits)) if bits else ""
+
+
+def fmt_signed(v: Any) -> str:
+    try:
+        n = float(v or 0)
+    except (TypeError, ValueError):
+        return "—"
+    return f"{'+' if n > 0 else ''}{fmt_int(n)}"
+
+
 def _vm_changes_appendix_html(vm_changes: Optional[Dict[str, Any]]) -> str:
-    """Appendix A — VMs added / removed, organised per cluster (and per host
-    when the report scope is narrowed by host)."""
+    """Appendix A — VM inventory changes per cluster (and per host when the
+    report scope is narrowed by host): genuine add / remove, plus the moves,
+    renames and resizes that were recognised and kept out of those counts."""
     months = (vm_changes or {}).get("months", 12)
     title = f"Phụ lục A — VM thêm mới / loại bỏ trong {months} tháng gần nhất"
     if not vm_changes or not vm_changes.get("available"):
@@ -801,20 +842,14 @@ def _vm_changes_appendix_html(vm_changes: Optional[Dict[str, Any]]) -> str:
     def _date(v: Optional[str]) -> str:
         return parse_iso_to_vn_str(v, "%d/%m/%Y") if v else "—"
 
-    def _note(r: Dict[str, Any]) -> str:
-        if r.get("movedFrom"):
-            return f'Chuyển từ cluster {r["movedFrom"]}'
-        if r.get("movedTo"):
-            return f'Chuyển sang cluster {r["movedTo"]}'
-        if r.get("movedFromHost"):
-            return f'Chuyển từ host {r["movedFromHost"]}'
-        if r.get("movedToHost"):
-            return f'Chuyển sang host {r["movedToHost"]}'
-        return ""
+    def _pill(r: Dict[str, Any]) -> str:
+        if r.get("isPoweredOn"):
+            return f'<span class="pill" style="color:{COLORS["ok"]};border-color:{COLORS["ok"]};background:{COLORS["ok_bg"]};">Powered On</span>'
+        return f'<span class="pill" style="color:{COLORS["muted"]};border-color:{COLORS["border"]};background:{COLORS["surface2"]};">{esc(r.get("powerState") or "Powered Off")}</span>'
 
-    def _rows(items: List[Dict[str, Any]], date_field: str) -> str:
+    def _grouped(items: List[Dict[str, Any]], cols: int, render_row) -> str:
         if not items:
-            return '<tr><td colspan="9" style="color:#98a2b3;">Không có VM nào.</td></tr>'
+            return f'<tr><td colspan="{cols}" style="color:#98a2b3;">Không có VM nào.</td></tr>'
         out = []
         current_cluster = object()
         for r in items:
@@ -822,19 +857,48 @@ def _vm_changes_appendix_html(vm_changes: Optional[Dict[str, Any]]) -> str:
             if r.get("cluster") != current_cluster:
                 current_cluster = r.get("cluster")
                 n = sum(1 for x in items if x.get("cluster") == current_cluster)
-                out.append(f'<tr class="group-row"><td colspan="9"><b>Cluster {esc(current_cluster or "—")}</b> · {n} VM</td></tr>')
-            if r.get("isPoweredOn"):
-                pill = f'<span class="pill" style="color:{COLORS["ok"]};border-color:{COLORS["ok"]};background:{COLORS["ok_bg"]};">Powered On</span>'
-            else:
-                pill = f'<span class="pill" style="color:{COLORS["muted"]};border-color:{COLORS["border"]};background:{COLORS["surface2"]};">{esc(r.get("powerState") or "Powered Off")}</span>'
-            note = _note(r)
-            note_html = f'<span style="color:{COLORS["muted"]};">{esc(note)}</span>' if note else '<span style="color:#c4cad3;">—</span>'
-            out.append(f'<tr><td><b>{esc(r.get("vm"))}</b></td><td>{esc(r.get("vcenterLabel"))}</td><td>{esc(r.get("cluster") or "—")}</td>'
-                       f'<td>{esc(r.get("host") or "—")}</td><td>{pill}</td><td>{fmt_int(r.get("vcpu"))}</td><td>{fmt_num(r.get("ramGB"), 0)}</td>'
-                       f'<td>{esc(_date(r.get(date_field)))}</td><td>{note_html}</td></tr>')
+                out.append(f'<tr class="group-row"><td colspan="{cols}"><b>Cluster {esc(current_cluster or "—")}</b> · {n} VM</td></tr>')
+            out.append(render_row(r))
         return "".join(out)
 
+    def _row_add_rm(date_field: str):
+        def _r(r: Dict[str, Any]) -> str:
+            return (f'<tr><td><b>{esc(r.get("vm"))}</b></td><td>{esc(r.get("vcenterLabel"))}</td><td>{esc(r.get("cluster") or "—")}</td>'
+                    f'<td>{esc(r.get("host") or "—")}</td><td>{_pill(r)}</td><td>{fmt_int(r.get("vcpu"))}</td><td>{fmt_num(r.get("ramGB"), 0)}</td>'
+                    f'<td>{esc(_date(r.get(date_field)))}</td></tr>')
+        return _r
+
+    def _row_moved(r: Dict[str, Any]) -> str:
+        kind = "Giữa cluster" if r.get("kind") == "cluster" else "Giữa host (vMotion)"
+        return (f'<tr><td><b>{esc(r.get("vm"))}</b></td><td>{esc(r.get("vcenterLabel"))}</td><td>{esc(kind)}</td>'
+                f'<td>{esc(r.get("fromCluster") or "—")} → {esc(r.get("toCluster") or "—")}</td>'
+                f'<td>{esc(r.get("fromHost") or "—")} → {esc(r.get("toHost") or "—")}</td>'
+                f'<td>{_pill(r)}</td><td>{fmt_int(r.get("vcpu"))}</td><td>{fmt_num(r.get("ramGB"), 0)}</td></tr>')
+
+    def _row_renamed(r: Dict[str, Any]) -> str:
+        how = "cùng instanceUuid" if r.get("matchedBy") == "uuid" else "suy luận: cùng cluster, IP, vCPU, RAM"
+        return (f'<tr><td>{esc(r.get("fromName"))}</td><td><b>{esc(r.get("toName"))}</b></td><td>{esc(r.get("vcenterLabel"))}</td>'
+                f'<td>{esc(r.get("cluster") or "—")}</td><td>{esc(r.get("host") or "—")}</td>'
+                f'<td>{fmt_int(r.get("vcpu"))}</td><td>{fmt_num(r.get("ramGB"), 0)}</td><td style="color:{COLORS["muted"]};">{esc(how)}</td></tr>')
+
+    def _delta(v: Any) -> str:
+        n = float(v or 0)
+        color = COLORS["warn"] if n > 0 else (COLORS["ok"] if n < 0 else COLORS["muted"])
+        return f'<span style="color:{color};font-weight:700;">{fmt_signed(n)}</span>'
+
+    def _row_resized(r: Dict[str, Any]) -> str:
+        return (f'<tr><td><b>{esc(r.get("vm"))}</b></td><td>{esc(r.get("vcenterLabel"))}</td><td>{esc(r.get("cluster") or "—")}</td>'
+                f'<td>{esc(r.get("host") or "—")}</td><td>{_pill(r)}</td>'
+                f'<td>{fmt_int(r.get("vcpuBefore"))} → {fmt_int(r.get("vcpuAfter"))} ({_delta(r.get("deltaVcpu"))})</td>'
+                f'<td>{fmt_num(r.get("ramBefore"), 0)} → {fmt_num(r.get("ramAfter"), 0)} ({_delta(r.get("deltaRamGB"))})</td></tr>')
+
     a, rm = vm_changes["addedTotals"], vm_changes["removedTotals"]
+    mv = vm_changes.get("movedTotals") or {"count": 0, "cluster": 0, "host": 0, "vcpu": 0, "ramGB": 0}
+    rs = vm_changes.get("resizedTotals") or {"count": 0, "deltaVcpu": 0, "deltaRamGB": 0, "up": 0, "down": 0}
+    rn = vm_changes.get("renamedTotals") or {"vms": 0, "clusters": 0, "hosts": 0}
+    moved_rows = vm_changes.get("moved", [])
+    renamed_rows = vm_changes.get("renamedVms", [])
+    resized_rows = vm_changes.get("resized", [])
     sc_clusters, sc_hosts = vm_changes.get("clusters"), vm_changes.get("hosts")
     scope_bits = []
     if sc_clusters is not None:
@@ -846,23 +910,36 @@ def _vm_changes_appendix_html(vm_changes: Optional[Dict[str, Any]]) -> str:
     runs_note = "; ".join(
         f'{sc["vcenterLabel"]}: {_date(sc.get("baselineAt"))} → {_date(sc.get("currentAt"))}'
         for sc in vm_changes.get("scopes", []) if sc.get("available"))
+    identity = vm_changes.get("identity") or "name"
+    identity_txt = {
+        "uuid": "theo instanceUuid của vCenter (định danh ổn định, không đổi khi rename/vMotion/migrate)",
+        "name": "theo tên VM (snapshot chưa có instanceUuid — sẽ tự chuyển sang UUID khi các snapshot mới đủ dữ liệu)",
+        "mixed": "theo instanceUuid khi có, tên VM cho các snapshot cũ chưa có UUID",
+    }.get(identity, identity)
 
     def _net(v: Any) -> str:
         v = int(v or 0)
         color = COLORS["ok"] if v > 0 else (COLORS["warn"] if v < 0 else COLORS["muted"])
         return f'<span style="color:{color};font-weight:700;">{"+" if v > 0 else ""}{v}</span>'
 
+    def _cluster_cell(b: Dict[str, Any]) -> str:
+        name = f'<b>{esc(b["cluster"])}</b>'
+        if b.get("renamedFrom"):
+            name += f'<br/><span style="color:{COLORS["muted"]};font-size:7.5px;">trước: {esc(b["renamedFrom"])}</span>'
+        return name
+
     cluster_rows = "".join(
-        f'<tr><td><b>{esc(b["cluster"])}</b></td><td>{esc(b["vcenterLabel"])}</td>'
+        f'<tr><td>{_cluster_cell(b)}</td><td>{esc(b["vcenterLabel"])}</td>'
         f'<td>{fmt_int(b["baselineVmCount"])}</td><td>{fmt_int(b["currentVmCount"])}</td><td>{_net(b["netVm"])}</td>'
         f'<td style="color:{COLORS["ok"]};font-weight:700;">+{fmt_int(b["added"])}</td><td>{fmt_int(b["addedVcpu"])} / {fmt_int(b["addedRamGB"])}</td>'
         f'<td style="color:{COLORS["warn"]};font-weight:700;">−{fmt_int(b["removed"])}</td><td>{fmt_int(b["removedVcpu"])} / {fmt_int(b["removedRamGB"])}</td>'
-        f'<td>{fmt_int(b.get("movedIn"))} / {fmt_int(b.get("movedOut"))}</td></tr>'
+        f'<td>{fmt_int(b.get("movedIn"))} / {fmt_int(b.get("movedOut"))}</td><td>{fmt_int(b.get("renamed"))}</td>'
+        f'<td>{fmt_int(b.get("resized"))}: {fmt_signed(b.get("resizedVcpuDelta"))} / {fmt_signed(b.get("resizedRamDelta"))}</td></tr>'
         for b in vm_changes.get("clusterSummary", []))
     cluster_table = (
-        '<table class="appendix-table"><thead><tr><th>Cluster</th><th>vCenter</th><th>VM đầu kỳ</th><th>VM hiện tại</th><th>Chênh lệch</th>'
-        '<th>Thêm mới</th><th>vCPU / GB RAM thêm</th><th>Loại bỏ</th><th>vCPU / GB RAM bỏ</th><th>Chuyển vào / ra</th></tr></thead>'
-        f'<tbody>{cluster_rows or "<tr><td colspan=10 style=\"color:#98a2b3;\">Không có cluster nào trong phạm vi.</td></tr>"}</tbody></table>')
+        '<table class="appendix-table summary"><thead><tr><th>Cluster</th><th>vCenter</th><th>VM đầu kỳ</th><th>VM hiện tại</th><th>Chênh lệch</th>'
+        '<th>Thêm mới</th><th>vCPU / GB RAM thêm</th><th>Loại bỏ</th><th>vCPU / GB RAM bỏ</th><th>Chuyển vào / ra</th><th>Đổi tên VM</th><th>Đổi cấu hình: Δ vCPU / Δ GB</th></tr></thead>'
+        f'<tbody>{cluster_rows or EMPTY_CLUSTER_ROW}</tbody></table>')
 
     host_table = ""
     if vm_changes.get("hostSummary"):
@@ -870,34 +947,63 @@ def _vm_changes_appendix_html(vm_changes: Optional[Dict[str, Any]]) -> str:
             f'<tr><td><b>{esc(b["host"])}</b></td><td>{esc(b["cluster"])}</td><td>{esc(b["vcenterLabel"])}</td>'
             f'<td>{fmt_int(b["baselineVmCount"])}</td><td>{fmt_int(b["currentVmCount"])}</td><td>{_net(b["netVm"])}</td>'
             f'<td style="color:{COLORS["ok"]};font-weight:700;">+{fmt_int(b["added"])}</td><td>{fmt_int(b["addedVcpu"])} / {fmt_int(b["addedRamGB"])}</td>'
-            f'<td style="color:{COLORS["warn"]};font-weight:700;">−{fmt_int(b["removed"])}</td><td>{fmt_int(b["removedVcpu"])} / {fmt_int(b["removedRamGB"])}</td></tr>'
+            f'<td style="color:{COLORS["warn"]};font-weight:700;">−{fmt_int(b["removed"])}</td><td>{fmt_int(b["removedVcpu"])} / {fmt_int(b["removedRamGB"])}</td>'
+            f'<td>{fmt_int(b.get("movedIn"))} / {fmt_int(b.get("movedOut"))}</td></tr>'
             for b in vm_changes["hostSummary"])
         host_table = (
             '<div class="section-title" style="font-size:10.5px;border-left:none;padding-left:0;margin-top:12px;">Theo host (phạm vi host đã chọn)</div>'
-            '<table class="appendix-table"><thead><tr><th>Host</th><th>Cluster</th><th>vCenter</th><th>VM đầu kỳ</th><th>VM hiện tại</th><th>Chênh lệch</th>'
-            '<th>Thêm mới</th><th>vCPU / GB RAM thêm</th><th>Loại bỏ</th><th>vCPU / GB RAM bỏ</th></tr></thead>'
+            '<table class="appendix-table summary"><thead><tr><th>Host</th><th>Cluster</th><th>vCenter</th><th>VM đầu kỳ</th><th>VM hiện tại</th><th>Chênh lệch</th>'
+            '<th>Thêm mới</th><th>vCPU / GB RAM thêm</th><th>Loại bỏ</th><th>vCPU / GB RAM bỏ</th><th>Chuyển vào / ra (vMotion, migrate)</th></tr></thead>'
             f'<tbody>{host_rows}</tbody></table>')
 
-    header = ("<tr><th>VM</th><th>vCenter</th><th>Cluster</th><th>Host</th><th>Trạng thái</th><th>vCPU</th><th>RAM (GB)</th>"
-              "<th style=\"white-space:nowrap;\">{}</th><th>Ghi chú</th></tr>")
+    # Renamed clusters / hosts: one compact note so the reader knows why the
+    # old name is absent from the tables.
+    rename_note = ""
+    rc, rh = vm_changes.get("renamedClusters", []), vm_changes.get("renamedHosts", [])
+    if rc or rh:
+        items = [f'Cluster <b>{esc(r["from"])}</b> → <b>{esc(r["to"])}</b> ({esc(r["vcenterLabel"])}; trùng {int(round((r.get("overlap") or 0) * 100))}% {"host" if r.get("matchedBy") == "host" else "VM"})' for r in rc]
+        items += [f'Host <b>{esc(r["from"])}</b> → <b>{esc(r["to"])}</b> (cluster {esc(r["cluster"])}, {esc(r["vcenterLabel"])}; trùng {int(round((r.get("overlap") or 0) * 100))}% VM)' for r in rh]
+        rename_note = ('<div class="assumption-note" style="margin-top:6px;"><b>Đổi tên cluster/host được nhận diện trong kỳ</b> — số liệu đầu kỳ đã được gộp về tên hiện tại, '
+                       'không tính là loại bỏ/thêm mới: ' + "; ".join(items) + '.</div>')
+
+    excluded = int(vm_changes.get("excludedFalsePositives") or 0)
+    excluded_txt = (f' Kỳ này đã loại <b>{fmt_int(excluded)}</b> trường hợp như vậy khỏi số thêm mới/loại bỏ.' if excluded else
+                    ' Kỳ này không phát hiện trường hợp nào như vậy.')
+
+    header_add_rm = ("<tr><th>VM</th><th>vCenter</th><th>Cluster</th><th>Host</th><th>Trạng thái</th><th>vCPU</th><th>RAM (GB)</th>"
+                     "<th style=\"white-space:nowrap;\">{}</th></tr>")
     sub_title_style = 'style="font-size:10.5px;border-left:none;padding-left:0;margin-top:12px;"'
-    moved_note = ""
-    if a.get("moved") or rm.get("moved"):
-        moved_note = (f' Trong đó {fmt_int((a.get("moved") or 0) + (rm.get("moved") or 0))} dòng là VM di chuyển giữa cluster/host '
-                      '(ghi ở cột Ghi chú) — không phải tạo mới hay xóa thật, nên không làm thay đổi tổng tài nguyên của toàn hệ thống.')
     return (
         '<div class="section breakable" style="break-before:page;">'
         f'<div class="section-title">{esc(title)}</div>'
-        '<div class="section-sub">So sánh theo từng cluster: đối chiếu danh sách VM của cluster ở snapshot đầu kỳ với snapshot mới nhất theo tên VM. '
-        '"Thêm mới" = có ở snapshot mới nhất nhưng chưa có trong cluster đó ở đầu kỳ; "Loại bỏ" = có ở đầu kỳ nhưng không còn trong cluster đó '
-        f'(đã xóa, đổi tên hoặc chuyển đi).{esc(moved_note)}{esc(scope_note)}'
-        f'<br/>Snapshot đối chiếu — {esc(runs_note)}.</div>'
+        '<div class="section-sub">So sánh danh sách VM của từng cluster giữa snapshot đầu kỳ và snapshot mới nhất, đối chiếu '
+        f'{esc(identity_txt)}.'
+        f'{esc(scope_note)}<br/>Snapshot đối chiếu — {esc(runs_note)}.</div>'
+        '<div class="assumption-note"><b>Điều kiện nhận diện.</b> '
+        '<b>Thêm mới</b> = định danh VM chưa có ở bất kỳ cluster/host nào của vCenter tại đầu kỳ. '
+        '<b>Loại bỏ</b> = định danh VM không còn ở bất kỳ cluster/host nào của vCenter hiện tại. '
+        'Các trường hợp sau <b>không</b> tính là thêm mới/loại bỏ vì không phát sinh hay giảm tài nguyên: '
+        '(1) vMotion giữa host trong cùng cluster; (2) migrate VM từ cluster này sang cluster khác — ghi nhận ở A.3; '
+        '(3) đổi tên cluster/host — nhận diện khi cluster/host biến mất và cluster/host mới xuất hiện có ≥ 50% host (hoặc VM) trùng nhau, số liệu đầu kỳ được gộp về tên hiện tại; '
+        '(4) đổi tên VM — cùng instanceUuid, hoặc khi chưa có UUID: cùng cluster, IP, vCPU và RAM — ghi nhận ở A.4. '
+        'VM đổi cấu hình vCPU/RAM (A.5) được tách riêng vì có làm thay đổi tài nguyên đã cấp.'
+        f'{excluded_txt}</div>'
+        f'{rename_note}'
         '<div class="section-title" ' + sub_title_style + '>Tổng hợp theo cluster</div>'
         f'{cluster_table}{host_table}'
         f'<div class="section-title" {sub_title_style}>A.1 VM thêm mới ({fmt_int(a["count"])} VM · {fmt_int(a["vcpu"])} vCPU · {fmt_int(a["ramGB"])} GB RAM · {fmt_int(a["poweredOn"])} đang bật)</div>'
-        f'<table class="appendix-table"><thead>{header.format("Xuất hiện từ")}</thead><tbody>{_rows(vm_changes.get("added", []), "firstSeen")}</tbody></table>'
+        f'<table class="appendix-table"><thead>{header_add_rm.format("Xuất hiện từ")}</thead><tbody>{_grouped(vm_changes.get("added", []), 8, _row_add_rm("firstSeen"))}</tbody></table>'
         f'<div class="section-title" {sub_title_style}>A.2 VM đã loại bỏ ({fmt_int(rm["count"])} VM · {fmt_int(rm["vcpu"])} vCPU · {fmt_int(rm["ramGB"])} GB RAM)</div>'
-        f'<table class="appendix-table"><thead>{header.format("Thấy lần cuối")}</thead><tbody>{_rows(vm_changes.get("removed", []), "lastSeen")}</tbody></table>'
+        f'<table class="appendix-table"><thead>{header_add_rm.format("Thấy lần cuối")}</thead><tbody>{_grouped(vm_changes.get("removed", []), 8, _row_add_rm("lastSeen"))}</tbody></table>'
+        f'<div class="section-title" {sub_title_style}>A.3 VM di chuyển — không tính thêm mới/loại bỏ ({fmt_int(mv["count"])} VM: {fmt_int(mv.get("cluster"))} giữa cluster · {fmt_int(mv.get("host"))} giữa host · {fmt_int(mv["vcpu"])} vCPU · {fmt_int(mv["ramGB"])} GB RAM)</div>'
+        '<table class="appendix-table moved"><thead><tr><th>VM</th><th>vCenter</th><th>Loại</th><th>Cluster (từ → đến)</th><th>Host (từ → đến)</th><th>Trạng thái</th><th>vCPU</th><th>RAM (GB)</th></tr></thead>'
+        f'<tbody>{_grouped(moved_rows, 8, _row_moved)}</tbody></table>'
+        f'<div class="section-title" {sub_title_style}>A.4 VM đổi tên — không tính thêm mới/loại bỏ ({fmt_int(rn.get("vms"))} VM)</div>'
+        '<table class="appendix-table renamed"><thead><tr><th>Tên cũ</th><th>Tên mới</th><th>vCenter</th><th>Cluster</th><th>Host</th><th>vCPU</th><th>RAM (GB)</th><th>Căn cứ</th></tr></thead>'
+        f'<tbody>{_grouped(renamed_rows, 8, _row_renamed)}</tbody></table>'
+        f'<div class="section-title" {sub_title_style}>A.5 VM đổi cấu hình vCPU/RAM ({fmt_int(rs["count"])} VM · {fmt_int(rs.get("up"))} tăng · {fmt_int(rs.get("down"))} giảm · tổng {fmt_signed(rs.get("deltaVcpu"))} vCPU · {fmt_signed(rs.get("deltaRamGB"))} GB RAM)</div>'
+        '<table class="appendix-table resized"><thead><tr><th>VM</th><th>vCenter</th><th>Cluster</th><th>Host</th><th>Trạng thái</th><th>vCPU (đầu kỳ → nay)</th><th>RAM GB (đầu kỳ → nay)</th></tr></thead>'
+        f'<tbody>{_grouped(resized_rows, 7, _row_resized)}</tbody></table>'
         '</div>')
 
 
@@ -920,7 +1026,7 @@ h1,h2,h3,h4 {{ font-family:'Roboto','Noto Sans',sans-serif; font-weight:700; col
 .meta-row {{ display:flex; gap:18px; font-size:9px; color:{COLORS['muted']}; margin-bottom:16px; flex-wrap:wrap; }}
 .meta-row b {{ color:{COLORS['ink']}; }}
 .section {{ margin-top:16px; break-inside:avoid; }}
-.section-title {{ font-size:13px; font-weight:700; color:{COLORS['ink']}; border-left:3px solid {COLORS['primary']}; padding-left:8px; margin-bottom:8px; }}
+.section-title {{ font-size:13px; font-weight:700; color:{COLORS['ink']}; border-left:3px solid {COLORS['primary']}; padding-left:8px; margin-bottom:8px; break-after:avoid; page-break-after:avoid; }}
 .section-sub {{ font-size:9px; color:{COLORS['muted']}; margin:-4px 0 8px 11px; }}
 .kpi-grid {{ display:flex; gap:8px; margin-bottom:4px; }}
 .kpi-card {{ flex:1; background:{COLORS['surface']}; border:1px solid {COLORS['border']}; border-radius:6px; padding:9px 11px; }}
@@ -1007,6 +1113,10 @@ td.code-cell {{ font-family:'DejaVu Sans Mono', monospace; font-size:7.5px; font
 .chart-card.soft {{ background:{COLORS['surface']}; }}
 .appendix-table td:nth-child(-n+3), .appendix-table td:nth-child(n+5) {{ white-space:nowrap; }}
 .appendix-table td:nth-child(4) {{ word-break:break-all; }}
+.appendix-table.moved td:nth-child(4), .appendix-table.moved td:nth-child(5),
+.appendix-table.renamed td:nth-child(5), .appendix-table.renamed td:nth-child(8),
+.appendix-table.summary td:nth-child(1) {{ white-space:normal; word-break:break-all; }}
+.appendix-table.summary th, .appendix-table.summary td {{ font-size:7.6px; }}
 .appendix-table tr.group-row td {{ background:{COLORS['surface2']}; white-space:normal; padding:3px 6px; font-size:8.6px; }}
 .appendix-table td:last-child {{ white-space:normal; }}
 """
@@ -1320,13 +1430,14 @@ def _register_codes_html(r: Dict[str, Any], limit: int = 5) -> str:
     return f'<div class="ref-codes-inline">Mã đối soát: {esc(codes)}{f" (+{more})" if more > 0 else ""}</div>'
 
 
-def _decision_register_html(recs: List[Dict[str, Any]], code_limit: int = 5) -> str:
+def _decision_register_html(recs: List[Dict[str, Any]], code_limit: int = 5, show_title: bool = True) -> str:
     rows = []
     for i, r in enumerate(recs, 1):
+        title_html = f'<div class="small-note" style="margin-top:1px;">{esc(r["title"])}</div>' if show_title else ""
         rows.append(f"""
       <tr>
         <td style="text-align:center;">{i}</td>
-        <td><b>{esc(r['decision'])}</b><div class="small-note" style="margin-top:1px;">{esc(r['title'])}</div>{_register_codes_html(r, code_limit)}</td>
+        <td><b>{esc(r['decision'])}</b>{title_html}{_register_codes_html(r, code_limit)}</td>
         <td><span class="priority-pill priority-{r['priority']}">{PRIORITY_LABEL_VI.get(r['priority'], '')}</span></td>
         <td>{esc(r['timeframe'])}</td>
         <td>{esc(r['impact'])}</td>
@@ -1583,15 +1694,28 @@ body.exec-compact table.ref-map {{ font-size:7.7px; }}
 body.exec-compact table.ref-map td {{ width:50%; border-bottom:none; padding:1px 6px 1px 0; color:{COLORS['muted']}; vertical-align:top; }}
 body.exec-compact table.ref-map td b {{ color:{COLORS['ink']}; }}
 .page-2 {{ break-before:page; margin-top:0; }}
+/* Dense page 2: used when the decision register has more than three rows or
+   the storage row is included, so the reference box still fits on page 2. */
+body.exec-compact.dense .page-2 .section {{ margin-top:5px; }}
+body.exec-compact.dense .page-2 .section-title {{ margin-bottom:3px; }}
+body.exec-compact.dense .page-2 .section-sub {{ margin-bottom:3px; }}
+body.exec-compact.dense .page-2 td {{ padding:2.2px 5px; }}
+body.exec-compact.dense .page-2 th {{ padding:2.8px 5px; }}
+body.exec-compact.dense .page-2 .insight-box {{ padding:5px 9px; margin-bottom:3px; }}
+body.exec-compact.dense .page-2 .assumption-note {{ padding:4px 8px; margin-top:4px; }}
+body.exec-compact.dense .page-2 .small-note {{ margin-top:3px; }}
 """
 
 
-def _recommendations_compact_html(recs: List[Dict[str, Any]]) -> str:
+def _recommendations_compact_html(recs: List[Dict[str, Any]], limit: int = 4) -> str:
     """Two-column card grid: meaning → proposal → decision, plus compact
     reconciliation codes. 'Nếu chưa hành động' moves to the decision register
-    to save space; full narrative lives in the web Executive View."""
+    to save space; full narrative lives in the web Executive View. At most
+    ``limit`` cards are drawn so page 1 of the two-page Executive report never
+    overflows; the rest stay in the decision register on page 2."""
     cards = []
-    for i, r in enumerate(recs, 1):
+    hidden = max(0, len(recs) - limit)
+    for i, r in enumerate(recs[:limit], 1):
         refs = r.get("refs") or {}
         items = (refs.get("items") or [])[:4]
         total = refs.get("total", 0)
@@ -1625,6 +1749,9 @@ def _recommendations_compact_html(recs: List[Dict[str, Any]]) -> str:
         if len(pair) == 1:
             pair.append('<div class="rec-card compact spacer"></div>')
         rows.append(f'<div class="rec-row">{"".join(pair)}</div>')
+    if hidden:
+        rows.append(f'<div class="small-note" style="margin-top:4px;">+{hidden} đề xuất khác (ưu tiên thấp hơn) được liệt kê đầy đủ trong '
+                    'Danh mục quyết định ở trang 2 và trong Báo cáo Kỹ thuật.</div>')
     return "".join(rows)
 
 
@@ -1651,7 +1778,8 @@ def _exec_outlook_table_html(model: Dict[str, Any], headroom: Dict[str, Any], gr
             f'số tháng tới ngưỡng là giả định tăng đều theo quý để lập ngân sách, không phải cam kết.</div>')
 
 
-def _exec_history_compact_html(history: Optional[Dict[str, Any]], vm_changes: Optional[Dict[str, Any]]) -> str:
+def _exec_history_compact_html(history: Optional[Dict[str, Any]], vm_changes: Optional[Dict[str, Any]],
+                               chart_height: int = 88) -> str:
     months = (history or {}).get("months", 12)
     title = f"Biến động tài nguyên {months} tháng gần nhất"
     if not history or not history.get("available"):
@@ -1668,7 +1796,7 @@ def _exec_history_compact_html(history: Optional[Dict[str, Any]], vm_changes: Op
     if vm_changes and vm_changes.get("available"):
         a, r = vm_changes["addedTotals"], vm_changes["removedTotals"]
         vm_line = (f' Biến động VM: <b style="color:{COLORS["ok"]};">+{a["count"]} thêm mới</b> ({fmt_int(a["vcpu"])} vCPU · {fmt_int(a["ramGB"])} GB RAM) · '
-                   f'<b style="color:{COLORS["warn"]};">−{r["count"]} loại bỏ</b> ({fmt_int(r["vcpu"])} vCPU · {fmt_int(r["ramGB"])} GB RAM) — danh sách theo cluster/host tại Phụ lục A của Báo cáo Kỹ thuật.')
+                   f'<b style="color:{COLORS["warn"]};">−{r["count"]} loại bỏ</b> ({fmt_int(r["vcpu"])} vCPU · {fmt_int(r["ramGB"])} GB RAM){esc(_vm_changes_excluded_note(vm_changes, compact=True))} — chi tiết tại Phụ lục A của Báo cáo Kỹ thuật.')
     scope_clusters = history.get("clusters")
     scope_txt = ""
     if scope_clusters is not None:
@@ -1676,8 +1804,8 @@ def _exec_history_compact_html(history: Optional[Dict[str, Any]], vm_changes: Op
         scope_txt = f" Phạm vi: cluster {shown}." if scope_clusters else " Phạm vi: không có cluster nào được chọn."
     sub = (f"Từng cluster là một nhóm dự án độc lập; so sánh {_fmt_short_date(s.get('firstDate'))} → {_fmt_short_date(s.get('lastDate'))} "
            f"qua {fmt_int(history.get('pointCount'))} ngày có snapshot. 100% = chạm ngưỡng overcommit đang áp dụng.{scope_txt}")
-    cpu_chart = svg_line_chart(cpu_dates, cpu_series, width=330, height=98)
-    ram_chart = svg_line_chart(ram_dates, ram_series, width=330, height=98)
+    cpu_chart = svg_line_chart(cpu_dates, cpu_series, width=330, height=chart_height)
+    ram_chart = svg_line_chart(ram_dates, ram_series, width=330, height=chart_height)
     return (
         '<div class="section">'
         f'<div class="section-title">{esc(title)}</div>'
@@ -1691,7 +1819,7 @@ def _exec_history_compact_html(history: Optional[Dict[str, Any]], vm_changes: Op
         '</div>')
 
 
-def _exec_critical_table_html(findings: List[Dict[str, Any]], limit: int = 8) -> str:
+def _exec_critical_table_html(findings: List[Dict[str, Any]], limit: int = 7) -> str:
     crit = sorted([f for f in findings if f.get("severity") == "critical"],
                   key=lambda f: (str(f.get("cluster") or ""), str(f.get("entity") or "")))
     sev = _severity_counts(findings)
@@ -1784,7 +1912,14 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
         c["model"]["ramPct"] if _finite(c["model"]["ramPct"]) else -1), reverse=True)[:8]
 
     brief_html = _brief_html(brief)
-    decision_rows_html = _decision_register_html([r for r in brief["recommendations"] if r["priority"] in ("cao", "tb", "thap")], code_limit=0)
+    # Page-2 budget: every extra decision-register row costs ~2 critical rows,
+    # a crowded page switches to denser spacing (see CSS .dense), and with five
+    # or more register rows the one-line finding title under each decision is
+    # dropped (it is still on the page-1 cards / Technical report).
+    extra_recs = max(0, len(brief["recommendations"]) - 3)
+    dense = extra_recs > 0 or include_storage
+    decision_rows_html = _decision_register_html([r for r in brief["recommendations"] if r["priority"] in ("cao", "tb", "thap")],
+                                                 code_limit=0, show_title=extra_recs < 2)
 
     ha_eligible = [r for r in ha_rows if r.get("eligible")]
     ha_fail = [r for r in ha_eligible if not r.get("survives")]
@@ -1810,7 +1945,7 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
 
     logo_html = f'<img class="cover-logo" src="{esc(logo_data_url)}"/>' if logo_data_url else ''
 
-    history_compact_html = _exec_history_compact_html(history, vm_changes)
+    history_compact_html = _exec_history_compact_html(history, vm_changes, chart_height=78 if dense else 88)
     months_win = (history or {}).get("months", 12)
     ha_by_cluster = {r["cluster"]: r for r in ha_rows}
 
@@ -1831,12 +1966,12 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
       </tr>""" for c in top_risk_clusters[:6])
     recommendations_compact_html = _recommendations_compact_html(brief["recommendations"])
     outlook_html = _exec_outlook_table_html(model, headroom, growth, include_storage)
-    critical_html = _exec_critical_table_html(findings)
+    critical_html = _exec_critical_table_html(findings, limit=max(3, 7 - 2 * extra_recs - (1 if include_storage else 0)))
     reference_html = _exec_reference_html(include_storage, months_win)
     storage_line = "" if include_storage else f'<div class="small-note" style="margin-top:3px;"><b>Storage không đánh giá:</b> {esc(STORAGE_EXCLUDED_NOTE)}</div>'
 
     return f"""<!DOCTYPE html><html><head><meta charset="utf-8"/><style>{_base_css('Báo cáo điều hành', generated_at)}{_exec_compact_css()}</style></head>
-<body class="exec-compact">
+<body class="exec-compact{' dense' if dense else ''}">
   <div class="cover-header">
     <div>
       <div class="eyebrow">Infrastructure Capacity Ops · Executive Summary</div>

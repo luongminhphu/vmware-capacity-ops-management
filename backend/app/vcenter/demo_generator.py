@@ -8,6 +8,7 @@ import hashlib
 import math
 import random
 import time
+import uuid
 from typing import Any, Dict, List, Tuple
 
 from ..config import VCenterConfig
@@ -53,25 +54,31 @@ def collect_inventory(cfg: VCenterConfig) -> Tuple[List[Dict[str, Any]], List[Di
             is_on = rnd.random() > 0.08
             vcpu = rnd.choice([2, 2, 4, 4, 4, 8, 8, 16])
             ram_gb = rnd.choice([4, 8, 8, 16, 16, 32, 64])
-            growth = 1 + (drift / 30.0) * 0.15  # up to +15% allocation growth over the cycle
-            cpu_usage = max(0.5, rnd.gauss(18, 14)) if is_on else 0
+            # Allocation (vCPU/RAM) stays fixed per VM like a real vCenter — any change
+            # there is a genuine resize. The slow drift only nudges *usage* so trend
+            # charts still move gently between polls.
+            growth = 1 + (drift / 30.0) * 0.15  # up to +15% usage growth over the cycle
+            cpu_usage = max(0.5, rnd.gauss(18, 14) * growth) if is_on else 0
             idle_days = round(rnd.uniform(0, 75), 1) if is_on and cpu_usage < 8 else None
             power_off_days = round(rnd.uniform(1, 180), 1) if not is_on else None
             prov_gb = round(ram_gb * rnd.uniform(2, 6), 1)
+            vm_name = f"{cluster.lower()}-vm-{vi + 1:03d}"
             vm_rows.append({
                 "cluster": cluster,
                 "host": host_name,
-                "vm": f"{cluster.lower()}-vm-{vi + 1:03d}",
+                "vm": vm_name,
+                # Stable per VM (not per cluster/host) like vCenter's instanceUuid.
+                "instanceUuid": str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{cfg.key}/{vm_name}")),
                 "powerState": "Powered On" if is_on else "Powered Off",
                 "isPoweredOn": is_on,
                 "ipAddress": f"10.{rnd.randint(10,60)}.{rnd.randint(0,255)}.{rnd.randint(2,254)}",
-                "vcpu": float(round(vcpu * growth)),
-                "ramGB": float(round(ram_gb * growth, 1)),
+                "vcpu": float(vcpu),
+                "ramGB": float(ram_gb),
                 "diskProvGB": prov_gb,
                 "diskUsedGB": round(prov_gb * rnd.uniform(0.3, 0.85), 1),
                 "datastore": f"DS-{cluster}-{rnd.randint(1,3):02d}",
                 "cpuUsagePctRaw": round(cpu_usage, 1) if is_on else 0.0,
-                "ramUsagePctRaw": round(max(2, rnd.gauss(35, 15)), 1) if is_on else 0.0,
+                "ramUsagePctRaw": round(min(98.0, max(2, rnd.gauss(35, 15) * growth)), 1) if is_on else 0.0,
                 "lastActivityDays": idle_days,
                 "powerOffDays": power_off_days,
             })
