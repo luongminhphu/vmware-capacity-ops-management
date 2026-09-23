@@ -472,6 +472,22 @@ function buildDatastoreRows() {
    Compliance checks
    ========================================================= */
 
+const FINDING_PREFIX = {
+  host_cpu: 'HCPU', host_ram: 'HRAM', overcommit_cpu: 'CCPU', overcommit_ram: 'CRAM',
+  vm_idle: 'IDLE', vm_off: 'POFF', vm_overprovision: 'OVP'
+};
+
+// Mã đối soát — must match backend/app/capacity.py finding_code() (FNV-1a 32-bit
+// over "type|vcenterKey|cluster|entity", 5 uppercase hex chars) so PDF and web agree.
+// vcenterKey disambiguates identical host/VM names across vCenters; cluster-level
+// findings are aggregated by name, so they carry no vcenterKey.
+function findingCode(type, cluster, entity, vcenterKey) {
+  const bytes = new TextEncoder().encode(`${type}|${vcenterKey || ''}|${cluster || ''}|${entity || ''}`);
+  let h = 0x811c9dc5;
+  for (const b of bytes) { h ^= b; h = Math.imul(h, 0x01000193) >>> 0; }
+  return `${FINDING_PREFIX[type] || 'FND'}-${h.toString(16).toUpperCase().padStart(8, '0').slice(0, 5)}`;
+}
+
 function buildComplianceFindings() {
   const findings = [];
   const P = appState.policy;
@@ -483,7 +499,7 @@ function buildComplianceFindings() {
         severity: h.cpuPct > 100 ? 'critical' : 'warning',
         type: 'host_cpu',
         typeLabel: 'Host CPU vượt ngưỡng',
-        entity: h.host, cluster: h.cluster,
+        entity: h.host, cluster: h.cluster, vcenterKey: h.vcenterKey || '',
         metric: `CPU overcommit ${fmtNum(h.cpuOvercommit,2)}x (ngưỡng ${fmtNum(P.cpuOvercommitMax,1)}x) — ${fmtInt(h.vcpuUsed)}/${fmtInt(h.cores * (P.htFactor||2))} pCPU logic (${fmtInt(h.cores)} core vật lý × HT${fmtNum(P.htFactor||2,0)}), ${fmtPct(h.cpuPct)} ngưỡng`,
         recommendation: h.cpuPct > 100 ? 'Overcommit CPU đã vượt ngưỡng cấu hình — cần di dời VM hoặc bổ sung host ngay.' : 'Overcommit CPU đang tiến gần ngưỡng — cân nhắc vMotion VM sang host khác hoặc lên kế hoạch bổ sung năng lực CPU.'
       });
@@ -493,7 +509,7 @@ function buildComplianceFindings() {
         severity: h.ramPct > 100 ? 'critical' : 'warning',
         type: 'host_ram',
         typeLabel: 'Host RAM vượt ngưỡng',
-        entity: h.host, cluster: h.cluster,
+        entity: h.host, cluster: h.cluster, vcenterKey: h.vcenterKey || '',
         metric: `RAM overcommit ${fmtNum(h.ramOvercommit,2)}x (ngưỡng ${fmtNum(P.ramOvercommitMax,1)}x) — ${fmtNum(h.ramUsedGB)}/${fmtNum(h.ramGB)} GB, ${fmtPct(h.ramPct)} ngưỡng`,
         recommendation: h.ramPct > 100 ? 'Overcommit RAM đã vượt ngưỡng cấu hình — rủi ro cao, cần hành động ngay.' : 'Overcommit RAM đang tiến gần ngưỡng — theo dõi sát, cân nhắc bổ sung RAM hoặc cân bằng lại workload.'
       });
@@ -534,7 +550,7 @@ function buildComplianceFindings() {
         severity: v.lastActivityDays >= P.idleDays * 2 ? 'critical' : 'warning',
         type: 'vm_idle',
         typeLabel: 'VM idle lâu',
-        entity: v.vm, cluster: v.cluster,
+        entity: v.vm, cluster: v.cluster, vcenterKey: v.vcenterKey || '',
         metric: `Không hoạt động ${fmtInt(v.lastActivityDays)} ngày`,
         recommendation: 'Xác nhận với owner; cân nhắc decommission hoặc thu hồi tài nguyên nếu không còn dùng.'
       });
@@ -544,7 +560,7 @@ function buildComplianceFindings() {
         severity: v.powerOffDays >= P.idleDays * 3 ? 'critical' : 'warning',
         type: 'vm_off',
         typeLabel: 'VM tắt lâu',
-        entity: v.vm, cluster: v.cluster,
+        entity: v.vm, cluster: v.cluster, vcenterKey: v.vcenterKey || '',
         metric: `Đã tắt ${fmtInt(v.powerOffDays)} ngày`,
         recommendation: 'VM tắt lâu ngày vẫn giữ reservation vCPU/RAM — cân nhắc decommission để thu hồi tài nguyên.'
       });
@@ -557,13 +573,14 @@ function buildComplianceFindings() {
         severity: 'info',
         type: 'vm_overprovision',
         typeLabel: 'VM over-provision (vCPU)',
-        entity: v.vm, cluster: v.cluster,
+        entity: v.vm, cluster: v.cluster, vcenterKey: v.vcenterKey || '',
         metric: `${fmtInt(v.vcpu)} vCPU cấp phát, CPU usage chỉ ${fmtPct(v.cpuUsagePctRaw)} (ngưỡng ${vmOverprovisionUsageThreshold.toFixed(1)}% theo overcommit ${fmtNum(P.cpuOvercommitMax,1)}x)`,
         recommendation: 'vCPU cấp phát dư nhiều so với usage thực tế và ngưỡng overcommit CPU cấu hình; cân nhắc resize giảm vCPU.'
       });
     }
   });
 
+  findings.forEach(f => { f.code = findingCode(f.type, f.cluster, f.entity, f.vcenterKey); });
   return findings;
 }
 
@@ -583,7 +600,7 @@ function getFilteredCompliance() {
   if (P.type !== 'all') findings = findings.filter(f => f.type === P.type);
   if (P.search.trim()) {
     const q = P.search.trim().toLowerCase();
-    findings = findings.filter(f => (f.entity + ' ' + f.cluster + ' ' + f.typeLabel).toLowerCase().includes(q));
+    findings = findings.filter(f => (f.code + ' ' + f.entity + ' ' + f.cluster + ' ' + f.typeLabel).toLowerCase().includes(q));
   }
 
   findings.sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity]);
@@ -846,7 +863,7 @@ function renderComplianceTable() {
   const rows = getFilteredCompliance();
   const tbody = $('#complianceTable tbody');
   $('#complianceRowCount').textContent = `${rows.length} findings`;
-  if (!rows.length) { tbody.innerHTML = `<tr><td colspan="6"><div class="empty-note">Không có compliance finding phù hợp bộ lọc.</div></td></tr>`; return; }
+  if (!rows.length) { tbody.innerHTML = `<tr><td colspan="7"><div class="empty-note">Không có compliance finding phù hợp bộ lọc.</div></td></tr>`; return; }
 
   const sorted = applySort(rows, 'complianceTable', (r, key) => {
     if (key === 'severity') return SEVERITY_ORDER[r.severity];
@@ -855,6 +872,7 @@ function renderComplianceTable() {
 
   tbody.innerHTML = sorted.map(f => `
     <tr>
+      <td class="mono finding-code">${esc(f.code)}</td>
       <td><span class="pill ${SEVERITY_PILL[f.severity]}"><span class="pill-dot"></span>${SEVERITY_LABEL[f.severity]}</span></td>
       <td>${esc(f.typeLabel)}</td>
       <td><strong>${esc(f.entity)}</strong></td>
@@ -1455,8 +1473,8 @@ function exportCsv() {
 
   sections.push('');
   sections.push('=== COMPLIANCE FINDINGS ===');
-  sections.push(['Severity','Type','Entity','Cluster','Metric','Recommendation'].join(','));
-  compliance.forEach(f => sections.push([f.severity,f.typeLabel,f.entity,f.cluster,f.metric,f.recommendation].map(csvEscape).join(',')));
+  sections.push(['Code','Severity','Type','Entity','Cluster','Metric','Recommendation'].join(','));
+  compliance.forEach(f => sections.push([f.code,f.severity,f.typeLabel,f.entity,f.cluster,f.metric,f.recommendation].map(csvEscape).join(',')));
 
   downloadBlob(`vmware-capacity-export-${Date.now()}.csv`, sections.join('\n'), 'text/csv;charset=utf-8');
 }

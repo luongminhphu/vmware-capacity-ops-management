@@ -30,6 +30,25 @@ A4 (in được trực tiếp) từ `GET /api/reports/pdf?view=executive|technic
 - **Báo cáo Kỹ thuật** — bảng overcommit theo cluster, chi tiết từng host, từng datastore, và
   toàn bộ compliance findings (sắp xếp theo severity). Dài hơn, dành cho đội kỹ thuật.
 
+### Mã đối soát (ticket code) — dẫn chứng cho từng khuyến nghị
+
+Mỗi compliance finding có một **mã đối soát ổn định** dạng `HRAM-C4C34`, `IDLE-F916A`… (tiền tố
+theo loại: `HCPU`/`HRAM` host vượt ngưỡng, `CCPU`/`CRAM` overcommit cluster, `IDLE` VM idle,
+`POFF` VM tắt lâu, `OVP` VM over-provision; 5 ký tự hex là FNV-1a của
+`loại|vCenter|cluster|đối tượng`). Mã được tính giống nhau ở backend (`capacity.finding_code`) và
+web (`core.js findingCode`), nên cùng một vấn đề mang **cùng mã** ở Báo cáo Điều hành, Báo cáo
+Kỹ thuật, tab Compliance và file CSV export; mã không đổi giữa các kỳ nếu vấn đề vẫn còn.
+
+- Mỗi khuyến nghị trong Báo cáo Điều hành có dòng **"Đối soát"** liệt kê mã + đối tượng + chỉ số
+  đo được (ví dụ "4 điểm cần IT xử lý ngay" liệt kê đủ 4 mã; các danh sách dài như VM
+  over-provision hiển thị 6 mã đầu và "+n mã khác"). Danh mục quyết định cũng ghi mã tương ứng.
+- Bảng "Rủi ro compliance nổi bật" của Báo cáo Điều hành có cột **Mã** và luôn liệt kê **toàn bộ**
+  điểm nghiêm trọng; bảng "Compliance Findings đầy đủ" của Báo cáo Kỹ thuật có cùng cột Mã.
+- Trên web, bấm vào mã trong Executive View sẽ chuyển sang Technical → tab Compliance và lọc theo
+  mã đó; ô tìm kiếm Compliance cũng nhận mã đối soát.
+- API: `GET /api/reports/brief` trả `recommendations[].refs {total, items[{code, entity, cluster,
+  vcenterKey, typeLabel, metric, severity}]}` và `refNote`; findings có trường `code`.
+
 ### Tiêu chí đánh giá — bật/tắt Storage (môi trường SAN)
 
 Với SAN Storage dùng chung, nhiều VM cấp phát **thick provisioning** nên tỷ lệ "đã dùng / cấp

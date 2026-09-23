@@ -344,6 +344,16 @@ h1{font-family:var(--font-body);font-size:var(--text-xl);font-weight:700;line-he
 .rec-card-web .rec-label{display:block;font-size:.65rem;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);margin-bottom:.1rem;}
 .rec-card-web .rec-decision{margin-top:auto;padding-top:.5rem;border-top:1px dashed var(--border);font-size:var(--text-xs);line-height:1.5;}
 .rec-card-web .rec-decision strong{color:var(--primary);}
+.rec-card-web .rec-refs{margin-top:.45rem;padding-top:.45rem;border-top:1px dashed var(--border);font-size:var(--text-xs);color:var(--muted);line-height:1.6;}
+.rec-card-web .rec-refs strong{color:var(--primary);margin-right:.25rem;}
+.rec-refs .ref-item{display:inline-block;margin:0 .6rem .15rem 0;color:var(--text);}
+.rec-refs .ref-item.muted{color:var(--muted);font-style:italic;}
+.rec-refs .ref-metric{color:var(--muted);}
+.rec-refs .ref-note{margin-top:.2rem;color:var(--muted);}
+.ref-code{font-family:var(--font-mono, ui-monospace, monospace);font-weight:700;font-size:.72rem;padding:0 .35rem;border-radius:4px;background:var(--surface-2, rgba(0,0,0,.05));border:1px solid var(--border);color:var(--primary);cursor:pointer;}
+.ref-code:hover{background:var(--primary);color:#fff;}
+td.finding-code{font-weight:700;color:var(--primary);white-space:nowrap;font-size:.78rem;}
+.decision-cell .sub.mono{display:block;font-family:var(--font-mono, ui-monospace, monospace);font-size:.7rem;}
 .pill.prio-cao{background:var(--crit-bg);color:var(--crit);}
 .pill.prio-tb{background:var(--warn-bg);color:var(--warn);}
 .pill.prio-thap{background:var(--ok-bg);color:var(--ok);}

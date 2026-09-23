@@ -176,6 +176,32 @@ def build_datastore_rows(vms, ds_warn=80.0, ds_high=90.0) -> List[Dict[str, Any]
     return rows
 
 
+FINDING_PREFIX = {
+    "host_cpu": "HCPU", "host_ram": "HRAM", "overcommit_cpu": "CCPU", "overcommit_ram": "CRAM",
+    "vm_idle": "IDLE", "vm_off": "POFF", "vm_overprovision": "OVP",
+}
+
+
+def finding_code(ftype: str, cluster: Any, entity: Any, vcenter_key: Any = "") -> str:
+    """Stable reconciliation code ("mã đối soát") for a finding: type prefix +
+    5 hex chars of FNV-1a(type|vcenterKey|cluster|entity). Deterministic, so
+    the same host/VM issue carries the same code in the Executive PDF, the
+    Technical PDF and the web Compliance tab (frontend/js/core.js has the same
+    hash). vcenterKey disambiguates identical host/VM names across vCenters;
+    cluster-level findings are aggregated by name and carry no vcenterKey."""
+    h = 0x811C9DC5
+    for b in f"{ftype}|{vcenter_key or ''}|{cluster or ''}|{entity or ''}".encode("utf-8"):
+        h ^= b
+        h = (h * 0x01000193) & 0xFFFFFFFF
+    return f"{FINDING_PREFIX.get(ftype, 'FND')}-{h:08X}"[:len(FINDING_PREFIX.get(ftype, 'FND')) + 6]
+
+
+def assign_finding_codes(findings: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    for f in findings:
+        f["code"] = finding_code(f.get("type", ""), f.get("cluster"), f.get("entity"), f.get("vcenterKey"))
+    return findings
+
+
 def build_compliance_findings(hosts, vms, policy: Policy) -> List[Dict[str, Any]]:
     """Python port of buildComplianceFindings() — five CPU/RAM checks only
     (storage checks intentionally dropped, shared SAN storage — see project
@@ -189,7 +215,7 @@ def build_compliance_findings(hosts, vms, policy: Policy) -> List[Dict[str, Any]
             findings.append({
                 "severity": "critical" if h["cpuPct"] > 100 else "warning",
                 "type": "host_cpu", "typeLabel": "Host CPU vượt ngưỡng",
-                "entity": h.get("host"), "cluster": h.get("cluster"),
+                "entity": h.get("host"), "cluster": h.get("cluster"), "vcenterKey": h.get("vcenterKey") or "",
                 "metric": f"CPU overcommit {h['cpuOvercommit']:.2f}x (ngưỡng {policy.cpu_overcommit_max:.1f}x)",
                 "recommendation": "Overcommit CPU đã vượt ngưỡng cấu hình — cần di dời VM hoặc bổ sung host ngay." if h["cpuPct"] > 100 else "Overcommit CPU đang tiến gần ngưỡng — cân nhắc vMotion VM sang host khác hoặc lên kế hoạch bổ sung năng lực CPU.",
             })
@@ -197,7 +223,7 @@ def build_compliance_findings(hosts, vms, policy: Policy) -> List[Dict[str, Any]
             findings.append({
                 "severity": "critical" if h["ramPct"] > 100 else "warning",
                 "type": "host_ram", "typeLabel": "Host RAM vượt ngưỡng",
-                "entity": h.get("host"), "cluster": h.get("cluster"),
+                "entity": h.get("host"), "cluster": h.get("cluster"), "vcenterKey": h.get("vcenterKey") or "",
                 "metric": f"RAM overcommit {h['ramOvercommit']:.2f}x (ngưỡng {policy.ram_overcommit_max:.1f}x)",
                 "recommendation": "Overcommit RAM đã vượt ngưỡng cấu hình — rủi ro cao, cần hành động ngay." if h["ramPct"] > 100 else "Overcommit RAM đang tiến gần ngưỡng — theo dõi sát, cân nhắc bổ sung RAM hoặc cân bằng lại workload.",
             })
@@ -228,7 +254,7 @@ def build_compliance_findings(hosts, vms, policy: Policy) -> List[Dict[str, Any]
             findings.append({
                 "severity": "critical" if v["lastActivityDays"] >= policy.idle_days * 2 else "warning",
                 "type": "vm_idle", "typeLabel": "VM idle lâu",
-                "entity": v.get("vm"), "cluster": v.get("cluster"),
+                "entity": v.get("vm"), "cluster": v.get("cluster"), "vcenterKey": v.get("vcenterKey") or "",
                 "metric": f"Không hoạt động {int(v['lastActivityDays'])} ngày",
                 "recommendation": "Xác nhận với owner; cân nhắc decommission hoặc thu hồi tài nguyên nếu không còn dùng.",
             })
@@ -236,7 +262,7 @@ def build_compliance_findings(hosts, vms, policy: Policy) -> List[Dict[str, Any]
             findings.append({
                 "severity": "critical" if v["powerOffDays"] >= policy.idle_days * 3 else "warning",
                 "type": "vm_off", "typeLabel": "VM tắt lâu",
-                "entity": v.get("vm"), "cluster": v.get("cluster"),
+                "entity": v.get("vm"), "cluster": v.get("cluster"), "vcenterKey": v.get("vcenterKey") or "",
                 "metric": f"Đã tắt {int(v['powerOffDays'])} ngày",
                 "recommendation": "VM tắt lâu ngày vẫn giữ reservation vCPU/RAM — cân nhắc decommission để thu hồi tài nguyên.",
             })
@@ -244,12 +270,12 @@ def build_compliance_findings(hosts, vms, policy: Policy) -> List[Dict[str, Any]
         if _finite(cpu_usage) and cpu_usage > 0 and cpu_usage < vm_overprovision_usage_threshold and (v.get("vcpu", 0) or 0) >= 4:
             findings.append({
                 "severity": "info", "type": "vm_overprovision", "typeLabel": "VM over-provision (vCPU)",
-                "entity": v.get("vm"), "cluster": v.get("cluster"),
+                "entity": v.get("vm"), "cluster": v.get("cluster"), "vcenterKey": v.get("vcenterKey") or "",
                 "metric": f"{int(v.get('vcpu', 0))} vCPU cấp phát, CPU usage chỉ {cpu_usage:.1f}% (ngưỡng {vm_overprovision_usage_threshold:.1f}% theo overcommit {policy.cpu_overcommit_max:.1f}x)",
                 "recommendation": "vCPU cấp phát dư nhiều so với usage thực tế và ngưỡng overcommit CPU cấu hình; cân nhắc resize giảm vCPU.",
             })
 
-    return findings
+    return assign_finding_codes(findings)
 
 
 # ---------------------------------------------------------------------------

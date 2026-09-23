@@ -989,6 +989,14 @@ tbody tr:nth-child(even) {{ background:#fbfcfe; }}
 .rec-label {{ font-size:7.4px; font-weight:700; text-transform:uppercase; letter-spacing:.07em; color:{COLORS['muted']}; margin-bottom:2px; }}
 .rec-decision {{ margin-top:5px; font-size:9px; color:{COLORS['ink']}; }}
 .rec-decision b {{ color:{COLORS['primary_dark']}; }}
+.rec-refs {{ margin-top:4px; padding-top:4px; border-top:1px dashed {COLORS['divider']}; font-size:8px; color:{COLORS['muted']}; line-height:1.55; }}
+.rec-refs b {{ color:{COLORS['primary_dark']}; margin-right:3px; }}
+.ref-item {{ display:inline-block; margin:0 8px 1px 0; color:{COLORS['ink']}; }}
+.ref-item.muted {{ color:{COLORS['muted']}; font-style:italic; }}
+.ref-code {{ font-family:'DejaVu Sans Mono', monospace; font-weight:700; font-size:7.5px; padding:0 4px; border-radius:3px; background:{COLORS['surface2']}; border:1px solid {COLORS['divider']}; color:{COLORS['primary_dark']}; }}
+.ref-note {{ margin-top:2px; color:{COLORS['muted']}; }}
+.ref-codes-inline {{ margin-top:2px; font-size:7.5px; color:{COLORS['muted']}; font-family:'DejaVu Sans Mono', monospace; }}
+td.code-cell {{ font-family:'DejaVu Sans Mono', monospace; font-size:7.5px; font-weight:700; color:{COLORS['primary_dark']}; white-space:nowrap; }}
 .sign-box {{ display:inline-block; width:64px; height:16px; border:1px dashed {COLORS['border']}; border-radius:3px; }}
 .gauge-card.ok {{ background:#f2faf5; }}
 .gauge-card.warn {{ background:#fff8ec; }}
@@ -1120,9 +1128,25 @@ def _management_brief(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]],
     extra_cores = sum(a["extraPhysCores"] for a in actions)
     extra_ram = sum(a["extraRamGB"] for a in actions)
 
-    def add(priority, title, meaning, action, impact, decision, timeframe, tone="risk"):
+    def refs_from(items: List[Dict[str, Any]], limit: int = 8) -> Dict[str, Any]:
+        """Reconciliation references for a recommendation: finding codes with
+        the object and the measured value, so a reader can trace each headline
+        number to a concrete row in the findings tables (Executive + Technical)."""
+        items = sorted(items, key=lambda f: ({"critical": 0, "warning": 1, "info": 2}.get(f.get("severity"), 3),
+                                             str(f.get("cluster") or ""), str(f.get("entity") or "")))
+        return {"total": len(items),
+                "items": [{"code": f.get("code"), "entity": f.get("entity"), "cluster": f.get("cluster"),
+                           "vcenterKey": f.get("vcenterKey") or "", "typeLabel": f.get("typeLabel"),
+                           "metric": f.get("metric"), "severity": f.get("severity")} for f in items[:limit]]}
+
+    def add(priority, title, meaning, action, impact, decision, timeframe, tone="risk", refs=None, ref_note=None):
+        if refs and refs.get("total", 0) > 6 and priority in ("thap", "info"):
+            refs = {**refs, "items": refs["items"][:6], "compact": True}
         recs.append({"priority": priority, "title": title, "meaning": meaning, "action": action,
-                     "impact": impact, "decision": decision, "timeframe": timeframe, "tone": tone})
+                     "impact": impact, "decision": decision, "timeframe": timeframe, "tone": tone,
+                     "refs": refs or {"total": 0, "items": []}, "refNote": ref_note or ""})
+
+    by_type = lambda *types: [f for f in findings if f.get("type") in types]
 
     # 1) Over policy right now
     for label, pct, oc, oc_max, key in (("CPU", cpu_pct, model.get("cpuOvercommit"), policy.cpu_overcommit_max, "cpu"),
@@ -1137,14 +1161,18 @@ def _management_brief(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]],
                 f"Nói đơn giản: các máy chủ ảo đang 'chia sẻ' {label} nhiều hơn mức an toàn, hiệu năng ứng dụng có thể chậm bất kỳ lúc nào khi tải tăng.",
                 f"Bổ sung {need} cho các cluster đang vượt ngưỡng, đồng thời IT cân bằng lại tải và thu hồi VM không dùng để giảm áp lực tức thời.",
                 "Ứng dụng nghiệp vụ chậm hoặc gián đoạn vào giờ cao điểm; không còn chỗ để khôi phục khi một host gặp sự cố.",
-                f"Phê duyệt ngân sách mở rộng {label} khẩn (mức ưu tiên cao nhất).", "Trong quý này")
+                f"Phê duyệt ngân sách mở rộng {label} khẩn (mức ưu tiên cao nhất).", "Trong quý này",
+                refs=refs_from(by_type(f"overcommit_{key}", f"host_{key}")),
+                ref_note=f"Cluster/host đang vượt ngưỡng {label}")
         elif pct >= 80:
             months = cpu_m if key == "cpu" else ram_m
             add("tb", f"Lên kế hoạch mở rộng {label} trong 1–2 quý tới",
                 f"{label} đã dùng {pct:.0f}% ngưỡng cho phép. Với tốc độ tăng trưởng vừa phải (10%/quý), dự kiến chạm ngưỡng sau {_runway_phrase(months)}.",
                 f"Đưa hạng mục bổ sung host / {label} vào kế hoạch ngân sách kỳ tới; IT chuẩn bị cấu hình và báo giá để sẵn sàng triển khai khi được duyệt.",
                 "Nếu chờ đến khi chạm ngưỡng mới mua sắm, thời gian đặt hàng – lắp đặt (thường 8–12 tuần) sẽ khiến hệ thống phải chạy quá tải trong lúc chờ.",
-                f"Đồng ý chủ trương mở rộng {label}; giao IT lập dự toán chi tiết.", "1–2 quý tới")
+                f"Đồng ý chủ trương mở rộng {label}; giao IT lập dự toán chi tiết.", "1–2 quý tới",
+                refs=refs_from(by_type(f"overcommit_{key}", f"host_{key}")),
+                ref_note=f"Cluster/host đang tiến gần ngưỡng {label}")
 
     # 2) Storage (only when assessed)
     if include_storage and _finite(storage_pct) and storage_pct >= 90:
@@ -1163,7 +1191,10 @@ def _management_brief(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]],
             f"Các cluster {names} đang ở mức cảnh báo/vượt ngưỡng trong khi các cluster còn lại vẫn thoải mái. Đây là điểm nghẽn cục bộ, không phải toàn hệ thống.",
             "Ưu tiên phân bổ host mới (hoặc điều chuyển VM sang cluster còn dư) cho các cluster này trước khi mở rộng chung.",
             "Ứng dụng đặt trên các cluster này chịu rủi ro hiệu năng cao hơn phần còn lại của hệ thống.",
-            "Đồng ý ưu tiên ngân sách/host cho các cluster nêu trên.", "Quý này")
+            "Đồng ý ưu tiên ngân sách/host cho các cluster nêu trên.", "Quý này",
+            refs=refs_from([f for f in by_type("overcommit_cpu", "overcommit_ram", "host_cpu", "host_ram")
+                            if f.get("cluster") in {c["name"] for c in risky}]),
+            ref_note="Cluster: " + names)
 
     # 4) HA / N+1
     if ha_eligible and ha_fail:
@@ -1172,15 +1203,19 @@ def _management_brief(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]],
             f"Nếu một host trong cluster {names} hỏng hoặc phải bảo trì, số host còn lại sẽ không đủ chỗ cho toàn bộ máy chủ ảo — tức là không còn 'ghế dự phòng'.",
             "Bổ sung 1 host dự phòng cho từng cluster nêu trên, hoặc giảm tải bằng cách thu hồi/điều chuyển VM.",
             "Một sự cố phần cứng đơn lẻ có thể gây gián đoạn dịch vụ thay vì được hệ thống tự động hấp thụ.",
-            "Phê duyệt bổ sung host dự phòng (N+1) cho các cluster nêu trên.", "Trong 1 quý")
+            "Phê duyệt bổ sung host dự phòng (N+1) cho các cluster nêu trên.", "Trong 1 quý",
+            ref_note="Cluster: " + names + " — chi tiết tại bảng 'Dự phòng sự cố (N+1)' của Báo cáo Kỹ thuật")
 
     # 5) Critical operational findings
     if sev["critical"] > 0:
+        crit = [f for f in findings if f.get("severity") == "critical"]
+        kinds = sorted({f.get("typeLabel") for f in crit if f.get("typeLabel")})
         add("tb", f"{sev['critical']} điểm cần IT xử lý ngay ở cấp vận hành",
-            "Đây là các cảnh báo mức nghiêm trọng (host quá tải, VM bỏ không lâu ngày...). Phần lớn xử lý được bằng thao tác vận hành, không cần mua sắm.",
-            "Giao IT xử lý theo danh sách ở phần cuối báo cáo và báo cáo kết quả trong kỳ tới.",
+            f"Đây là các cảnh báo mức nghiêm trọng ({'; '.join(kinds[:4])}). Phần lớn xử lý được bằng thao tác vận hành, không cần mua sắm.",
+            "Giao IT xử lý theo từng mã đối soát bên dưới (chi tiết tại bảng 'Rủi ro compliance nổi bật' cuối báo cáo và mục 'Compliance Findings' của Báo cáo Kỹ thuật) và báo cáo kết quả trong kỳ tới.",
             "Nếu để lâu, các điểm nhỏ tích tụ thành rủi ro lớn về hiệu năng và chi phí.",
-            "Không cần phê duyệt ngân sách — ghi nhận và theo dõi tiến độ xử lý.", "2–4 tuần", tone="neutral")
+            "Không cần phê duyệt ngân sách — ghi nhận và theo dõi tiến độ xử lý.", "2–4 tuần", tone="neutral",
+            refs=refs_from(crit, limit=10))
 
     # 6) Reclaim opportunity
     if reclaim["count"] >= 3:
@@ -1190,7 +1225,8 @@ def _management_brief(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]],
             f"{equiv}, chiếm khoảng {reclaim_pct_ram:.0f}% dư địa RAM cho phép.",
             "Xác nhận với chủ sở hữu ứng dụng rồi thu hồi/dừng hẳn. Việc này giải phóng năng lực miễn phí trước khi cân nhắc mua thêm.",
             "Tiếp tục trả chi phí (license, backup, vận hành) cho tài nguyên không tạo giá trị và phải mua sắm sớm hơn cần thiết.",
-            "Đồng ý chủ trương rà soát và thu hồi VM không sử dụng.", "Trong 1 tháng", tone="opportunity")
+            "Đồng ý chủ trương rà soát và thu hồi VM không sử dụng.", "Trong 1 tháng", tone="opportunity",
+            refs=refs_from(by_type("vm_idle", "vm_off")))
 
     # 7) Over-provisioned VMs
     overprov = [f for f in findings if f.get("type") == "vm_overprovision"]
@@ -1199,7 +1235,8 @@ def _management_brief(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]],
             "Các VM này được cấp nhiều vCPU nhưng thực tế dùng rất ít. Cấp phát dư làm 'đầy sổ' năng lực trên giấy dù phần cứng còn rảnh.",
             "IT phối hợp chủ ứng dụng để giảm cấu hình (right-size) theo lộ trình an toàn.",
             "Chỉ số overcommit tăng ảo, dẫn tới quyết định mua sắm sớm hơn nhu cầu thật.",
-            "Không cần phê duyệt ngân sách — ủng hộ chủ trương right-size.", "1–2 tháng", tone="opportunity")
+            "Không cần phê duyệt ngân sách — ủng hộ chủ trương right-size.", "1–2 tháng", tone="opportunity",
+            refs=refs_from(overprov))
 
     # 8) Healthy → say so, with a forward date
     if worst < 80:
@@ -1252,6 +1289,28 @@ def _brief_html(brief: Dict[str, Any]) -> str:
     </div>"""
 
 
+def _refs_html(r: Dict[str, Any], compact: bool = False) -> str:
+    """'Đối soát' line under a recommendation: ticket-style finding codes with
+    object and measured value, plus a pointer to the full tables."""
+    refs = r.get("refs") or {}
+    items = refs.get("items") or []
+    note = r.get("refNote") or ""
+    if not items and not note:
+        return ""
+    compact = compact or bool(refs.get("compact"))
+    parts = []
+    for it in items:
+        detail = "" if compact else f" — {esc(it.get('metric') or it.get('typeLabel') or '')}"
+        vc = f" ({esc(it.get('vcenterKey'))})" if it.get("vcenterKey") else ""
+        parts.append(f'<span class="ref-item"><span class="ref-code">{esc(it.get("code"))}</span> {esc(it.get("entity"))}{vc}{detail}</span>')
+    more = refs.get("total", 0) - len(items)
+    if more > 0:
+        parts.append(f'<span class="ref-item muted">+{more} mã khác — xem bảng Compliance Findings (Báo cáo Kỹ thuật)</span>')
+    body = ("".join(parts)) if parts else ""
+    note_html = f'<div class="ref-note">{esc(note)}</div>' if note else ""
+    return f'<div class="rec-refs"><b>Đối soát:</b> {body}{note_html}</div>'
+
+
 def _recommendations_html(recs: List[Dict[str, Any]]) -> str:
     cards = []
     for i, r in enumerate(recs, 1):
@@ -1269,8 +1328,18 @@ def _recommendations_html(recs: List[Dict[str, Any]]) -> str:
           <div class="rec-cell"><div class="rec-label">Nếu chưa hành động</div><div>{esc(r['impact'])}</div></div>
         </div>
         <div class="rec-decision"><b>Đề nghị Ban lãnh đạo:</b> {esc(r['decision'])}</div>
+        {_refs_html(r)}
       </div>""")
     return "".join(cards)
+
+
+def _register_codes_html(r: Dict[str, Any]) -> str:
+    items = (r.get("refs") or {}).get("items") or []
+    if not items:
+        return ""
+    codes = ", ".join(str(it.get("code")) for it in items[:5])
+    more = (r.get("refs") or {}).get("total", 0) - min(len(items), 5)
+    return f'<div class="ref-codes-inline">Mã đối soát: {esc(codes)}{f" (+{more})" if more > 0 else ""}</div>'
 
 
 def _decision_register_html(recs: List[Dict[str, Any]]) -> str:
@@ -1279,7 +1348,7 @@ def _decision_register_html(recs: List[Dict[str, Any]]) -> str:
         rows.append(f"""
       <tr>
         <td style="text-align:center;">{i}</td>
-        <td><b>{esc(r['decision'])}</b><div class="small-note" style="margin-top:1px;">{esc(r['title'])}</div></td>
+        <td><b>{esc(r['decision'])}</b><div class="small-note" style="margin-top:1px;">{esc(r['title'])}</div>{_register_codes_html(r)}</td>
         <td><span class="priority-pill priority-{r['priority']}">{PRIORITY_LABEL_VI.get(r['priority'], '')}</span></td>
         <td>{esc(r['timeframe'])}</td>
         <td>{esc(r['impact'])}</td>
@@ -1600,14 +1669,20 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
         <td>{status_pill(c['overall'])}</td>
       </tr>""" for c in top_risk_clusters)
 
-    top_findings = sorted(findings, key=lambda f: {"critical": 0, "warning": 1, "info": 2}.get(f.get("severity"), 3))[:10]
+    ranked = sorted(findings, key=lambda f: ({"critical": 0, "warning": 1, "info": 2}.get(f.get("severity"), 3),
+                                              str(f.get("cluster") or ""), str(f.get("entity") or "")))
+    n_crit = sum(1 for f in ranked if f.get("severity") == "critical")
+    # Every critical finding is listed (they are the "điểm cần IT xử lý ngay"
+    # referenced by code in the recommendations); warnings fill up to 12 rows.
+    top_findings = ranked[:max(12, n_crit)]
     findings_html = "".join(f"""
       <tr>
+        <td class="code-cell">{esc(f.get('code'))}</td>
         <td>{status_pill({'text': SEVERITY_LABEL_VI.get(f.get('severity'), ''), 'cls': SEVERITY_COLOR.get(f.get('severity'), ('na','na_bg'))[0]})}</td>
-        <td><b>{esc(f.get('entity'))}</b><div class="small-note" style="margin-top:1px;">{esc(f.get('cluster') or '')}</div></td>
-        <td>{esc(f.get('typeLabel'))}</td>
-        <td style="max-width:230px;">{esc(f.get('recommendation'))}</td>
-      </tr>""" for f in top_findings) if top_findings else '<tr><td colspan="4" class="small-note">Không có phát hiện nào.</td></tr>'
+        <td><b>{esc(f.get('entity'))}</b><div class="small-note" style="margin-top:1px;">{esc(' · '.join(x for x in (f.get('cluster'), f.get('vcenterKey')) if x))}</div></td>
+        <td>{esc(f.get('typeLabel'))}<div class="small-note" style="margin-top:1px;">{esc(f.get('metric') or '')}</div></td>
+        <td style="max-width:210px;">{esc(f.get('recommendation'))}</td>
+      </tr>""" for f in top_findings) if top_findings else '<tr><td colspan="5" class="small-note">Không có phát hiện nào.</td></tr>'
 
     brief_html = _brief_html(brief)
     recommendations_html = _recommendations_html(brief["recommendations"])
@@ -1758,12 +1833,12 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
       </div>
       <div style="flex:1;">
         <table>
-          <thead><tr><th>Mức độ</th><th>Đối tượng</th><th>Loại</th><th>Khuyến nghị</th></tr></thead>
+          <thead><tr><th>Mã</th><th>Mức độ</th><th>Đối tượng</th><th>Loại / chỉ số</th><th>Khuyến nghị</th></tr></thead>
           <tbody>{findings_html}</tbody>
         </table>
       </div>
     </div>
-    <div class="small-note">Danh sách đầy đủ và chi tiết kỹ thuật xem tại Báo cáo Kỹ thuật hoặc Export CSV.</div>
+    <div class="small-note">Mã đối soát (cột "Mã") là mã ổn định theo đối tượng và loại vấn đề — dùng chung với Báo cáo Kỹ thuật (mục "Compliance Findings đầy đủ") và tab Compliance trên web để giao việc và theo dõi kết quả xử lý. Bảng này liệt kê toàn bộ điểm nghiêm trọng; danh sách đầy đủ xem tại Báo cáo Kỹ thuật hoặc Export CSV.</div>
   </div>
 </body></html>"""
 
@@ -1866,15 +1941,18 @@ def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
         <td>{bar_cell(d['pct'], d['status']['cls'])}</td><td>{fmt_int(d['vmCount'])}</td><td>{status_pill(d['status'])}</td>
       </tr>""" for d in ds_rows) if ds_rows else '<tr><td colspan="6" class="small-note">Không có dữ liệu datastore.</td></tr>'
 
+    findings_sorted = sorted(findings, key=lambda f: ({"critical": 0, "warning": 1, "info": 2}.get(f.get("severity"), 3),
+                                                       str(f.get("cluster") or ""), str(f.get("entity") or "")))
     findings_html = "".join(f"""
       <tr>
+        <td class="code-cell">{esc(f.get('code'))}</td>
         <td>{status_pill({'text': SEVERITY_LABEL_VI.get(f.get('severity'), ''), 'cls': SEVERITY_COLOR.get(f.get('severity'), ('na','na_bg'))[0]})}</td>
         <td>{esc(f.get('typeLabel'))}</td>
-        <td><b>{esc(f.get('entity'))}</b></td>
+        <td><b>{esc(f.get('entity'))}</b>{f'<div class="small-note" style="margin-top:1px;">{esc(f.get("vcenterKey"))}</div>' if f.get('vcenterKey') else ''}</td>
         <td>{esc(f.get('cluster') or '—')}</td>
         <td>{esc(f.get('metric'))}</td>
-        <td style="max-width:190px;">{esc(f.get('recommendation'))}</td>
-      </tr>""" for f in findings) if findings else '<tr><td colspan="6" class="small-note">Không có phát hiện nào.</td></tr>'
+        <td style="max-width:180px;">{esc(f.get('recommendation'))}</td>
+      </tr>""" for f in findings_sorted) if findings else '<tr><td colspan="7" class="small-note">Không có phát hiện nào.</td></tr>'
 
     logo_html = f'<img class="cover-logo" src="{esc(logo_data_url)}"/>' if logo_data_url else ''
 
@@ -1982,8 +2060,9 @@ def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
 {datastore_sections_html}
   <div class="section">
     <div class="section-title">Compliance Findings đầy đủ ({fmt_int(len(findings))})</div>
+    <div class="small-note" style="margin-bottom:4px;">Cột "Mã" là mã đối soát ổn định theo đối tượng và loại vấn đề, trùng với mã trích dẫn trong Báo cáo Điều hành (mục Khuyến nghị / Đối soát) và tab Compliance trên web. Sắp xếp theo mức độ: nghiêm trọng trước.</div>
     <table>
-      <thead><tr><th>Mức độ</th><th>Loại</th><th>Đối tượng</th><th>Cluster</th><th>Chỉ số</th><th>Khuyến nghị</th></tr></thead>
+      <thead><tr><th>Mã</th><th>Mức độ</th><th>Loại</th><th>Đối tượng</th><th>Cluster</th><th>Chỉ số</th><th>Khuyến nghị</th></tr></thead>
       <tbody>{findings_html}</tbody>
     </table>
   </div>
