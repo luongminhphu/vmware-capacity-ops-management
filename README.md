@@ -21,12 +21,18 @@ Hai nút **Xuất PDF · Điều hành** và **Xuất PDF · Kỹ thuật** ở 
 A4 (in được trực tiếp) từ `GET /api/reports/pdf?view=executive|technical&vcenter=<key|all>`
 (yêu cầu đăng nhập), theo scope vCenter đang chọn trên thanh lọc:
 
-- **Báo cáo Điều hành** — hộp "Tóm tắt 30 giây cho Ban lãnh đạo", đồng hồ (gauge) CPU/RAM có
-  dải màu an toàn / cần lên kế hoạch / vượt ngưỡng, KPI tổng quan, các thẻ nhận định & đề xuất
-  viết bằng ngôn ngữ quản trị (ý nghĩa kinh doanh, hành động đề xuất, tác động nếu chưa làm, thời
-  điểm, mức ưu tiên), **Danh mục quyết định trình Ban lãnh đạo** có ô ký ý kiến, dự báo dư địa &
-  kế hoạch tiếp theo, kiểm tra dự phòng N+1, biểu đồ so sánh cluster có đường ngưỡng và xếp hạng
-  rủi ro theo cluster, top compliance findings. Khoảng 4 trang, dành cho lãnh đạo.
+- **Báo cáo Điều hành** — **gọn trong 2 trang**, chỉ chứa thông tin tổng thể và tham chiếu chi
+  tiết sang Báo cáo Kỹ thuật:
+  - *Trang 1*: hộp "Tóm tắt 30 giây cho Ban lãnh đạo", đồng hồ (gauge) CPU/RAM (và Storage nếu
+    bật) đặt cạnh 4 KPI tổng quan, các thẻ nhận định & đề xuất xếp 2 cột (ý nghĩa kinh doanh →
+    đề xuất → đề nghị Ban lãnh đạo, kèm mã đối soát).
+  - *Trang 2*: **Danh mục quyết định trình Ban lãnh đạo** có ô ký ý kiến (kèm rủi ro tránh
+    được), bảng "Dư địa & dự báo" (hiện tại / dư địa / còn nạp thêm / tháng tới ngưỡng theo 3 kịch
+    bản), kết luận dự phòng N+1, biểu đồ biến động CPU/RAM theo cluster, bảng cluster cần quan tâm
+    (có cột N+1), bảng **điểm nghiêm trọng cần IT xử lý** (chỉ severity critical, có Mã) và hộp
+    "Tham chiếu chi tiết tại Báo cáo Kỹ thuật" chỉ rõ mục tương ứng cho từng nội dung.
+  - Các biểu đồ so sánh/rủi ro theo cluster, donut VM/finding, bảng lịch sử theo cluster và danh
+    sách cảnh báo/thông tin không còn nằm trong Báo cáo Điều hành — xem Báo cáo Kỹ thuật.
 - **Báo cáo Kỹ thuật** — bảng overcommit theo cluster, chi tiết từng host, từng datastore, và
   toàn bộ compliance findings (sắp xếp theo severity). Dài hơn, dành cho đội kỹ thuật.
 
@@ -42,8 +48,9 @@ Kỹ thuật, tab Compliance và file CSV export; mã không đổi giữa các 
 - Mỗi khuyến nghị trong Báo cáo Điều hành có dòng **"Đối soát"** liệt kê mã + đối tượng + chỉ số
   đo được (ví dụ "4 điểm cần IT xử lý ngay" liệt kê đủ 4 mã; các danh sách dài như VM
   over-provision hiển thị 6 mã đầu và "+n mã khác"). Danh mục quyết định cũng ghi mã tương ứng.
-- Bảng "Rủi ro compliance nổi bật" của Báo cáo Điều hành có cột **Mã** và luôn liệt kê **toàn bộ**
-  điểm nghiêm trọng; bảng "Compliance Findings đầy đủ" của Báo cáo Kỹ thuật có cùng cột Mã.
+- Bảng "Điểm nghiêm trọng cần IT xử lý" của Báo cáo Điều hành có cột **Mã** và liệt kê các điểm
+  severity critical (tối đa 8, phần còn lại ghi "+n"); bảng "Compliance Findings đầy đủ" của Báo
+  cáo Kỹ thuật có cùng cột Mã và đủ mọi severity.
 - Trên web, bấm vào mã trong Executive View sẽ chuyển sang Technical → tab Compliance và lọc theo
   mã đó; ô tìm kiếm Compliance cũng nhận mã đối soát.
 - API: `GET /api/reports/brief` trả `recommendations[].refs {total, items[{code, entity, cluster,
