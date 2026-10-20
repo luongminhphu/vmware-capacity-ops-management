@@ -702,9 +702,9 @@ def _history_insights(history: Dict[str, Any]) -> List[str]:
         pace = binding_delta / months
         eta = (100 - binding_last) / pace
         eta_txt = f"khoảng {eta:.0f} tháng" if eta < 60 else "trên 5 năm"
-        out.append(f"Nếu giữ đúng tốc độ {months} tháng vừa qua ({pace:.1f} điểm/tháng), <b>{binding_label}</b> sẽ chạm 100% ngưỡng sau <b>{eta_txt}</b> — mốc nên đối chiếu với kế hoạch ngân sách và thời gian mua sắm thiết bị.")
+        out.append(f"Nếu giữ đúng tốc độ {months} tháng vừa qua ({pace:.1f} điểm/tháng), <b>{binding_label}</b> sẽ chạm 100% ngưỡng sau <b>{eta_txt}</b> — cần đối chiếu với kế hoạch ngân sách và thời gian mua sắm.")
     elif _finite(binding_delta) and binding_delta <= 0.3:
-        out.append("Mức sử dụng gần như đi ngang hoặc giảm trong kỳ — xu hướng lịch sử chưa tạo áp lực đầu tư thêm năng lực; ưu tiên tối ưu và thu hồi tài nguyên nhàn rỗi.")
+        out.append("Mức sử dụng đi ngang hoặc giảm trong kỳ — chưa tạo áp lực đầu tư thêm; ưu tiên tối ưu và thu hồi tài nguyên nhàn rỗi.")
     groups = [g["summary"] for g in history.get("groups", []) if g["summary"].get("points")]
     if len(groups) > 1:
         fastest = max(groups, key=lambda g: max(g["delta"].get("cpuPct") or 0, g["delta"].get("ramPct") or 0))
@@ -713,7 +713,7 @@ def _history_insights(history: Dict[str, Any]) -> List[str]:
         top_val = fd.get("ramPct") if top_metric == "RAM" else fd.get("cpuPct")
         if _finite(top_val) and top_val > 0.3:
             gword = "Cluster" if history.get("groupBy") == "cluster" else "vCenter"
-            out.append(f"Tăng nhanh nhất là {gword.lower()} <b>{esc(fastest['label'])}</b> ({top_metric} {_fmt_delta(top_val, 1, ' điểm')}, VM {_fmt_delta(fd.get('vmCount'), 0)}) — nơi nên ưu tiên đề xuất bổ sung tài nguyên hoặc cân bằng tải trước.")
+            out.append(f"Tăng nhanh nhất là {gword.lower()} <b>{esc(fastest['label'])}</b> ({top_metric} {_fmt_delta(top_val, 1, ' điểm')}, VM {_fmt_delta(fd.get('vmCount'), 0)}) — ưu tiên xem xét bổ sung tài nguyên hoặc cân bằng tải.")
     return out
 
 
@@ -1215,13 +1215,13 @@ def _management_brief(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]],
     overall = _overall_status(model)
     health_cls, health_word = overall["cls"], overall["text"]
     if health_cls == "crit":
-        headline = f"Hạ tầng đang chạy vượt ngưỡng an toàn ở {binding} — cần quyết định bổ sung năng lực ngay trong quý này."
+        headline = f"{binding} đã vượt ngưỡng overcommit cho phép. Cần phê duyệt bổ sung năng lực trong quý này."
     elif health_cls == "bad":
-        headline = f"Hạ tầng đã chạm ngưỡng cho phép ở {binding} ({binding_pct:.0f}%) — cần phê duyệt kế hoạch mở rộng ngay trong quý này."
+        headline = f"{binding} đã chạm ngưỡng cho phép ({binding_pct:.0f}%). Cần phê duyệt kế hoạch mở rộng trong quý này."
     elif health_cls == "warn":
-        headline = f"Hạ tầng vẫn an toàn nhưng {binding} đã dùng {binding_pct:.0f}% ngưỡng cho phép — nên đưa mở rộng vào kế hoạch ngân sách kỳ tới."
+        headline = f"Hạ tầng còn an toàn; {binding} đã dùng {binding_pct:.0f}% ngưỡng cho phép. Nên đưa mở rộng vào ngân sách kỳ tới."
     else:
-        headline = "Hạ tầng đang vận hành ổn định, còn dư địa tốt — chưa cần đầu tư phần cứng mới tại thời điểm này."
+        headline = "Hạ tầng ổn định, còn dư địa. Chưa cần đầu tư phần cứng mới trong kỳ này."
 
     # --- HA ---
     ha_eligible = [r for r in ha_rows if r.get("eligible")]
@@ -1266,29 +1266,29 @@ def _management_brief(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]],
         if pct >= 100:
             need = (f"khoảng +{extra_cores:.0f} core vật lý" if key == "cpu" and extra_cores > 0.5 else
                     f"khoảng +{extra_ram:,.0f} GB RAM" if key == "ram" and extra_ram > 0.5 else "bổ sung host")
-            add("cao", f"Bổ sung năng lực {label} ngay — hệ thống đang chạy vượt ngưỡng an toàn",
-                f"{label} đang được cấp phát gấp {oc:.2f} lần năng lực vật lý, vượt mức tối đa {oc_max:.1f}x mà chúng ta đã thống nhất. "
-                f"Nói đơn giản: các máy chủ ảo đang 'chia sẻ' {label} nhiều hơn mức an toàn, hiệu năng ứng dụng có thể chậm bất kỳ lúc nào khi tải tăng.",
-                f"Bổ sung {need} cho các cluster đang vượt ngưỡng, đồng thời IT cân bằng lại tải và thu hồi VM không dùng để giảm áp lực tức thời.",
-                "Ứng dụng nghiệp vụ chậm hoặc gián đoạn vào giờ cao điểm; không còn chỗ để khôi phục khi một host gặp sự cố.",
-                f"Phê duyệt ngân sách mở rộng {label} khẩn (mức ưu tiên cao nhất).", "Trong quý này",
+            add("cao", f"Bổ sung năng lực {label} — đang vượt ngưỡng cho phép",
+                f"{label} đang cấp phát gấp {oc:.2f} lần năng lực vật lý, vượt mức tối đa {oc_max:.1f}x theo chính sách. "
+                f"Khi tải tăng, ứng dụng trên các cluster này có thể chậm.",
+                f"Bổ sung {need} cho các cluster vượt ngưỡng. System Owner của từng cluster cân bằng lại tải và thu hồi VM không dùng để giảm áp lực trước mắt.",
+                "Ứng dụng chậm hoặc gián đoạn giờ cao điểm; không còn chỗ khôi phục khi một host gặp sự cố.",
+                f"Phê duyệt ngân sách bổ sung {label} (ưu tiên cao nhất).", "Trong quý này",
                 refs=refs_from(by_type(f"overcommit_{key}", f"host_{key}")),
                 ref_note=f"Cluster/host đang vượt ngưỡng {label}")
         elif pct >= 80:
             months = cpu_m if key == "cpu" else ram_m
             add("tb", f"Lên kế hoạch mở rộng {label} trong 1–2 quý tới",
-                f"{label} đã dùng {pct:.0f}% ngưỡng cho phép. Với tốc độ tăng trưởng vừa phải (10%/quý), dự kiến chạm ngưỡng sau {_runway_phrase(months)}.",
-                f"Đưa hạng mục bổ sung host / {label} vào kế hoạch ngân sách kỳ tới; IT chuẩn bị cấu hình và báo giá để sẵn sàng triển khai khi được duyệt.",
-                "Nếu chờ đến khi chạm ngưỡng mới mua sắm, thời gian đặt hàng – lắp đặt (thường 8–12 tuần) sẽ khiến hệ thống phải chạy quá tải trong lúc chờ.",
-                f"Đồng ý chủ trương mở rộng {label}; giao IT lập dự toán chi tiết.", "1–2 quý tới",
+                f"{label} đã dùng {pct:.0f}% ngưỡng cho phép. Với mức tăng 10%/quý, dự kiến chạm ngưỡng sau {_runway_phrase(months)}.",
+                f"Đưa hạng mục bổ sung host / {label} vào ngân sách kỳ tới; System Owner các cluster liên quan chuẩn bị cấu hình và báo giá.",
+                "Nếu chờ chạm ngưỡng mới mua, thời gian đặt hàng và lắp đặt (8–12 tuần) khiến hệ thống chạy quá tải trong lúc chờ.",
+                f"Đồng ý chủ trương mở rộng {label}; lập dự toán chi tiết.", "1–2 quý tới",
                 refs=refs_from(by_type(f"overcommit_{key}", f"host_{key}")),
                 ref_note=f"Cluster/host đang tiến gần ngưỡng {label}")
 
     # 2) Storage (only when assessed)
     if include_storage and _finite(storage_pct) and storage_pct >= 90:
         add("cao", "Dung lượng lưu trữ đã cấp phát gần đầy",
-            f"Đã sử dụng {storage_pct:.0f}% dung lượng cấp phát cho các datastore. Khi datastore đầy, VM có thể bị tạm dừng đột ngột.",
-            "Dọn snapshot cũ, rà soát VM cấp phát thừa (thin-provisioning) trước; nếu vẫn thiếu thì bổ sung dung lượng.",
+            f"Đã dùng {storage_pct:.0f}% dung lượng cấp phát cho các datastore. Khi datastore đầy, VM có thể bị tạm dừng.",
+            "System Owner dọn snapshot cũ, rà soát VM cấp phát thừa trước; nếu vẫn thiếu thì bổ sung dung lượng.",
             "Rủi ro dừng dịch vụ ngoài kế hoạch do datastore đầy.",
             "Phê duyệt bổ sung dung lượng lưu trữ nếu sau rà soát vẫn thiếu.", "Trong quý này")
 
@@ -1298,9 +1298,9 @@ def _management_brief(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]],
         names = ", ".join(c["name"] for c in risky[:5])
         add("cao" if any(c["overall"]["cls"] == "crit" for c in risky) else "tb",
             f"{len(risky)} cluster cần được ưu tiên bổ sung host",
-            f"Các cluster {names} đang ở mức cảnh báo/vượt ngưỡng trong khi các cluster còn lại vẫn thoải mái. Đây là điểm nghẽn cục bộ, không phải toàn hệ thống.",
-            "Ưu tiên phân bổ host mới (hoặc điều chuyển VM sang cluster còn dư) cho các cluster này trước khi mở rộng chung.",
-            "Ứng dụng đặt trên các cluster này chịu rủi ro hiệu năng cao hơn phần còn lại của hệ thống.",
+            f"Cluster {names} ở mức cảnh báo/vượt ngưỡng; các cluster còn lại vẫn trong ngưỡng. Đây là điểm nghẽn cục bộ.",
+            "Ưu tiên host mới (hoặc điều chuyển VM sang cluster còn dư) cho các cluster này trước khi mở rộng chung; System Owner từng cluster xác nhận nhu cầu.",
+            "Ứng dụng trên các cluster này chịu rủi ro hiệu năng cao hơn phần còn lại.",
             "Đồng ý ưu tiên ngân sách/host cho các cluster nêu trên.", "Quý này",
             refs=refs_from([f for f in by_type("overcommit_cpu", "overcommit_ram", "host_cpu", "host_ram")
                             if f.get("cluster") in {c["name"] for c in risky}]),
@@ -1310,9 +1310,9 @@ def _management_brief(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]],
     if ha_eligible and ha_fail:
         names = ", ".join(r["cluster"] for r in ha_fail[:6])
         add("cao", f"{len(ha_fail)}/{len(ha_eligible)} cluster không còn dự phòng khi mất 1 host",
-            f"Nếu một host trong cluster {names} hỏng hoặc phải bảo trì, số host còn lại sẽ không đủ chỗ cho toàn bộ máy chủ ảo — tức là không còn 'ghế dự phòng'.",
-            "Bổ sung 1 host dự phòng cho từng cluster nêu trên, hoặc giảm tải bằng cách thu hồi/điều chuyển VM.",
-            "Một sự cố phần cứng đơn lẻ có thể gây gián đoạn dịch vụ thay vì được hệ thống tự động hấp thụ.",
+            f"Nếu một host trong cluster {names} hỏng hoặc bảo trì, các host còn lại không đủ chỗ cho toàn bộ VM.",
+            "Bổ sung 1 host dự phòng cho từng cluster nêu trên, hoặc System Owner giảm tải bằng cách thu hồi/điều chuyển VM.",
+            "Một sự cố phần cứng đơn lẻ có thể gây gián đoạn dịch vụ.",
             "Phê duyệt bổ sung host dự phòng (N+1) cho các cluster nêu trên.", "Trong 1 quý",
             ref_note="Cluster: " + names + " — chi tiết tại bảng 'Dự phòng sự cố (N+1)' của Báo cáo Kỹ thuật")
 
@@ -1320,41 +1320,41 @@ def _management_brief(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]],
     if sev["critical"] > 0:
         crit = [f for f in findings if f.get("severity") == "critical"]
         kinds = sorted({f.get("typeLabel") for f in crit if f.get("typeLabel")})
-        add("tb", f"{sev['critical']} điểm cần IT xử lý ngay ở cấp vận hành",
-            f"Đây là các cảnh báo mức nghiêm trọng ({'; '.join(kinds[:4])}). Phần lớn xử lý được bằng thao tác vận hành, không cần mua sắm.",
-            "Giao IT xử lý theo từng mã đối soát bên dưới (chi tiết tại bảng 'Rủi ro compliance nổi bật' cuối báo cáo và mục 'Compliance Findings' của Báo cáo Kỹ thuật) và báo cáo kết quả trong kỳ tới.",
-            "Nếu để lâu, các điểm nhỏ tích tụ thành rủi ro lớn về hiệu năng và chi phí.",
-            "Không cần phê duyệt ngân sách — ghi nhận và theo dõi tiến độ xử lý.", "2–4 tuần", tone="neutral",
+        add("tb", f"{sev['critical']} điểm nghiêm trọng cần System Owner xử lý",
+            f"Cảnh báo mức nghiêm trọng ({'; '.join(kinds[:4])}). Phần lớn xử lý bằng thao tác vận hành, không cần mua sắm.",
+            "System Owner của từng cluster xử lý theo mã đối soát (bảng 'Điểm nghiêm trọng' cuối báo cáo và mục Compliance Findings của Báo cáo Kỹ thuật), báo cáo kết quả kỳ tới.",
+            "Để lâu, các điểm này tích tụ thành rủi ro hiệu năng và chi phí.",
+            "Không cần ngân sách — ghi nhận và theo dõi tiến độ xử lý.", "2–4 tuần", tone="neutral",
             refs=refs_from(crit, limit=10))
 
     # 6) Reclaim opportunity
     if reclaim["count"] >= 3:
         equiv = f" — tương đương ~{host_equiv:.1f} host" if host_equiv >= 0.3 else ""
-        add("thap", f"Cơ hội tiết kiệm: {reclaim['count']} máy chủ ảo không sử dụng có thể thu hồi",
-            f"Có {reclaim['count']} VM đã bỏ không hoặc tắt lâu ngày nhưng vẫn giữ {fmt_int(reclaim['vcpu'])} vCPU và {fmt_int(reclaim['ramGB'])} GB RAM"
-            f"{equiv}, chiếm khoảng {reclaim_pct_ram:.0f}% dư địa RAM cho phép.",
-            "Xác nhận với chủ sở hữu ứng dụng rồi thu hồi/dừng hẳn. Việc này giải phóng năng lực miễn phí trước khi cân nhắc mua thêm.",
-            "Tiếp tục trả chi phí (license, backup, vận hành) cho tài nguyên không tạo giá trị và phải mua sắm sớm hơn cần thiết.",
+        add("thap", f"Thu hồi {reclaim['count']} VM không sử dụng",
+            f"{reclaim['count']} VM idle hoặc tắt lâu ngày vẫn giữ {fmt_int(reclaim['vcpu'])} vCPU và {fmt_int(reclaim['ramGB'])} GB RAM"
+            f"{equiv}, khoảng {reclaim_pct_ram:.0f}% dư địa RAM cho phép.",
+            "System Owner xác nhận với chủ ứng dụng rồi thu hồi hoặc dừng hẳn. Giải phóng năng lực trước khi cân nhắc mua thêm.",
+            "Tiếp tục trả chi phí license, backup, vận hành cho tài nguyên không dùng; phải mua sắm sớm hơn cần thiết.",
             "Đồng ý chủ trương rà soát và thu hồi VM không sử dụng.", "Trong 1 tháng", tone="opportunity",
             refs=refs_from(by_type("vm_idle", "vm_off")))
 
     # 7) Over-provisioned VMs
     overprov = [f for f in findings if f.get("type") == "vm_overprovision"]
     if len(overprov) >= 3:
-        add("thap", f"{len(overprov)} máy chủ ảo được cấp phát dư so với mức dùng thực",
-            "Các VM này được cấp nhiều vCPU nhưng thực tế dùng rất ít. Cấp phát dư làm 'đầy sổ' năng lực trên giấy dù phần cứng còn rảnh.",
-            "IT phối hợp chủ ứng dụng để giảm cấu hình (right-size) theo lộ trình an toàn.",
-            "Chỉ số overcommit tăng ảo, dẫn tới quyết định mua sắm sớm hơn nhu cầu thật.",
-            "Không cần phê duyệt ngân sách — ủng hộ chủ trương right-size.", "1–2 tháng", tone="opportunity",
+        add("thap", f"{len(overprov)} VM cấp phát dư so với mức dùng thực",
+            "Các VM này được cấp nhiều vCPU nhưng dùng rất ít, làm chỉ số overcommit cao hơn nhu cầu thật.",
+            "System Owner phối hợp chủ ứng dụng giảm cấu hình (right-size) theo lộ trình an toàn.",
+            "Chỉ số overcommit tăng ảo, dẫn tới mua sắm sớm hơn nhu cầu.",
+            "Không cần ngân sách — ủng hộ chủ trương right-size.", "1–2 tháng", tone="opportunity",
             refs=refs_from(overprov))
 
     # 8) Healthy → say so, with a forward date
     if worst < 80:
         add("info", "Chưa cần đầu tư phần cứng mới — tiếp tục theo dõi định kỳ",
-            f"Cả CPU ({fmt_pct(cpu_pct, 0)}) và RAM ({fmt_pct(ram_pct, 0)}) đều còn xa ngưỡng cho phép. Hệ thống có thể tiếp nhận thêm khoảng {fmt_int(binding_fit) if binding_fit is not None else '—'} VM cỡ trung bình hiện tại.",
-            f"Duy trì báo cáo định kỳ hàng quý. Mốc cần xem xét đầu tư tiếp theo (nếu tăng trưởng 10%/quý): {_runway_phrase(binding_months)} ở {binding}.",
+            f"CPU ({fmt_pct(cpu_pct, 0)}) và RAM ({fmt_pct(ram_pct, 0)}) còn xa ngưỡng cho phép. Hệ thống còn tiếp nhận thêm khoảng {fmt_int(binding_fit) if binding_fit is not None else '—'} VM cỡ trung bình.",
+            f"Duy trì báo cáo hàng quý. Mốc xem xét đầu tư tiếp theo (nếu tăng 10%/quý): {_runway_phrase(binding_months)} ở {binding}.",
             "Không có rủi ro trọng yếu tại thời điểm báo cáo.",
-            "Không cần quyết định đầu tư tại thời điểm này.", "Rà soát lại quý sau", tone="ok")
+            "Không cần quyết định đầu tư trong kỳ này.", "Rà soát lại quý sau", tone="ok")
 
     recs.sort(key=lambda r: PRIORITY_ORDER.get(r["priority"], 9))
     recs = recs[:6]
@@ -1362,23 +1362,23 @@ def _management_brief(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]],
     # --- 30-second summary bullets ---
     points = []
     if include_storage and _finite(storage_pct):
-        points.append(f"Sức khỏe tổng thể: {health_word}. CPU đang dùng {fmt_pct(cpu_pct, 0)}, RAM {fmt_pct(ram_pct, 0)} và Storage {fmt_pct(storage_pct, 0)} ngưỡng cho phép.")
+        points.append(f"Trạng thái: {health_word}. CPU {fmt_pct(cpu_pct, 0)}, RAM {fmt_pct(ram_pct, 0)}, Storage {fmt_pct(storage_pct, 0)} ngưỡng cho phép.")
     else:
-        points.append(f"Sức khỏe tổng thể: {health_word}. CPU đang dùng {fmt_pct(cpu_pct, 0)} và RAM {fmt_pct(ram_pct, 0)} ngưỡng cho phép (Storage quản lý riêng ở tầng SAN).")
+        points.append(f"Trạng thái: {health_word}. CPU {fmt_pct(cpu_pct, 0)}, RAM {fmt_pct(ram_pct, 0)} ngưỡng cho phép (Storage quản lý riêng ở tầng SAN).")
     if binding_fit is not None:
-        points.append(f"Dư địa: còn tiếp nhận thêm khoảng {fmt_int(binding_fit)} VM cỡ trung bình trước khi {binding} chạm ngưỡng; nguồn lực sẽ hết trước là {binding}.")
-    points.append(f"Xu hướng: nếu tăng trưởng 10%/quý, {binding} dự kiến chạm ngưỡng sau {_runway_phrase(binding_months)} — đây là mốc nên đưa vào kế hoạch ngân sách.")
+        points.append(f"Dư địa: còn tiếp nhận khoảng {fmt_int(binding_fit)} VM cỡ trung bình; {binding} sẽ hết trước.")
+    points.append(f"Xu hướng: với mức tăng 10%/quý, {binding} chạm ngưỡng sau {_runway_phrase(binding_months)}.")
     if ha_eligible:
-        points.append(f"Dự phòng sự cố: {len(ha_eligible) - len(ha_fail)}/{len(ha_eligible)} cluster vẫn vận hành bình thường nếu mất 1 host"
+        points.append(f"Dự phòng N+1: {len(ha_eligible) - len(ha_fail)}/{len(ha_eligible)} cluster vẫn giữ ngưỡng nếu mất 1 host"
                       + (f"; {len(ha_fail)} cluster chưa đạt ({', '.join(r['cluster'] for r in ha_fail[:4])})." if ha_fail else "."))
     if reclaim["count"] >= 3:
-        points.append(f"Cơ hội tiết kiệm: thu hồi {reclaim['count']} VM không sử dụng giải phóng ~{fmt_int(reclaim['vcpu'])} vCPU / {fmt_int(reclaim['ramGB'])} GB RAM mà không tốn chi phí.")
+        points.append(f"Thu hồi {reclaim['count']} VM không sử dụng giải phóng ~{fmt_int(reclaim['vcpu'])} vCPU / {fmt_int(reclaim['ramGB'])} GB RAM.")
 
     decisions = [r for r in recs if r["priority"] in ("cao", "tb")]
     if decisions:
-        decision_line = f"Cần Ban lãnh đạo xem xét {len(decisions)} nội dung: " + "; ".join(d["decision"].rstrip(".") for d in decisions[:3]) + "."
+        decision_line = f"Cần phê duyệt {len(decisions)} nội dung: " + "; ".join(d["decision"].rstrip(".") for d in decisions[:3]) + "."
     else:
-        decision_line = "Không có quyết định đầu tư nào cần phê duyệt tại kỳ báo cáo này; các đề xuất còn lại thuộc phạm vi vận hành của IT."
+        decision_line = "Không có quyết định đầu tư cần phê duyệt trong kỳ này; các đề xuất còn lại do System Owner từng cluster xử lý."
 
     return {"health_cls": health_cls, "health_word": health_word, "headline": headline, "points": points,
             "decision_line": decision_line, "recommendations": recs, "binding": binding}
@@ -1391,11 +1391,11 @@ def _brief_html(brief: Dict[str, Any]) -> str:
     <div class="exec-brief {brief['health_cls']}">
       <div class="exec-brief-head">
         <span class="pill" style="color:{COLORS[fg_key]};background:{COLORS[bg_key]};border-color:{COLORS[fg_key]}55;font-size:9px;">{esc(brief['health_word'])}</span>
-        <span class="exec-brief-title">Tóm tắt 30 giây cho Ban lãnh đạo</span>
+        <span class="exec-brief-title">Tóm tắt</span>
       </div>
       <div class="exec-brief-headline">{esc(brief['headline'])}</div>
       <ul class="brief-list">{items}</ul>
-      <div class="exec-brief-decision"><b>Quyết định cần từ Ban lãnh đạo:</b> {esc(brief['decision_line'])}</div>
+      <div class="exec-brief-decision"><b>Quyết định cần phê duyệt:</b> {esc(brief['decision_line'])}</div>
     </div>"""
 
 
@@ -1486,9 +1486,9 @@ def _executive_insights(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]
 METRIC_LABEL_VI = {"cpu": "CPU", "ram": "RAM", "storage": "Storage"}
 
 STORAGE_EXCLUDED_NOTE = (
-    "Tiêu chí Storage không thuộc phạm vi đánh giá của báo cáo này: hạ tầng lưu trữ dùng SAN dùng chung, "
-    "nhiều VM cấp phát thick provisioning nên tỷ lệ \"đã dùng / cấp phát\" luôn tiệm cận 100% và không phản ánh "
-    "dung lượng SAN thực còn trống. Năng lực lưu trữ được quản lý và báo cáo riêng ở tầng SAN."
+    "Storage không thuộc phạm vi đánh giá: SAN dùng chung, nhiều VM thick provisioning nên tỷ lệ "
+    "\"đã dùng / cấp phát\" luôn gần 100% và không phản ánh dung lượng SAN còn trống. "
+    "Năng lực lưu trữ được quản lý và báo cáo riêng ở tầng SAN."
 )
 
 
@@ -1693,7 +1693,10 @@ body.exec-compact .chart-card-title {{ font-size:8.4px; margin-bottom:2px; }}
 body.exec-compact table.ref-map {{ font-size:7.7px; }}
 body.exec-compact table.ref-map td {{ width:50%; border-bottom:none; padding:1px 6px 1px 0; color:{COLORS['muted']}; vertical-align:top; }}
 body.exec-compact table.ref-map td b {{ color:{COLORS['ink']}; }}
-.page-2 {{ break-before:page; margin-top:0; }}
+/* No forced page break: when the recommendation cards overflow page 1, the
+   remaining content flows right after them so the report stays within 2-3 pages. */
+.page-2 {{ break-before:auto; break-inside:avoid; page-break-inside:avoid; margin-top:0; }}
+.keep-together {{ break-inside:avoid; page-break-inside:avoid; }}
 /* Dense page 2: used when the decision register has more than three rows or
    the storage row is included, so the reference box still fits on page 2. */
 body.exec-compact.dense .page-2 .section {{ margin-top:5px; }}
@@ -1711,8 +1714,7 @@ def _recommendations_compact_html(recs: List[Dict[str, Any]], limit: int = 4) ->
     """Two-column card grid: meaning → proposal → decision, plus compact
     reconciliation codes. 'Nếu chưa hành động' moves to the decision register
     to save space; full narrative lives in the web Executive View. At most
-    ``limit`` cards are drawn so page 1 of the two-page Executive report never
-    overflows; the rest stay in the decision register on page 2."""
+    ``limit`` cards are drawn; any remainder stays in the decision register."""
     cards = []
     hidden = max(0, len(recs) - limit)
     for i, r in enumerate(recs[:limit], 1):
@@ -1738,7 +1740,7 @@ def _recommendations_compact_html(recs: List[Dict[str, Any]], limit: int = 4) ->
         <div class="rec-meta"><span class="priority-pill priority-{r['priority']}">{PRIORITY_LABEL_VI.get(r['priority'], '')}</span><span class="chip">{esc(r['timeframe'])}</span></div>
         <div class="rec-line"><b>Ý nghĩa</b>{esc(r['meaning'])}</div>
         <div class="rec-line"><b>Đề xuất</b>{esc(r['action'])}</div>
-        <div class="rec-decision"><b>Đề nghị Ban lãnh đạo:</b> {esc(r['decision'])}</div>
+        <div class="rec-decision"><b>Đề nghị phê duyệt:</b> {esc(r['decision'])}</div>
         {refs_html}
       </div>""")
     # WeasyPrint has limited flex-wrap support, so pair the cards into explicit
@@ -1750,8 +1752,8 @@ def _recommendations_compact_html(recs: List[Dict[str, Any]], limit: int = 4) ->
             pair.append('<div class="rec-card compact spacer"></div>')
         rows.append(f'<div class="rec-row">{"".join(pair)}</div>')
     if hidden:
-        rows.append(f'<div class="small-note" style="margin-top:4px;">+{hidden} đề xuất khác (ưu tiên thấp hơn) được liệt kê đầy đủ trong '
-                    'Danh mục quyết định ở trang 2 và trong Báo cáo Kỹ thuật.</div>')
+        rows.append(f'<div class="small-note" style="margin-top:4px;">+{hidden} đề xuất khác (ưu tiên thấp hơn) được liệt kê trong '
+                    'Danh mục quyết định và Báo cáo Kỹ thuật.</div>')
     return "".join(rows)
 
 
@@ -1802,7 +1804,7 @@ def _exec_history_compact_html(history: Optional[Dict[str, Any]], vm_changes: Op
     if scope_clusters is not None:
         shown = ", ".join(scope_clusters[:4]) + (f" và {len(scope_clusters) - 4} cluster khác" if len(scope_clusters) > 4 else "")
         scope_txt = f" Phạm vi: cluster {shown}." if scope_clusters else " Phạm vi: không có cluster nào được chọn."
-    sub = (f"Từng cluster là một nhóm dự án độc lập; so sánh {_fmt_short_date(s.get('firstDate'))} → {_fmt_short_date(s.get('lastDate'))} "
+    sub = (f"Mỗi cluster do một System Owner phụ trách; so sánh {_fmt_short_date(s.get('firstDate'))} → {_fmt_short_date(s.get('lastDate'))} "
            f"qua {fmt_int(history.get('pointCount'))} ngày có snapshot. 100% = chạm ngưỡng overcommit đang áp dụng.{scope_txt}")
     cpu_chart = svg_line_chart(cpu_dates, cpu_series, width=330, height=chart_height)
     ram_chart = svg_line_chart(ram_dates, ram_series, width=330, height=chart_height)
@@ -1838,7 +1840,7 @@ def _exec_critical_table_html(findings: List[Dict[str, Any]], limit: int = 7) ->
     more_html = f'<div class="small-note">+{more} điểm nghiêm trọng khác — xem Báo cáo Kỹ thuật.</div>' if more > 0 else ""
     return (f'<table class="crit-table"><thead><tr><th style="width:56px;">Mã</th><th>Đối tượng</th><th>Cluster · vCenter</th><th>Vấn đề</th><th>Chỉ số</th></tr></thead><tbody>{rows}</tbody></table>{more_html}'
             f'<div class="small-note">Tổng finding: {fmt_int(sev["critical"])} nghiêm trọng · {fmt_int(sev["warning"])} cảnh báo · {fmt_int(sev["info"])} thông tin. '
-            f'Mã đối soát dùng chung với Báo cáo Kỹ thuật và tab Compliance trên web.</div>')
+            f'System Owner của cluster tương ứng xử lý theo mã; mã đối soát dùng chung với Báo cáo Kỹ thuật và tab Compliance trên web.</div>')
 
 
 def _exec_reference_html(include_storage: bool, months: int) -> str:
@@ -1912,14 +1914,13 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
         c["model"]["ramPct"] if _finite(c["model"]["ramPct"]) else -1), reverse=True)[:8]
 
     brief_html = _brief_html(brief)
-    # Page-2 budget: every extra decision-register row costs ~2 critical rows,
-    # a crowded page switches to denser spacing (see CSS .dense), and with five
-    # or more register rows the one-line finding title under each decision is
-    # dropped (it is still on the page-1 cards / Technical report).
-    extra_recs = max(0, len(brief["recommendations"]) - 3)
-    dense = extra_recs > 0 or include_storage
+    # Page budget: the operations report may run 2–3 A4 pages depending on
+    # content. Page 1 holds the summary, overview and recommendation cards;
+    # the rest flows from page 2, with the critical table + reference box kept
+    # together so a third page never contains only the small reference box.
+    dense = False
     decision_rows_html = _decision_register_html([r for r in brief["recommendations"] if r["priority"] in ("cao", "tb", "thap")],
-                                                 code_limit=0, show_title=extra_recs < 2)
+                                                 code_limit=0)
 
     ha_eligible = [r for r in ha_rows if r.get("eligible")]
     ha_fail = [r for r in ha_eligible if not r.get("survives")]
@@ -1945,7 +1946,7 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
 
     logo_html = f'<img class="cover-logo" src="{esc(logo_data_url)}"/>' if logo_data_url else ''
 
-    history_compact_html = _exec_history_compact_html(history, vm_changes, chart_height=78 if dense else 88)
+    history_compact_html = _exec_history_compact_html(history, vm_changes)
     months_win = (history or {}).get("months", 12)
     ha_by_cluster = {r["cluster"]: r for r in ha_rows}
 
@@ -1964,19 +1965,19 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
         <td>{ha_cell(c['name'])}</td>
         <td>{status_pill(c['overall'])}</td>
       </tr>""" for c in top_risk_clusters[:6])
-    recommendations_compact_html = _recommendations_compact_html(brief["recommendations"])
+    recommendations_compact_html = _recommendations_compact_html(brief["recommendations"], limit=6)
     outlook_html = _exec_outlook_table_html(model, headroom, growth, include_storage)
-    critical_html = _exec_critical_table_html(findings, limit=max(3, 7 - 2 * extra_recs - (1 if include_storage else 0)))
+    critical_html = _exec_critical_table_html(findings, limit=10)
     reference_html = _exec_reference_html(include_storage, months_win)
     storage_line = "" if include_storage else f'<div class="small-note" style="margin-top:3px;"><b>Storage không đánh giá:</b> {esc(STORAGE_EXCLUDED_NOTE)}</div>'
 
-    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"/><style>{_base_css('Báo cáo điều hành', generated_at)}{_exec_compact_css()}</style></head>
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"/><style>{_base_css('Báo cáo vận hành', generated_at)}{_exec_compact_css()}</style></head>
 <body class="exec-compact{' dense' if dense else ''}">
   <div class="cover-header">
     <div>
-      <div class="eyebrow">Infrastructure Capacity Ops · Executive Summary</div>
-      <div class="cover-title">Báo cáo Điều hành — Capacity Ops</div>
-      <div class="cover-sub">Tổng quan năng lực hạ tầng ảo hóa VMware phục vụ ra quyết định đầu tư và mở rộng. Chi tiết kỹ thuật tham chiếu Báo cáo Kỹ thuật cùng kỳ.</div>
+      <div class="eyebrow">Infrastructure Capacity Ops · Operations Summary</div>
+      <div class="cover-title">Báo cáo Vận hành — Capacity Ops</div>
+      <div class="cover-sub">Năng lực hạ tầng ảo hóa VMware theo cluster, các điểm cần xử lý và quyết định cần phê duyệt. Chi tiết kỹ thuật tại Báo cáo Kỹ thuật cùng kỳ.</div>
     </div>
     {logo_html}
   </div>
@@ -1992,7 +1993,7 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
 
   <div class="section">
     <div class="section-title">Tổng quan năng lực</div>
-    <div class="section-sub">Đồng hồ đo thể hiện mức đã dùng so với ngưỡng overcommit cho phép: xanh là an toàn, vàng (từ 80%) cần lên kế hoạch, 100% là vượt ngưỡng.</div>
+    <div class="section-sub">Mức đã dùng so với ngưỡng overcommit cho phép: xanh an toàn, vàng (từ 80%) cần lên kế hoạch, 100% vượt ngưỡng.</div>
     <div class="overview-row">
       <div class="gauge-row" style="flex-basis:{'57%' if include_storage else '46%'};">
         <div class="gauge-card {gauge_cpu_cls}">{gauge_cpu}<div class="kpi-label" style="margin-top:1px;">CPU</div><div class="gauge-caption">{esc(cpu_status['text'])} · overcommit {fmt_num(model['cpuOvercommit'],2,'x')} / tối đa {fmt_num(policy.cpu_overcommit_max,1,'x')}</div></div>
@@ -2014,14 +2015,14 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
   </div>
 
   <div class="section breakable">
-    <div class="section-title">Nhận định &amp; đề xuất cho Ban lãnh đạo</div>
-    <div class="section-sub">Mỗi đề xuất nêu ý nghĩa với hoạt động kinh doanh, việc cần làm và nội dung cần Ban lãnh đạo quyết định; mã đối soát dẫn tới dòng cụ thể trong Báo cáo Kỹ thuật (mục Compliance Findings đầy đủ) và tab Compliance trên web.</div>
+    <div class="section-title">Nhận định &amp; đề xuất</div>
+    <div class="section-sub">Mỗi đề xuất gồm ý nghĩa, việc cần làm và nội dung cần phê duyệt. Mã đối soát dẫn tới dòng cụ thể trong Báo cáo Kỹ thuật (Compliance Findings) và tab Compliance trên web.</div>
     {recommendations_compact_html}
   </div>
 
   <div class="section page-2">
-    <div class="section-title">Danh mục quyết định trình Ban lãnh đạo</div>
-    <div class="section-sub">Các nội dung cần phê duyệt hoặc ghi nhận chủ trương, xếp theo mức ưu tiên; ô cuối dành cho ý kiến/ký duyệt.</div>
+    <div class="section-title">Danh mục quyết định cần phê duyệt</div>
+    <div class="section-sub">Nội dung cần phê duyệt hoặc ghi nhận chủ trương, xếp theo ưu tiên; ô cuối dành cho ý kiến/ký duyệt.</div>
     <table>
       <thead><tr><th style="width:20px;text-align:center;">#</th><th>Nội dung quyết định</th><th>Ưu tiên</th><th>Thời điểm</th><th>Rủi ro tránh được / lợi ích</th><th>Ý kiến</th></tr></thead>
       <tbody>{decision_rows_html}</tbody>
@@ -2045,13 +2046,15 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
     <div class="small-note">Sắp theo mức dùng cao nhất; N+1 = còn giữ được ngưỡng nếu mất 1 host. Đủ {fmt_int(len(cluster_rows))} cluster tại Báo cáo Kỹ thuật.</div>
   </div>
 
-  <div class="section breakable">
-    <div class="section-title">Điểm nghiêm trọng cần IT xử lý</div>
+  <div class="keep-together">
+  <div class="section">
+    <div class="section-title">Điểm nghiêm trọng cần System Owner xử lý</div>
     {critical_html}
   </div>
 
   <div class="section" style="margin-top:7px;">
     {reference_html}
+  </div>
   </div>
 </body></html>"""
 
@@ -2273,7 +2276,7 @@ def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
 {datastore_sections_html}
   <div class="section">
     <div class="section-title">Compliance Findings đầy đủ ({fmt_int(len(findings))})</div>
-    <div class="small-note" style="margin-bottom:4px;">Cột "Mã" là mã đối soát ổn định theo đối tượng và loại vấn đề, trùng với mã trích dẫn trong Báo cáo Điều hành (mục Khuyến nghị / Đối soát) và tab Compliance trên web. Sắp xếp theo mức độ: nghiêm trọng trước.</div>
+    <div class="small-note" style="margin-bottom:4px;">Cột "Mã" là mã đối soát ổn định theo đối tượng và loại vấn đề, trùng với mã trích dẫn trong Báo cáo Vận hành (mục Nhận định & đề xuất / Đối soát) và tab Compliance trên web. Sắp xếp theo mức độ: nghiêm trọng trước.</div>
     <table>
       <thead><tr><th>Mã</th><th>Mức độ</th><th>Loại</th><th>Đối tượng</th><th>Cluster</th><th>Chỉ số</th><th>Khuyến nghị</th></tr></thead>
       <tbody>{findings_html}</tbody>

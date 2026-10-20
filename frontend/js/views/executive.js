@@ -195,12 +195,12 @@ function renderExecutiveBriefCard(brief) {
   card.innerHTML = `
     <div class="exec-brief-head">
       <span class="pill ${esc(brief.health_cls || '')}">${esc(brief.health_word || '')}</span>
-      <span class="exec-brief-kicker">Tóm tắt 30 giây cho Ban lãnh đạo · ${esc(brief.scope || '')}</span>
+      <span class="exec-brief-kicker">Tóm tắt · ${esc(brief.scope || '')}</span>
       ${storageNote}
     </div>
     <div class="exec-brief-headline">${esc(brief.headline || '')}</div>
     <ul class="exec-brief-points">${(brief.points || []).map(p => `<li>${esc(p)}</li>`).join('')}</ul>
-    <div class="exec-brief-decision"><strong>Quyết định cần từ Ban lãnh đạo:</strong> ${esc(brief.decision_line || '')}</div>`;
+    <div class="exec-brief-decision"><strong>Quyết định cần phê duyệt:</strong> ${esc(brief.decision_line || '')}</div>`;
 }
 
 function renderExecutiveRecommendations(brief) {
@@ -216,7 +216,7 @@ function renderExecutiveRecommendations(brief) {
       <div class="rec-block"><span class="rec-label">Điều này có nghĩa</span>${esc(r.meaning)}</div>
       <div class="rec-block"><span class="rec-label">Chúng tôi đề xuất</span>${esc(r.action)}</div>
       <div class="rec-block"><span class="rec-label">Nếu chưa hành động</span>${esc(r.impact)}</div>
-      <div class="rec-decision"><strong>Đề nghị Ban lãnh đạo:</strong> ${esc(r.decision)}</div>
+      <div class="rec-decision"><strong>Đề nghị phê duyệt:</strong> ${esc(r.decision)}</div>
       ${recRefsHtml(r)}
     </article>`).join('')}</div>`;
 }
@@ -269,7 +269,7 @@ async function renderExecutiveBrief() {
     const vcenter = (typeof currentVcenterFilter !== 'undefined' && currentVcenterFilter !== 'import') ? currentVcenterFilter : 'all';
     brief = await api.getManagementBrief(vcenter, !!appState.policy.includeStorage);
   } catch (err) {
-    brief = { available: false, message: `Không tải được nhận định cho Ban lãnh đạo: ${err.message || err}` };
+    brief = { available: false, message: `Không tải được nhận định: ${err.message || err}` };
   }
   renderExecutiveBriefCard(brief);
   renderExecutiveRecommendations(brief);

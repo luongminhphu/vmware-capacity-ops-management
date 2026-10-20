@@ -106,7 +106,7 @@ def export_pdf(
     except Exception as exc:  # pragma: no cover - surfaced to the UI
         raise HTTPException(status_code=500, detail=f"Không thể tạo PDF: {exc}")
 
-    label = "executive" if view == "executive" else "technical"
+    label = "van_hanh" if view == "executive" else "ky_thuat"
     filename = f"vco_report_{label}_{dt.datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.pdf"
     return StreamingResponse(
         iter([pdf_bytes]),

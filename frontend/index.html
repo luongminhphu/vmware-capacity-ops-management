@@ -120,11 +120,11 @@
               <button type="button" class="btn btn-secondary btn-sm" id="btnRemoveLogo">Xóa logo</button>
             </div>
           </div>
-          <p class="logo-upload-hint">Logo sẽ hiển thị ở góc trang bìa các báo cáo PDF (Điều hành &amp; Kỹ thuật). Khuyến nghị PNG/SVG nền trong suốt, tối đa 2MB.</p>
+          <p class="logo-upload-hint">Logo sẽ hiển thị ở góc trang bìa các báo cáo PDF (Vận hành &amp; Kỹ thuật). Khuyến nghị PNG/SVG nền trong suốt, tối đa 2MB.</p>
           <p class="logo-upload-status" id="logoUploadStatus"></p>
         </div>
       </details>
-      <button class="btn btn-secondary" id="btnExportPdfExec" type="button" title="Xuất báo cáo PDF khổ A4 dành cho lãnh đạo">Xuất PDF · Điều hành</button>
+      <button class="btn btn-secondary" id="btnExportPdfExec" type="button" title="Xuất Báo cáo Vận hành PDF khổ A4 (2–3 trang)">Xuất PDF · Vận hành</button>
       <button class="btn btn-secondary" id="btnExportPdfTech" type="button" title="Xuất báo cáo PDF khổ A4 chi tiết kỹ thuật">Xuất PDF · Kỹ thuật</button>
       <button class="btn icon-btn" id="themeToggle" type="button" aria-label="Chuyển dark/light mode" title="Chuyển dark/light mode">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
@@ -153,7 +153,7 @@
   <!-- ================= EXECUTIVE VIEW ================= -->
   <div id="executiveView" class="perspective-view hidden">
     <section class="card exec-brief-card" id="execBrief" aria-live="polite">
-      <div class="empty-state">Đang tổng hợp nhận định cho Ban lãnh đạo...</div>
+      <div class="empty-state">Đang tổng hợp nhận định...</div>
     </section>
 
     <section class="exec-grid" id="execKpis"></section>
@@ -183,14 +183,14 @@
 
     <section class="panel" id="execRecommendationsPanel">
       <div class="panel-head">
-        <div><div class="panel-title">Nhận định &amp; đề xuất cho Ban lãnh đạo</div><p class="panel-sub">Mỗi đề xuất trả lời: điều này có nghĩa gì với hoạt động kinh doanh, chúng tôi đề xuất làm gì, và điều gì xảy ra nếu chưa hành động.</p></div>
+        <div><div class="panel-title">Nhận định &amp; đề xuất</div><p class="panel-sub">Mỗi đề xuất gồm ý nghĩa, việc cần làm, rủi ro nếu chưa hành động và nội dung cần phê duyệt; System Owner của từng cluster chịu trách nhiệm xử lý.</p></div>
       </div>
       <div id="execRecommendations"></div>
     </section>
 
     <section class="panel" id="execDecisionPanel">
       <div class="panel-head">
-        <div><div class="panel-title">Danh mục quyết định trình Ban lãnh đạo</div><p class="panel-sub">Các nội dung cần phê duyệt hoặc ghi nhận chủ trương, xếp theo mức ưu tiên.</p></div>
+        <div><div class="panel-title">Danh mục quyết định cần phê duyệt</div><p class="panel-sub">Nội dung cần phê duyệt hoặc ghi nhận chủ trương, xếp theo ưu tiên.</p></div>
       </div>
       <div class="table-wrap"><table class="data-table" id="execDecisionTable">
         <thead><tr><th>#</th><th>Nội dung quyết định</th><th>Ưu tiên</th><th>Thời điểm</th><th>Rủi ro tránh được / lợi ích</th></tr></thead>

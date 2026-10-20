@@ -4,11 +4,12 @@
 live tới 4 vCenter (đọc chỉ đọc)** song song với import CSV/JSON thủ công, lưu lịch sử theo thời
 gian bằng PostgreSQL, và giao diện chia hai góc nhìn:
 
-- **Executive View** — "Tóm tắt 30 giây cho Ban lãnh đạo" (trạng thái sức khỏe, thông điệp chính,
-  điểm cần biết, quyết định cần đưa ra), KPI tổng năng lực CPU/RAM, xu hướng sử dụng theo thời
-  gian, dự báo bao lâu nữa hết công suất, top cluster rủi ro cao nhất, các thẻ **Nhận định & đề
-  xuất** (điều này có nghĩa gì / chúng tôi đề xuất / nếu chưa hành động / đề nghị Ban lãnh đạo) và
-  **Danh mục quyết định trình Ban lãnh đạo**. Dành cho lãnh đạo ra quyết định đầu tư/mở rộng.
+- **Executive View** — hộp "Tóm tắt" (trạng thái, thông điệp chính, điểm cần biết, quyết định cần
+  phê duyệt), KPI tổng năng lực CPU/RAM, xu hướng sử dụng theo thời gian, dự báo bao lâu nữa hết
+  công suất, top cluster rủi ro cao nhất, các thẻ **Nhận định & đề xuất** (ý nghĩa / việc cần làm /
+  nếu chưa hành động / đề nghị phê duyệt) và **Danh mục quyết định cần phê duyệt**. Văn phong ngắn
+  gọn; trách nhiệm xử lý quy về **System Owner của từng cluster** (mỗi cluster do một phòng ban
+  công nghệ phụ trách), không quy riêng cho IT.
 - **Technical View** — dashboard capacity chi tiết, bảng host/VM, compliance findings, what-if
   simulation (Add Host, Add VM, Resize VM, Decommission Idle VM + 6 scenario template dựng sẵn).
 
@@ -17,22 +18,24 @@ dùng tabular-nums, màu trạng thái AN TOÀN/THEO DÕI/VƯỢT NGƯỠNG nh�
 
 ### Xuất báo cáo PDF (khổ A4)
 
-Hai nút **Xuất PDF · Điều hành** và **Xuất PDF · Kỹ thuật** ở header tải báo cáo PDF khổ
+Hai nút **Xuất PDF · Vận hành** và **Xuất PDF · Kỹ thuật** ở header tải báo cáo PDF khổ
 A4 (in được trực tiếp) từ `GET /api/reports/pdf?view=executive|technical&vcenter=<key|all>`
 (yêu cầu đăng nhập), theo scope vCenter đang chọn trên thanh lọc:
 
-- **Báo cáo Điều hành** — **gọn trong 2 trang**, chỉ chứa thông tin tổng thể và tham chiếu chi
-  tiết sang Báo cáo Kỹ thuật:
-  - *Trang 1*: hộp "Tóm tắt 30 giây cho Ban lãnh đạo", đồng hồ (gauge) CPU/RAM (và Storage nếu
-    bật) đặt cạnh 4 KPI tổng quan, các thẻ nhận định & đề xuất xếp 2 cột (ý nghĩa kinh doanh →
-    đề xuất → đề nghị Ban lãnh đạo, kèm mã đối soát).
-  - *Trang 2*: **Danh mục quyết định trình Ban lãnh đạo** có ô ký ý kiến (kèm rủi ro tránh
-    được), bảng "Dư địa & dự báo" (hiện tại / dư địa / còn nạp thêm / tháng tới ngưỡng theo 3 kịch
-    bản), kết luận dự phòng N+1, biểu đồ biến động CPU/RAM theo cluster, bảng cluster cần quan tâm
-    (có cột N+1), bảng **điểm nghiêm trọng cần IT xử lý** (chỉ severity critical, có Mã) và hộp
-    "Tham chiếu chi tiết tại Báo cáo Kỹ thuật" chỉ rõ mục tương ứng cho từng nội dung.
+- **Báo cáo Vận hành** (`view=executive`) — **2–3 trang tùy nội dung**, chỉ chứa thông tin tổng
+  thể và tham chiếu chi tiết sang Báo cáo Kỹ thuật; câu chữ ngắn gọn, trách nhiệm xử lý quy về
+  System Owner của từng cluster:
+  - *Trang 1*: hộp "Tóm tắt", đồng hồ (gauge) CPU/RAM (và Storage nếu bật) đặt cạnh 4 KPI tổng
+    quan, các thẻ nhận định & đề xuất xếp 2 cột (ý nghĩa → việc cần làm → đề nghị phê duyệt, kèm
+    mã đối soát; tối đa 6 thẻ).
+  - *Từ trang 2*: **Danh mục quyết định cần phê duyệt** có ô ký ý kiến (kèm rủi ro tránh được),
+    bảng "Dư địa & dự báo" (hiện tại / dư địa / còn nạp thêm / tháng tới ngưỡng theo 3 kịch bản),
+    kết luận dự phòng N+1, biểu đồ biến động CPU/RAM theo cluster, bảng cluster cần quan tâm (có
+    cột N+1), bảng **điểm nghiêm trọng cần System Owner xử lý** (chỉ severity critical, có Mã, tối
+    đa 10 dòng) và hộp "Tham chiếu chi tiết tại Báo cáo Kỹ thuật"; hai khối cuối luôn đi cùng nhau
+    để trang 3 (nếu có) không chỉ chứa hộp tham chiếu.
   - Các biểu đồ so sánh/rủi ro theo cluster, donut VM/finding, bảng lịch sử theo cluster và danh
-    sách cảnh báo/thông tin không còn nằm trong Báo cáo Điều hành — xem Báo cáo Kỹ thuật.
+    sách cảnh báo/thông tin không nằm trong Báo cáo Vận hành — xem Báo cáo Kỹ thuật.
 - **Báo cáo Kỹ thuật** — bảng overcommit theo cluster, chi tiết từng host, từng datastore, và
   toàn bộ compliance findings (sắp xếp theo severity). Dài hơn, dành cho đội kỹ thuật.
 
@@ -42,13 +45,13 @@ Mỗi compliance finding có một **mã đối soát ổn định** dạng `HRA
 theo loại: `HCPU`/`HRAM` host vượt ngưỡng, `CCPU`/`CRAM` overcommit cluster, `IDLE` VM idle,
 `POFF` VM tắt lâu, `OVP` VM over-provision; 5 ký tự hex là FNV-1a của
 `loại|vCenter|cluster|đối tượng`). Mã được tính giống nhau ở backend (`capacity.finding_code`) và
-web (`core.js findingCode`), nên cùng một vấn đề mang **cùng mã** ở Báo cáo Điều hành, Báo cáo
+web (`core.js findingCode`), nên cùng một vấn đề mang **cùng mã** ở Báo cáo Vận hành, Báo cáo
 Kỹ thuật, tab Compliance và file CSV export; mã không đổi giữa các kỳ nếu vấn đề vẫn còn.
 
-- Mỗi khuyến nghị trong Báo cáo Điều hành có dòng **"Đối soát"** liệt kê mã + đối tượng + chỉ số
-  đo được (ví dụ "4 điểm cần IT xử lý ngay" liệt kê đủ 4 mã; các danh sách dài như VM
+- Mỗi khuyến nghị trong Báo cáo Vận hành có dòng **"Đối soát"** liệt kê mã + đối tượng + chỉ số
+  đo được (ví dụ "4 điểm cần System Owner xử lý" liệt kê đủ 4 mã; các danh sách dài như VM
   over-provision hiển thị 6 mã đầu và "+n mã khác"). Danh mục quyết định cũng ghi mã tương ứng.
-- Bảng "Điểm nghiêm trọng cần IT xử lý" của Báo cáo Điều hành có cột **Mã** và liệt kê các điểm
+- Bảng "Điểm nghiêm trọng cần System Owner xử lý" của Báo cáo Vận hành có cột **Mã** và liệt kê các điểm
   severity critical (tối đa 8, phần còn lại ghi "+n"); bảng "Compliance Findings đầy đủ" của Báo
   cáo Kỹ thuật có cùng cột Mã và đủ mọi severity.
 - Trên web, bấm vào mã trong Executive View sẽ chuyển sang Technical → tab Compliance và lọc theo
@@ -69,7 +72,7 @@ và RAM luôn bật. Nút **Tiêu chí đánh giá** ở header cho phép bật 
 - Lựa chọn được lưu vào cài đặt ứng dụng (`include_storage`, chung cho mọi người dùng) và gửi
   theo mỗi lần xuất PDF (`&storage=1|0`); giá trị khởi tạo lấy từ biến môi trường
   `INCLUDE_STORAGE` (mặc định `false`).
-- API `GET /api/reports/brief?vcenter=<key|all>&storage=1|0` trả về bản tóm tắt cho Ban lãnh đạo
+- API `GET /api/reports/brief?vcenter=<key|all>&storage=1|0` trả về bản tóm tắt vận hành
   dạng JSON (cùng logic với PDF) để Executive View hiển thị.
 
 ### Biến động tài nguyên theo thời gian (snapshot history)
@@ -89,7 +92,7 @@ phụ:
   bảng delta, nhận định và danh sách VM thêm/bỏ chỉ tính cho cluster đó; Executive View luôn hiển
   thị mọi cluster trong phạm vi vCenter đang chọn.
 - Cùng số liệu được đưa vào PDF, luôn theo cluster và **theo đúng phạm vi cluster đã chọn khi xuất
-  báo cáo** (không lấy toàn bộ): Báo cáo Điều hành có mục *"Biến động tài nguyên N tháng gần
+  báo cáo** (không lấy toàn bộ): Báo cáo Vận hành có mục *"Biến động tài nguyên N tháng gần
   nhất"*; Báo cáo Kỹ thuật có mục tương tự và **Phụ lục A — VM thêm mới / loại bỏ** (vCenter,
   cluster, host, trạng thái, vCPU, RAM, ngày xuất hiện/thấy lần cuối; mục A.3–A.5 cho VM di
   chuyển/đổi tên/đổi cấu hình). Tham số
