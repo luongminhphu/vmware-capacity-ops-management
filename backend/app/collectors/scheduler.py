@@ -154,19 +154,40 @@ def _safe(v):
     return v if (v is not None and math.isfinite(v)) else None
 
 
+def _sync_vcenter_in_thread(
+    cfg: VCenterConfig,
+    app_settings: Settings,
+) -> None:
+    db = SessionLocal()
+    try:
+        sync_vcenter(db, cfg, app_settings)
+    finally:
+        db.close()
+
+
 async def scheduler_loop(app_settings: Settings):
-    """Background task started at FastAPI startup: polls every configured
-    vCenter on a fixed interval so Executive-view trend charts keep filling in
-    even when nobody has the dashboard open."""
+    """Poll vCenters sequentially without blocking the API event loop."""
     interval = max(5, app_settings.poll_interval_minutes) * 60
+
     while True:
-        vcenters = app_settings.vcenters()
-        for cfg in vcenters:
-            db = SessionLocal()
+        for cfg in app_settings.vcenters():
             try:
-                sync_vcenter(db, cfg, app_settings)
-            except Exception:  # noqa: BLE001
-                logger.warning("Scheduled sync failed for %s (will retry next cycle)", cfg.key)
-            finally:
-                db.close()
+                logger.info("Scheduled sync starting for %s", cfg.key)
+
+                await asyncio.to_thread(
+                    _sync_vcenter_in_thread,
+                    cfg,
+                    app_settings,
+                )
+
+                logger.info("Scheduled sync completed for %s", cfg.key)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception(
+                    "Scheduled sync failed for %s; "
+                    "will retry next cycle",
+                    cfg.key,
+                )
+
         await asyncio.sleep(interval)
