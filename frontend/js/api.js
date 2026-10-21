@@ -107,6 +107,34 @@ const api = {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   },
 
+  // Excel export of the rows currently shown in an Inventory table.
+  // payload: { filename, sheets: [{ name, columns: [{key,label,fmt}], rows }] }
+  downloadXlsx: async (payload) => {
+    const res = await fetch(`${API_BASE}/export/xlsx`, {
+      method: 'POST', credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (res.status === 401) {
+      if (window.onApiUnauthorized) window.onApiUnauthorized();
+      throw new ApiError(401, 'Phiên đăng nhập đã hết hạn.');
+    }
+    if (!res.ok) {
+      let detail = `Lỗi API (${res.status})`;
+      try { const data = await res.json(); if (data && data.detail) detail = data.detail; } catch { /* not JSON */ }
+      throw new ApiError(res.status, detail);
+    }
+    const blob = await res.blob();
+    const cd = res.headers.get('Content-Disposition') || '';
+    const match = /filename="?([^";]+)"?/.exec(cd);
+    const filename = match ? match[1] : `${payload.filename || 'export'}.xlsx`;
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  },
+
   // `clusters`: null/undefined = every cluster; array = only those clusters (project-team scope).
   getResourceHistory: (vcenter, months, group, clusters) => {
     const params = { vcenter: vcenter || 'all', months: String(months || 12), group: group || 'cluster' };

@@ -351,6 +351,7 @@
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
                 <input type="text" id="hostSearch" placeholder="Tìm host...">
               </div>
+              <button class="btn btn-secondary btn-sm" id="btnExportHostsXlsx" type="button" title="Xuất các host đang hiển thị (theo bộ lọc hiện tại) ra file Excel">Xuất Excel</button>
             </div>
           </div>
           <div class="table-scroll">
@@ -374,11 +375,15 @@
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
                 <input type="text" id="vmSearch" placeholder="Tìm VM, IP...">
               </div>
+              <select id="vmClusterFilter" title="Lọc VM theo cluster">
+                <option value="all">Mọi cluster</option>
+              </select>
               <select id="vmStatusFilter">
                 <option value="all">Mọi trạng thái</option>
                 <option value="on">Powered On</option>
                 <option value="off">Powered Off</option>
               </select>
+              <button class="btn btn-secondary btn-sm" id="btnExportVmsXlsx" type="button" title="Xuất các VM đang hiển thị (theo bộ lọc hiện tại) ra file Excel">Xuất Excel</button>
             </div>
           </div>
           <div class="table-scroll">

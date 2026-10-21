@@ -25,9 +25,11 @@ A4 (in được trực tiếp) từ `GET /api/reports/pdf?view=executive|technic
 - **Báo cáo Vận hành** (`view=executive`) — **2 trang** (tối đa 3), dành cho góc nhìn quản trị:
   ít chữ, nhiều biểu đồ, đủ ý để ra quyết định; phần giải thích chi tiết để ở Báo cáo Kỹ thuật.
   Trách nhiệm xử lý quy về System Owner của từng cluster:
-  - *Trang 1*: hộp **Kết luận** (1 câu + 5 ô số liệu: dư địa, số tháng tới ngưỡng, dự phòng N+1,
-    VM thu hồi được, số điểm nghiêm trọng + dòng "Cần phê duyệt"), gauge CPU/RAM (và Storage nếu
-    bật) cạnh 4 KPI, biểu đồ **Bao lâu nữa chạm ngưỡng** (3 kịch bản +5/+10/+20 %/quý, mốc 1–2–3
+  - *Trang 1*: tiêu đề gọn (dòng eyebrow ghi phạm vi + ngày; không có đoạn mô tả hay dòng meta
+    Phạm vi/Ngày/Trạng thái/Đồng bộ), ngay dưới là hộp **Tổng kết khuyến nghị** (trạng thái + 1 câu
+    kết luận + danh sách khuyến nghị đánh số: ưu tiên · đề xuất → đề nghị phê duyệt · thời điểm
+    + 5 ô số liệu: dư địa, số tháng tới ngưỡng, dự phòng N+1, VM thu hồi được, số điểm nghiêm
+    trọng), gauge CPU/RAM (và Storage nếu bật) cạnh 4 KPI, biểu đồ **Bao lâu nữa chạm ngưỡng** (3 kịch bản +5/+10/+20 %/quý, mốc 1–2–3
     năm) cạnh biểu đồ **Mức dùng theo cluster**, và một bảng **Đề xuất & quyết định cần phê duyệt**
     (đề xuất + 1 dòng việc cần làm → ưu tiên → thời điểm → đề nghị phê duyệt → ô ký; tối đa 6 dòng).
   - *Trang 2*: biểu đồ **Xu hướng** CPU/RAM theo cluster + 4 ô biến động (CPU, RAM, số VM, số
@@ -38,6 +40,15 @@ A4 (in được trực tiếp) từ `GET /api/reports/pdf?view=executive|technic
     sách cảnh báo/thông tin không nằm trong Báo cáo Vận hành — xem Báo cáo Kỹ thuật.
 - **Báo cáo Kỹ thuật** — bảng overcommit theo cluster, chi tiết từng host, từng datastore, và
   toàn bộ compliance findings (sắp xếp theo severity). Dài hơn, dành cho đội kỹ thuật.
+
+### Inventory — lọc VM theo cluster & xuất Excel
+
+Tab **Inventory** có bộ lọc **cluster riêng cho bảng VM** (độc lập với bộ lọc chung trên thanh
+công cụ; danh sách cluster tự cập nhật theo scope vCenter đang chọn) và hai nút **Xuất Excel**
+cho bảng Host và bảng VM. File `.xlsx` xuất **đúng những dòng đang hiển thị** (đã áp dụng scope
+vCenter, bộ lọc cluster/host/power/tìm kiếm và thứ tự sắp xếp), kèm sheet *Phạm vi* ghi scope,
+bộ lọc và thời điểm xuất. Backend tạo file bằng `openpyxl` tại `POST /api/export/xlsx`
+(yêu cầu đăng nhập; header cố định, autofilter, tối đa 100 000 dòng).
 
 ### Mã đối soát (ticket code) — dẫn chứng cho từng khuyến nghị
 

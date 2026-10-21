@@ -1780,9 +1780,17 @@ def svg_count_bars(rows: List[Dict[str, Any]], width: int = 200, color: Optional
 
 
 def _exec_summary_html(brief: Dict[str, Any]) -> str:
-    """Conclusion box: status pill, one-sentence headline, a row of number
-    tiles and the decision line. No explanatory prose."""
+    """Top-of-report 'Tổng kết khuyến nghị': status pill, one-sentence
+    headline, the numbered recommendation list (priority · proposal → decision
+    · timing) and a row of number tiles. No explanatory prose."""
     fg_key, bg_key = STATUS_COLOR.get(brief["health_cls"], STATUS_COLOR["na"])
+    rec_items = ""
+    for i, r in enumerate(brief.get("recommendations", [])[:6], 1):
+        rec_items += (f'<li class="rec-sum-item"><span class="rec-num">{i}</span>'
+                      f'<span class="priority-pill priority-{r["priority"]}">{PRIORITY_LABEL_VI.get(r["priority"], "")}</span>'
+                      f'<span class="rec-sum-text"><b>{esc(r["title"])}</b> — {esc(r["decision"].rstrip("."))}'
+                      f' <span class="rec-sum-time">· {esc(r["timeframe"])}</span></span></li>')
+    rec_list = f'<ol class="rec-sum">{rec_items}</ol>' if rec_items else '<div class="small-note">Không có khuyến nghị trong kỳ.</div>'
     tiles = ""
     for t in brief.get("stats", [])[:5]:
         cls = t.get("cls") or "na"
@@ -1794,11 +1802,11 @@ def _exec_summary_html(brief: Dict[str, Any]) -> str:
     <div class="exec-brief {brief['health_cls']}">
       <div class="exec-brief-head">
         <span class="pill" style="color:{COLORS[fg_key]};background:{COLORS[bg_key]};border-color:{COLORS[fg_key]}55;font-size:9px;">{esc(brief['health_word'])}</span>
-        <span class="exec-brief-title">Kết luận</span>
+        <span class="exec-brief-title">Tổng kết khuyến nghị</span>
       </div>
       <div class="exec-brief-headline">{esc(brief['headline'])}</div>
-      <div class="stat-row">{tiles}</div>
-      <div class="exec-brief-decision"><b>Cần phê duyệt:</b> {esc(brief['decision_line'])}</div>
+      {rec_list}
+      <div class="stat-row" style="margin-bottom:0;">{tiles}</div>
     </div>"""
 
 
@@ -1954,6 +1962,13 @@ def _exec_visual_css() -> str:
 .decision-table tr.tone-neutral td:first-child {{ border-left:3px solid {COLORS['warn']}; }}
 .decision-table tr.tone-ok td:first-child {{ border-left:3px solid {COLORS['primary']}; }}
 .ref-line {{ font-size:7.6px; color:{COLORS['muted']}; }}
+.rec-sum {{ list-style:none; margin:2px 0 6px; padding:0; }}
+.rec-sum-item {{ display:flex; align-items:flex-start; gap:6px; padding:2.5px 0; border-bottom:1px dashed {COLORS['border']}; font-size:8.6px; line-height:1.4; }}
+.rec-sum-item:last-child {{ border-bottom:none; }}
+.rec-sum-item .rec-num {{ flex:0 0 14px; width:14px; height:14px; line-height:14px; border-radius:50%; background:{COLORS['primary']}; color:#fff; font-size:7.6px; font-weight:700; text-align:center; margin-top:1px; }}
+.rec-sum-item .priority-pill {{ flex:0 0 96px; text-align:center; margin-top:1px; }}
+.rec-sum-text {{ flex:1; color:{COLORS['ink']}; }}
+.rec-sum-time {{ color:{COLORS['muted']}; font-size:7.6px; white-space:nowrap; }}
 .donut-legend {{ display:block; font-size:8px; color:{COLORS['muted']}; }}
 .donut-leg {{ display:block; white-space:nowrap; margin:2px 0; }}
 .donut-leg .dot {{ display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; vertical-align:middle; }}
@@ -1971,7 +1986,6 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
     all_findings = capacity.build_compliance_findings(hosts, vms, policy)
     type_filter = set(include_types) if include_types is not None else None
     findings = [f for f in all_findings if type_filter is None or f.get("type") in type_filter]
-    overall = _overall_status(model)
     generated_at = _now_str()
     include_storage = bool(getattr(policy, "include_storage", False))
 
@@ -2012,19 +2026,6 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
         c["model"]["ramPct"] if _finite(c["model"]["ramPct"]) else -1), reverse=True)[:8]
 
     summary_html = _exec_summary_html(brief)
-
-    scope_note = ""
-    if run_meta:
-        parts = []
-        for rm in run_meta:
-            ts_fmt = parse_iso_to_vn_str(rm.get("finishedAt"))
-            parts.append(f"{esc(rm.get('vcenterKey'))} ({ts_fmt})")
-        scope_note = " · ".join(parts)
-
-    filter_note = ""
-    if type_filter is not None and len(type_filter) < len(ALL_FINDING_TYPES):
-        excluded = [FINDING_TYPE_LABEL_VI.get(t, t) for t in ALL_FINDING_TYPES if t not in type_filter]
-        filter_note = f"Đã loại {len(excluded)}/{len(ALL_FINDING_TYPES)} loại finding: {', '.join(excluded)}."
 
     logo_html = f'<img class="cover-logo" src="{esc(logo_data_url)}"/>' if logo_data_url else ''
 
@@ -2077,18 +2078,10 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
 <body class="exec-compact">
   <div class="cover-header">
     <div>
-      <div class="eyebrow">Infrastructure Capacity Ops · Operations Summary</div>
-      <div class="cover-title">Báo cáo Vận hành — Capacity Ops</div>
-      <div class="cover-sub">Năng lực hạ tầng VMware, việc cần làm và quyết định cần phê duyệt. Chi tiết: Báo cáo Kỹ thuật cùng kỳ.</div>
+      <div class="eyebrow">Infrastructure Capacity Ops · {esc(scope_label)} · {esc(generated_at.split(' ')[-1])}</div>
+      <div class="cover-title" style="margin-bottom:6px;">Báo cáo Vận hành — Capacity Ops</div>
     </div>
     {logo_html}
-  </div>
-  <div class="meta-row">
-    <span>Phạm vi: <b>{esc(scope_label)}</b></span>
-    <span>Ngày báo cáo: <b>{generated_at}</b></span>
-    <span>Trạng thái: {status_pill(overall)}</span>
-    {f'<span>Đồng bộ vCenter: <b>{scope_note}</b></span>' if scope_note else ''}
-    {f'<span>{esc(filter_note)}</span>' if filter_note else ''}
   </div>
 
   {summary_html}

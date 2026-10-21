@@ -14,6 +14,7 @@ const appState = {
   hostTableSearch: '',
   vmTableSearch: '',
   vmStatusFilter: 'all',
+  vmClusterFilter: 'all',
   policy: { idleDays: 30, cpuWarn: 50, cpuHigh: 80, ramWarn: 50, ramHigh: 80, dsWarn: 70, dsHigh: 85, dsCrit: 95, cpuOvercommitMax: 6, ramOvercommitMax: 1.0, htFactor: 2, includeStorage: false },
   charts: {},
   simHistory: [],
@@ -895,8 +896,10 @@ function renderComplianceView() {
 }
 
 /* ---------- Inventory: Host table ---------- */
-function renderHostTable() {
-  let rows = buildHostRows().filter(h => {
+// Rows exactly as the Host table shows them (global filter + search + sort);
+// shared by the renderer and the Excel export so "what you see is what you get".
+function getHostTableRows() {
+  const rows = buildHostRows().filter(h => {
     if (appState.filters.cluster !== 'all' && h.cluster !== appState.filters.cluster) return false;
     if (appState.filters.host !== 'all' && h.host !== appState.filters.host) return false;
     if (appState.hostTableSearch.trim()) {
@@ -905,12 +908,14 @@ function renderHostTable() {
     }
     return true;
   });
+  return applySort(rows, 'hostTable', (r, key) => r[key]);
+}
 
+function renderHostTable() {
+  const rows = getHostTableRows();
   const tbody = $('#hostTable tbody');
   $('#hostRowCount').textContent = `${rows.length} hosts`;
   if (!rows.length) { tbody.innerHTML = `<tr><td colspan="10"><div class="empty-note">Không có host phù hợp.</div></td></tr>`; return; }
-
-  rows = applySort(rows, 'hostTable', (r, key) => r[key]);
 
   tbody.innerHTML = rows.map(h => `
     <tr>
@@ -929,8 +934,9 @@ function renderHostTable() {
 }
 
 /* ---------- Inventory: VM table ---------- */
-function renderVmTable() {
-  let rows = getFilteredVms().filter(v => {
+function getVmTableRows() {
+  const rows = getFilteredVms().filter(v => {
+    if (appState.vmClusterFilter !== 'all' && v.cluster !== appState.vmClusterFilter) return false;
     if (appState.vmStatusFilter === 'on' && !v.isPoweredOn) return false;
     if (appState.vmStatusFilter === 'off' && v.isPoweredOn) return false;
     if (appState.vmTableSearch.trim()) {
@@ -939,12 +945,26 @@ function renderVmTable() {
     }
     return true;
   }).map(v => ({ ...v, diskUsedPct: v.diskProvGB > 0 ? (v.diskUsedGB / v.diskProvGB) * 100 : NaN }));
+  return applySort(rows, 'vmTable', (r, key) => r[key]);
+}
 
+// Cluster dropdown of the VM table: clusters visible under the global
+// vCenter/cluster filter; keeps the current choice when still valid.
+function syncVmClusterFilterOptions() {
+  const sel = $('#vmClusterFilter');
+  if (!sel) return;
+  const clusters = Array.from(new Set(getFilteredVms().map(v => v.cluster))).sort((a, b) => a.localeCompare(b));
+  if (!clusters.includes(appState.vmClusterFilter)) appState.vmClusterFilter = 'all';
+  sel.innerHTML = `<option value="all">Mọi cluster (${clusters.length})</option>` +
+    clusters.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
+  sel.value = appState.vmClusterFilter;
+}
+
+function renderVmTable() {
+  const rows = getVmTableRows();
   const tbody = $('#vmTable tbody');
   $('#vmRowCount').textContent = `${rows.length} VMs`;
   if (!rows.length) { tbody.innerHTML = `<tr><td colspan="12"><div class="empty-note">Không có VM phù hợp.</div></td></tr>`; return; }
-
-  rows = applySort(rows, 'vmTable', (r, key) => r[key]);
 
   tbody.innerHTML = rows.map(v => `
     <tr>
@@ -965,6 +985,7 @@ function renderVmTable() {
 }
 
 function renderInventoryView() {
+  syncVmClusterFilterOptions();
   renderHostTable();
   renderVmTable();
   bindSortableHeaders('hostTable', 'hostTable', renderHostTable);
@@ -1443,6 +1464,70 @@ async function loadFileInput(input, target) {
   }
 }
 
+/* ---------- Export Excel (Inventory tables, as displayed) ---------- */
+function num(v, digits) {
+  if (v === null || v === undefined || !isFinite(v)) return null;
+  return digits === undefined ? v : Number(Number(v).toFixed(digits));
+}
+
+async function exportInventoryXlsx(kind, btn) {
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Đang tạo Excel...';
+  try {
+    const scope = [
+      currentVcenterFilter && currentVcenterFilter !== 'all' ? `vCenter ${currentVcenterFilter}` : 'Toàn bộ vCenter',
+      appState.filters.cluster !== 'all' ? `cluster ${appState.filters.cluster}` : null,
+    ].filter(Boolean).join(' · ');
+    let payload;
+    if (kind === 'hosts') {
+      const rows = getHostTableRows().map(h => ({
+        cluster: h.cluster, host: h.host, cores: num(h.cores), ramGB: num(h.ramGB, 1), vcpuUsed: num(h.vcpuUsed),
+        cpuPct: num(h.cpuPct, 1), ramUsedGB: num(h.ramUsedGB, 1), ramPct: num(h.ramPct, 1),
+        cpuOvercommit: num(h.cpuOvercommit, 2), ramOvercommit: num(h.ramOvercommit, 2), vmCount: num(h.vmCount), status: h.overall.text,
+      }));
+      payload = { filename: 'vco_hosts', sheets: [{ name: 'Hosts', rows, columns: [
+        { key: 'cluster', label: 'Cluster' }, { key: 'host', label: 'Host' }, { key: 'cores', label: 'CPU Cores', fmt: 'int' },
+        { key: 'ramGB', label: 'RAM GB', fmt: 'num1' }, { key: 'vcpuUsed', label: 'vCPU dùng', fmt: 'int' },
+        { key: 'cpuPct', label: 'CPU % (theo overcommit)', fmt: 'pct' }, { key: 'ramUsedGB', label: 'RAM dùng GB', fmt: 'num1' },
+        { key: 'ramPct', label: 'RAM % (theo overcommit)', fmt: 'pct' }, { key: 'cpuOvercommit', label: 'CPU overcommit (x)' },
+        { key: 'ramOvercommit', label: 'RAM overcommit (x)' }, { key: 'vmCount', label: 'Số VM', fmt: 'int' }, { key: 'status', label: 'Status' },
+      ] }] };
+    } else {
+      const rows = getVmTableRows().map(v => ({
+        cluster: v.cluster, host: v.host || '', vm: v.vm, powerState: v.powerState, ipAddress: v.ipAddress || '',
+        vcpu: num(v.vcpu), ramGB: num(v.ramGB, 1), diskProvGB: num(v.diskProvGB, 1), diskUsedGB: num(v.diskUsedGB, 1),
+        diskUsedPct: num(v.diskUsedPct, 1), datastore: v.datastore || '',
+        lastActivityDays: v.isPoweredOn ? num(v.lastActivityDays) : null,
+        powerOffDays: !v.isPoweredOn ? num(v.powerOffDays) : null,
+      }));
+      payload = { filename: 'vco_vms', sheets: [{ name: 'VMs', rows, columns: [
+        { key: 'cluster', label: 'Cluster' }, { key: 'host', label: 'Host' }, { key: 'vm', label: 'VM' }, { key: 'powerState', label: 'Power' },
+        { key: 'ipAddress', label: 'IP' }, { key: 'vcpu', label: 'vCPU', fmt: 'int' }, { key: 'ramGB', label: 'RAM GB', fmt: 'num1' },
+        { key: 'diskProvGB', label: 'Disk Prov GB', fmt: 'num1' }, { key: 'diskUsedGB', label: 'Disk Used GB', fmt: 'num1' },
+        { key: 'diskUsedPct', label: 'Disk Used %', fmt: 'pct' }, { key: 'datastore', label: 'Datastore' },
+        { key: 'lastActivityDays', label: 'Idle (ngày)', fmt: 'int' }, { key: 'powerOffDays', label: 'Tắt (ngày)', fmt: 'int' },
+      ] }] };
+    }
+    payload.sheets.push({ name: 'Phạm vi', columns: [{ key: 'k', label: 'Thông tin' }, { key: 'v', label: 'Giá trị' }], rows: [
+      { k: 'Phạm vi', v: scope },
+      { k: 'Số dòng', v: payload.sheets[0].rows.length },
+      { k: 'Bộ lọc bảng', v: kind === 'hosts'
+          ? (appState.hostTableSearch.trim() ? `tìm "${appState.hostTableSearch.trim()}"` : 'không')
+          : [appState.vmClusterFilter !== 'all' ? `cluster ${appState.vmClusterFilter}` : null,
+             appState.vmStatusFilter !== 'all' ? `power ${appState.vmStatusFilter}` : null,
+             appState.vmTableSearch.trim() ? `tìm "${appState.vmTableSearch.trim()}"` : null].filter(Boolean).join(' · ') || 'không' },
+      { k: 'Xuất lúc', v: new Date().toLocaleString('vi-VN') },
+    ] });
+    await api.downloadXlsx(payload);
+  } catch (err) {
+    showValidationBanner([`Không thể xuất Excel: ${err.message}`], []);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+}
+
 /* ---------- Export CSV ---------- */
 function csvEscape(v) {
   const s = String(v ?? '');
@@ -1577,6 +1662,9 @@ function bindGlobalInteractions() {
   $('#hostSearch').addEventListener('input', e => { appState.hostTableSearch = e.target.value; renderHostTable(); });
   $('#vmSearch').addEventListener('input', e => { appState.vmTableSearch = e.target.value; renderVmTable(); });
   $('#vmStatusFilter').addEventListener('change', e => { appState.vmStatusFilter = e.target.value; renderVmTable(); });
+  $('#vmClusterFilter').addEventListener('change', e => { appState.vmClusterFilter = e.target.value; renderVmTable(); });
+  $('#btnExportHostsXlsx').addEventListener('click', e => exportInventoryXlsx('hosts', e.currentTarget));
+  $('#btnExportVmsXlsx').addEventListener('click', e => exportInventoryXlsx('vms', e.currentTarget));
 
   $('#whatifClusterSelect').addEventListener('change', e => { appState.whatif.cluster = e.target.value; renderSimForm(); });
   $$('#simTabs .sim-tab').forEach(btn => btn.addEventListener('click', () => {
