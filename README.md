@@ -11,7 +11,7 @@ gian bằng PostgreSQL, và giao diện chia hai góc nhìn:
   gọn; trách nhiệm xử lý quy về **System Owner của từng cluster** (mỗi cluster do một phòng ban
   công nghệ phụ trách), không quy riêng cho IT.
 - **Technical View** — dashboard capacity chi tiết, bảng host/VM, compliance findings, what-if
-  simulation (Add Host, Add VM, Resize VM, Decommission Idle VM + 6 scenario template dựng sẵn).
+  simulation (Add Host, Upgrade Host, Add VM, Resize VM, Decommission Idle VM + 7 scenario template dựng sẵn).
 
 Giao diện dùng tone màu lạnh (slate-blue) đồng nhất ở cả dark và light theme, giá trị số
 dùng tabular-nums, màu trạng thái AN TOÀN/THEO DÕI/VƯỢT NGƯỠNG nhất quán.
