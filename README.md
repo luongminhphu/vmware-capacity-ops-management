@@ -11,7 +11,7 @@ gian bằng PostgreSQL, và giao diện chia hai góc nhìn:
   gọn; trách nhiệm xử lý quy về **System Owner của từng cluster** (mỗi cluster do một phòng ban
   công nghệ phụ trách), không quy riêng cho IT.
 - **Technical View** — dashboard capacity chi tiết, bảng host/VM, compliance findings, what-if
-  simulation (Add Host, Upgrade Host, Add VM, Resize VM, Decommission Idle VM + 7 scenario template dựng sẵn).
+  simulation (Add Host, Upgrade Host, Upgrade + Add Host, Add VM, Resize VM, Decommission Idle VM + 8 scenario template dựng sẵn).
 
 Giao diện dùng tone màu lạnh (slate-blue) đồng nhất ở cả dark và light theme, giá trị số
 dùng tabular-nums, màu trạng thái AN TOÀN/THEO DÕI/VƯỢT NGƯỠNG nhất quán.
@@ -76,6 +76,13 @@ quy đổi ra "tương đương bao nhiêu host trung bình" để so với phư
 N+1 sau nâng cấp (mất host lớn nhất mới) — vì nâng cấp tại chỗ không tăng số host nên không cải
 thiện dự phòng N+1. Template nhanh **Host upgrade** (RAM ×2 toàn bộ host) cũng dùng logic này
 (`getEffectiveData({ upgradeHosts })`).
+
+Tab **Upgrade + Add Host** gộp hai bước trong một kịch bản: (1) quy tắc nâng cấp cho host đang
+tick, (2) danh sách host mới (nhiều dòng), chạy một lần ra một kết quả before/after chung. Bảng
+chi tiết liệt kê cả host nâng cấp (Δ cores/RAM) lẫn host mới (nhãn "mới"), dòng tổng hợp tách
+riêng phần năng lực đến từ nâng cấp và từ host mới, số host trước → sau, và N+1 tính trên cụm
+sau thay đổi (mất host lớn nhất, kể cả host mới). Template **Upgrade + expansion** = RAM ×2 host
+hiện hữu + 1 host mới bằng host lớn nhất sau nâng cấp.
 
 ### Inventory — lọc VM theo cluster & xuất Excel
 

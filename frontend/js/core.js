@@ -1013,7 +1013,8 @@ const SCENARIO_TEMPLATES = [
   { id:'migration', title:'Migration', desc:'Di chuyển 30% VM từ cluster tải cao nhất sang cluster tải thấp nhất.' },
   { id:'costOpt', title:'Cost optimization', desc:'Decommission toàn bộ VM idle/tắt lâu để giải phóng tài nguyên.' },
   { id:'expansion', title:'Expansion plan', desc:'Thêm 1 host mới (trung bình cấu hình hiện có) vào cluster mục tiêu.' },
-  { id:'hostUpgrade', title:'Host upgrade', desc:'Nâng cấp tại chỗ toàn bộ host hiện hữu: RAM ×2, CPU cores giữ nguyên (so sánh với phương án mua host mới).' }
+  { id:'hostUpgrade', title:'Host upgrade', desc:'Nâng cấp tại chỗ toàn bộ host hiện hữu: RAM ×2, CPU cores giữ nguyên (so sánh với phương án mua host mới).' },
+  { id:'upgradeAndExpand', title:'Upgrade + expansion', desc:'Kết hợp: RAM ×2 cho host hiện hữu và thêm 1 host mới (cấu hình bằng host lớn nhất sau nâng cấp).' }
 ];
 
 function currentWhatifCluster() {
@@ -1127,7 +1128,8 @@ function ensureHostRows(cluster) {
   }
 }
 
-function renderAddHostForm(cluster, area) {
+function renderAddHostForm(cluster, area, opts) {
+  opts = opts || {};
   const rows = appState.whatif.drafts.addHostRows;
   area.innerHTML = `
     <div class="multi-row-list" id="addHostRowsList">
@@ -1143,7 +1145,7 @@ function renderAddHostForm(cluster, area) {
       `).join('')}
     </div>
     <div class="multi-row-add"><button class="btn btn-secondary btn-sm" id="btnAddHostRow" type="button">+ Thêm host</button></div>
-    <div class="sim-actions"><button class="btn btn-primary" id="btnRunAddHost" type="button">Chạy simulation (${rows.length} host)</button></div>
+    ${opts.embedded ? '' : `<div class="sim-actions"><button class="btn btn-primary" id="btnRunAddHost" type="button">Chạy simulation (${rows.length} host)</button></div>`}
   `;
 
   const syncRowsFromDom = () => {
@@ -1157,11 +1159,13 @@ function renderAddHostForm(cluster, area) {
     });
   };
 
+  appState.whatif.drafts.syncAddHostRows = syncRowsFromDom;
+
   $$('#addHostRowsList .btn-remove-row').forEach((btn, i) => {
     btn.onclick = () => {
       syncRowsFromDom();
       rows.splice(i, 1);
-      renderAddHostForm(cluster, area);
+      renderAddHostForm(cluster, area, opts);
     };
   });
 
@@ -1170,9 +1174,10 @@ function renderAddHostForm(cluster, area) {
     appState.whatif.drafts.addHostSeq += 1;
     const n = appState.whatif.drafts.addHostSeq;
     rows.push({ id: n, name: `NEW-HOST-0${n}`, cores: 32, ramGB: 256 });
-    renderAddHostForm(cluster, area);
+    renderAddHostForm(cluster, area, opts);
   };
 
+  if (opts.embedded) return;
   $('#btnRunAddHost').onclick = () => {
     syncRowsFromDom();
     const addHosts = rows.map(r => ({ cluster, host: r.name || 'NEW-HOST', cores: cleanNum(r.cores), ramGB: cleanNum(r.ramGB) }));
@@ -1285,7 +1290,8 @@ function applyUpgradeRule(h, u) {
 }
 
 /** Per-host before→after table, totals, equivalent-new-host comparison and N+1 check after the upgrade. */
-function buildUpgradeExtra(cluster, hosts, upgradeHosts) {
+function buildUpgradeExtra(cluster, hosts, upgradeHosts, addHosts) {
+  addHosts = addHosts || [];
   const byName = new Map(upgradeHosts.map(u => [u.host, u]));
   const changed = hosts.filter(h => byName.has(h.host));
   const dCores = changed.reduce((a, h) => a + (byName.get(h.host).cores - h.cores), 0);
@@ -1294,11 +1300,19 @@ function buildUpgradeExtra(cluster, hosts, upgradeHosts) {
   const avgRam = hosts.length ? hosts.reduce((a, h) => a + h.ramGB, 0) / hosts.length : 0;
   const eqCpu = avgCores > 0 ? dCores / avgCores : 0, eqRam = avgRam > 0 ? dRam / avgRam : 0;
 
-  // N+1 after upgrade: lose the (now) largest host by cores
-  const upgraded = hosts.map(h => byName.has(h.host) ? { ...h, ...byName.get(h.host) } : h);
+  // N+1 after the change: lose the (now) largest host by cores, new hosts included
+  const upgraded = hosts.map(h => byName.has(h.host) ? { ...h, ...byName.get(h.host) } : h).concat(addHosts);
   const biggest = [...upgraded].sort((a, b) => b.cores - a.cores || b.ramGB - a.ramGB)[0];
-  const n1 = modelWithOverrides(cluster, { upgradeHosts, removeHostNames: biggest ? [biggest.host] : [] });
+  const n1 = modelWithOverrides(cluster, { upgradeHosts, addHosts, removeHostNames: biggest ? [biggest.host] : [] });
   const n1Ok = upgraded.length >= 2 && isFinite(n1.cpuPct) && isFinite(n1.ramPct) && n1.cpuPct <= 100 && n1.ramPct <= 100;
+  const addCores = addHosts.reduce((a, h) => a + h.cores, 0), addRam = addHosts.reduce((a, h) => a + h.ramGB, 0);
+  const addRows = addHosts.map(h => `<tr><td><strong>${esc(h.host)}</strong> <span class="pill-mini" style="color:var(--ok)">mới</span></td>
+      <td class="mono">— → <strong>${fmtInt(h.cores)}</strong></td><td class="mono">— → <strong>${fmtNum(h.ramGB, 0)}</strong> GB</td>
+      <td class="mono">+${fmtInt(h.cores)}</td><td class="mono">+${fmtNum(h.ramGB, 0)} GB</td></tr>`).join('');
+  const combinedLine = addHosts.length
+    ? `Kết hợp: nâng cấp ${changed.length} host (${dCores >= 0 ? '+' : ''}${fmtInt(dCores)} cores, ${dRam >= 0 ? '+' : ''}${fmtNum(dRam, 0)} GB) + thêm ${addHosts.length} host mới (+${fmtInt(addCores)} cores, +${fmtNum(addRam, 0)} GB)
+       = <strong>tổng ${dCores + addCores >= 0 ? '+' : ''}${fmtInt(dCores + addCores)} cores, ${dRam + addRam >= 0 ? '+' : ''}${fmtNum(dRam + addRam, 0)} GB RAM</strong>; số host ${hosts.length} → ${hosts.length + addHosts.length}. `
+    : '';
 
   const rows = changed.map(h => {
     const u = byName.get(h.host);
@@ -1312,17 +1326,18 @@ function buildUpgradeExtra(cluster, hosts, upgradeHosts) {
   return `
     <div class="table-wrap" style="margin-top:.75rem;max-height:260px;overflow:auto;">
       <table class="data-table">
-        <thead><tr><th>Host nâng cấp</th><th>CPU cores</th><th>RAM</th><th>Δ cores</th><th>Δ RAM</th></tr></thead>
-        <tbody>${rows}</tbody>
+        <thead><tr><th>Host</th><th>CPU cores</th><th>RAM</th><th>Δ cores</th><th>Δ RAM</th></tr></thead>
+        <tbody>${rows}${addRows}</tbody>
       </table>
     </div>
-    <p class="panel-sub" style="margin-top:.5rem;">Nâng cấp <strong>${changed.length}/${hosts.length}</strong> host: tổng <strong>${dCores >= 0 ? '+' : ''}${fmtInt(dCores)} cores</strong>, <strong>${dRam >= 0 ? '+' : ''}${fmtNum(dRam, 0)} GB RAM</strong>
+    <p class="panel-sub" style="margin-top:.5rem;">${combinedLine}Nâng cấp <strong>${changed.length}/${hosts.length}</strong> host hiện hữu: <strong>${dCores >= 0 ? '+' : ''}${fmtInt(dCores)} cores</strong>, <strong>${dRam >= 0 ? '+' : ''}${fmtNum(dRam, 0)} GB RAM</strong>
       — tương đương ${fmtNum(eqCpu, 1)} host (CPU) / ${fmtNum(eqRam, 1)} host (RAM) so với host trung bình hiện có (${fmtInt(avgCores)} cores / ${fmtInt(avgRam)} GB).
-      N+1 sau nâng cấp (mất ${biggest ? esc(biggest.host) : 'host lớn nhất'}): <strong style="color:${n1Ok ? 'var(--ok)' : 'var(--crit)'}">${n1Ok ? 'Đạt' : 'Không đạt'}</strong>
-      (CPU ${fmtPct(n1.cpuPct)} · RAM ${fmtPct(n1.ramPct)}). Lưu ý: nâng cấp tại chỗ không tăng số host nên không cải thiện dự phòng N+1; cần xác nhận slot DIMM / socket CPU còn trống và downtime bảo trì từng host.</p>`;
+      N+1 sau thay đổi (mất ${biggest ? esc(biggest.host) : 'host lớn nhất'}): <strong style="color:${n1Ok ? 'var(--ok)' : 'var(--crit)'}">${n1Ok ? 'Đạt' : 'Không đạt'}</strong>
+      (CPU ${fmtPct(n1.cpuPct)} · RAM ${fmtPct(n1.ramPct)}). ${addHosts.length ? 'Host mới làm tăng số host nên cải thiện dự phòng N+1; phần nâng cấp tại chỗ chỉ tăng năng lực.' : 'Lưu ý: nâng cấp tại chỗ không tăng số host nên không cải thiện dự phòng N+1.'} Cần xác nhận slot DIMM / socket CPU còn trống và downtime bảo trì từng host.</p>`;
 }
 
-function renderUpgradeHostForm(cluster, area) {
+function renderUpgradeHostForm(cluster, area, opts) {
+  opts = opts || {};
   ensureUpgradeDraft(cluster);
   const u = appState.whatif.drafts.upgrade;
   const hosts = appState.hosts.filter(h => h.cluster === cluster).sort((a, b) => a.host.localeCompare(b.host));
@@ -1345,7 +1360,7 @@ function renderUpgradeHostForm(cluster, area) {
     </tr>`;
   }).join('');
   area.innerHTML = `
-    <p class="panel-sub">Mô phỏng nâng cấp tại chỗ (thêm DIMM / đổi CPU) cho các host đang chọn trong cluster ${esc(cluster)}. Quy tắc áp dụng cho từng host được tick.</p>
+    ${opts.embedded ? '' : `<p class="panel-sub">Mô phỏng nâng cấp tại chỗ (thêm DIMM / đổi CPU) cho các host đang chọn trong cluster ${esc(cluster)}. Quy tắc áp dụng cho từng host được tick.</p>`}
     <div class="sim-form-grid">
       <div class="field"><label>CPU cores</label><select id="upgCpuMode">${modeOpts(u.cpuMode, 'cores/host', 'cores/host')}</select></div>
       <div class="field"><label>Giá trị CPU</label><input id="upgCpuVal" value="${u.cpuVal}" ${u.cpuMode === 'keep' ? 'disabled' : ''}></div>
@@ -1358,26 +1373,66 @@ function renderUpgradeHostForm(cluster, area) {
         <tbody>${preview}</tbody>
       </table>
     </div>
-    <div class="sim-actions"><button class="btn btn-primary" id="btnRunUpgrade" type="button" ${u.selected.size ? '' : 'disabled'}>Chạy simulation (${u.selected.size} host)</button></div>
+    ${opts.embedded ? '' : `<div class="sim-actions"><button class="btn btn-primary" id="btnRunUpgrade" type="button" ${u.selected.size ? '' : 'disabled'}>Chạy simulation (${u.selected.size} host)</button></div>`}
   `;
   const sync = () => {
     u.cpuMode = $('#upgCpuMode').value; u.cpuVal = $('#upgCpuVal').value;
     u.ramMode = $('#upgRamMode').value; u.ramVal = $('#upgRamVal').value;
   };
-  const rerender = () => { sync(); renderUpgradeHostForm(cluster, area); };
+  appState.whatif.drafts.syncUpgrade = sync;
+  const rerender = () => { sync(); renderUpgradeHostForm(cluster, area, opts); };
   $('#upgCpuMode').onchange = rerender; $('#upgRamMode').onchange = rerender;
   $('#upgCpuVal').onchange = rerender; $('#upgRamVal').onchange = rerender;
-  $$('.upgHostChk').forEach(chk => chk.onchange = () => { sync(); if (chk.checked) u.selected.add(chk.dataset.host); else u.selected.delete(chk.dataset.host); renderUpgradeHostForm(cluster, area); });
-  $('#upgSelectAll').onchange = (e) => { sync(); u.selected = new Set(e.target.checked ? hosts.map(h => h.host) : []); renderUpgradeHostForm(cluster, area); };
+  $$('.upgHostChk').forEach(chk => chk.onchange = () => { sync(); if (chk.checked) u.selected.add(chk.dataset.host); else u.selected.delete(chk.dataset.host); renderUpgradeHostForm(cluster, area, opts); });
+  $('#upgSelectAll').onchange = (e) => { sync(); u.selected = new Set(e.target.checked ? hosts.map(h => h.host) : []); renderUpgradeHostForm(cluster, area, opts); };
+  if (opts.embedded) return;
   $('#btnRunUpgrade').onclick = () => {
     sync();
-    const targets = hosts.filter(h => u.selected.has(h.host));
-    const upgradeHosts = targets.map(h => ({ cluster, host: h.host, ...applyUpgradeRule(h, u) }));
-    const changed = upgradeHosts.filter((x, i) => x.cores !== targets[i].cores || x.ramGB !== targets[i].ramGB);
+    const { upgradeHosts, changed } = collectUpgradeHosts(cluster, hosts, u);
     if (!changed.length) { showValidationBanner([], ['Chưa có thay đổi cấu hình nào: chọn "Đặt thành", "Cộng thêm" hoặc "Tăng theo %" cho CPU hoặc RAM.']); return; }
     const before = baseModelForCluster(cluster);
     const after = modelWithOverrides(cluster, { upgradeHosts });
     renderSimResult(cluster, before, after, buildUpgradeExtra(cluster, hosts, upgradeHosts), `Upgrade Host (${changed.length} host)`);
+  };
+}
+
+/** Upgrade rows for the selected hosts of a cluster + the subset that actually changes. */
+function collectUpgradeHosts(cluster, hosts, u) {
+  const targets = hosts.filter(h => u.selected && u.selected.has(h.host));
+  const upgradeHosts = targets.map(h => ({ cluster, host: h.host, ...applyUpgradeRule(h, u) }));
+  const changed = upgradeHosts.filter((x, i) => x.cores !== targets[i].cores || x.ramGB !== targets[i].ramGB);
+  return { upgradeHosts, changed };
+}
+
+/* ---------- Combined: upgrade existing hosts + add new hosts ---------- */
+function renderUpgradeAndAddForm(cluster, area) {
+  ensureUpgradeDraft(cluster);
+  ensureHostRows(cluster);
+  const hosts = appState.hosts.filter(h => h.cluster === cluster).sort((a, b) => a.host.localeCompare(b.host));
+  if (!hosts.length) { area.innerHTML = `<div class="empty-note">Cluster không có host nào.</div>`; return; }
+  area.innerHTML = `
+    <p class="panel-sub">Kịch bản kết hợp cho cluster ${esc(cluster)}: nâng cấp tại chỗ các host đang tick <em>và</em> bổ sung host mới. Kết quả tính chung một lần, kể cả kiểm tra N+1.</p>
+    <h5 class="sim-step-title">1 · Nâng cấp host hiện hữu (CPU, RAM)</h5>
+    <div id="combUpgradeBlock"></div>
+    <h5 class="sim-step-title">2 · Bổ sung host mới</h5>
+    <div id="combAddBlock"></div>
+    <div class="sim-actions"><button class="btn btn-primary" id="btnRunCombined" type="button">Chạy simulation kết hợp</button></div>
+  `;
+  renderUpgradeHostForm(cluster, $('#combUpgradeBlock'), { embedded: true });
+  renderAddHostForm(cluster, $('#combAddBlock'), { embedded: true });
+  $('#btnRunCombined').onclick = () => {
+    const d = appState.whatif.drafts;
+    if (d.syncUpgrade) d.syncUpgrade();
+    if (d.syncAddHostRows) d.syncAddHostRows();
+    const { upgradeHosts, changed } = collectUpgradeHosts(cluster, hosts, d.upgrade);
+    const addHosts = d.addHostRows
+      .map(r => ({ cluster, host: r.name || 'NEW-HOST', cores: cleanNum(r.cores), ramGB: cleanNum(r.ramGB) }))
+      .filter(h => isFinite(h.cores) && h.cores > 0 && isFinite(h.ramGB) && h.ramGB > 0);
+    if (!changed.length && !addHosts.length) { showValidationBanner([], ['Chưa có thay đổi nào: đặt quy tắc nâng cấp cho host đang tick hoặc nhập ít nhất một host mới.']); return; }
+    const before = baseModelForCluster(cluster);
+    const after = modelWithOverrides(cluster, { upgradeHosts, addHosts });
+    const title = `Upgrade + Add Host (nâng cấp ${changed.length} · thêm ${addHosts.length})`;
+    renderSimResult(cluster, before, after, buildUpgradeExtra(cluster, hosts, upgradeHosts, addHosts), title);
   };
 }
 
@@ -1393,6 +1448,8 @@ function renderSimForm() {
     renderAddHostForm(cluster, area);
   } else if (tab === 'upgradeHost') {
     renderUpgradeHostForm(cluster, area);
+  } else if (tab === 'upgradeAndAdd') {
+    renderUpgradeAndAddForm(cluster, area);
   } else if (tab === 'addVm') {
     ensureVmRows(cluster);
     renderAddVmForm(cluster, area);
@@ -1489,6 +1546,15 @@ function runScenarioTemplate(id) {
     after = modelWithOverrides(cluster, { upgradeHosts });
     title = 'Scenario: Host upgrade (RAM ×2 toàn bộ host)';
     extra = buildUpgradeExtra(cluster, hosts, upgradeHosts);
+  } else if (id === 'upgradeAndExpand') {
+    const hosts = appState.hosts.filter(h => h.cluster === cluster);
+    if (!hosts.length) return;
+    const upgradeHosts = hosts.map(h => ({ cluster, host: h.host, cores: h.cores, ramGB: h.ramGB * 2 }));
+    const maxCores = Math.max(...hosts.map(h => h.cores)), maxRam = Math.max(...upgradeHosts.map(h => h.ramGB));
+    const addHosts = [{ cluster, host: 'EXPANSION-HOST', cores: maxCores, ramGB: maxRam }];
+    after = modelWithOverrides(cluster, { upgradeHosts, addHosts });
+    title = 'Scenario: Upgrade + expansion (RAM ×2 + 1 host mới)';
+    extra = buildUpgradeExtra(cluster, hosts, upgradeHosts, addHosts);
   }
 
   renderSimResult(cluster, before, after, extra, title);

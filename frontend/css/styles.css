@@ -106,6 +106,8 @@ h1{font-family:var(--font-body);font-size:var(--text-xl);font-weight:700;line-he
 .planning-field select,.planning-field input{min-height:32px;padding:.4rem .6rem;border:1.5px solid var(--border-strong);border-radius:var(--radius-sm);background:var(--surface-3);color:var(--text);font-size:var(--text-sm);width:100%;}
 .planning-field select:focus,.planning-field input:focus{outline:none;border-color:var(--primary);}
 .planning-row{display:flex;gap:var(--space-2);}
+.sim-step-title{margin:var(--space-3) 0 var(--space-2);font-size:var(--text-sm);font-weight:700;color:var(--text);padding-left:.6rem;border-left:3px solid var(--primary);}
+.pill-mini{display:inline-block;font-size:10px;font-weight:700;padding:0 .4rem;border-radius:999px;border:1px solid currentColor;margin-left:.3rem;vertical-align:middle;}
 .logo-upload-preview-row{display:flex;align-items:center;gap:var(--space-3);}
 .logo-upload-preview{flex:0 0 auto;width:88px;height:56px;border:1px dashed var(--border-strong);border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;background:var(--surface-2);overflow:hidden;}
 .logo-upload-preview img{max-width:100%;max-height:100%;object-fit:contain;}
