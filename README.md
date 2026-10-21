@@ -38,8 +38,13 @@ A4 (in được trực tiếp) từ `GET /api/reports/pdf?view=executive|technic
     Mã, và một dòng tham chiếu sang Báo cáo Kỹ thuật.
   - Các biểu đồ so sánh/rủi ro theo cluster, donut VM/finding, bảng lịch sử theo cluster và danh
     sách cảnh báo/thông tin không nằm trong Báo cáo Vận hành — xem Báo cáo Kỹ thuật.
-- **Báo cáo Kỹ thuật** — bảng overcommit theo cluster, chi tiết từng host, từng datastore, và
-  toàn bộ compliance findings (sắp xếp theo severity). Dài hơn, dành cho đội kỹ thuật.
+- **Báo cáo Kỹ thuật** — cùng bố cục mở đầu với Báo cáo Vận hành: tiêu đề gọn (eyebrow ghi
+  phạm vi + ngày, không có đoạn mô tả hay dòng meta/chính sách), rồi hộp **Tổng kết khuyến nghị**
+  giống hệt (cùng kết luận, cùng danh sách khuyến nghị và 5 ô số liệu) cộng thêm một hàng 5 ô
+  kỹ thuật: Hosts/VMs, CPU overcommit và RAM overcommit thực tế so với ngưỡng (kèm hệ số HT),
+  số findings critical/warning/info, chính sách idle + Storage. Phần còn lại là bảng overcommit
+  theo cluster, chi tiết từng host, từng datastore, và toàn bộ compliance findings (sắp xếp theo
+  severity). Dài hơn, dành cho đội kỹ thuật.
 
 ### Inventory — lọc VM theo cluster & xuất Excel
 

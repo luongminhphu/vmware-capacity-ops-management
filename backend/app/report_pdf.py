@@ -1779,7 +1779,18 @@ def svg_count_bars(rows: List[Dict[str, Any]], width: int = 200, color: Optional
     return "".join(parts)
 
 
-def _exec_summary_html(brief: Dict[str, Any]) -> str:
+def _stat_tiles_html(stats: List[Dict[str, Any]], limit: int = 5) -> str:
+    tiles = ""
+    for t in stats[:limit]:
+        cls = t.get("cls") or "na"
+        tfg, _ = STATUS_COLOR.get(cls, STATUS_COLOR["na"])
+        tiles += (f'<div class="stat-tile"><div class="stat-label">{esc(t["label"])}</div>'
+                  f'<div class="stat-value" style="color:{COLORS[tfg] if cls != "na" else COLORS["ink"]};">{esc(t["value"])}</div>'
+                  f'<div class="stat-sub">{esc(t.get("sub") or "")}</div></div>')
+    return tiles
+
+
+def _exec_summary_html(brief: Dict[str, Any], extra_stats: Optional[List[Dict[str, Any]]] = None) -> str:
     """Top-of-report 'Tổng kết khuyến nghị': status pill, one-sentence
     headline, the numbered recommendation list (priority · proposal → decision
     · timing) and a row of number tiles. No explanatory prose."""
@@ -1791,13 +1802,9 @@ def _exec_summary_html(brief: Dict[str, Any]) -> str:
                       f'<span class="rec-sum-text"><b>{esc(r["title"])}</b> — {esc(r["decision"].rstrip("."))}'
                       f' <span class="rec-sum-time">· {esc(r["timeframe"])}</span></span></li>')
     rec_list = f'<ol class="rec-sum">{rec_items}</ol>' if rec_items else '<div class="small-note">Không có khuyến nghị trong kỳ.</div>'
-    tiles = ""
-    for t in brief.get("stats", [])[:5]:
-        cls = t.get("cls") or "na"
-        tfg, _ = STATUS_COLOR.get(cls, STATUS_COLOR["na"])
-        tiles += (f'<div class="stat-tile"><div class="stat-label">{esc(t["label"])}</div>'
-                  f'<div class="stat-value" style="color:{COLORS[tfg] if cls != "na" else COLORS["ink"]};">{esc(t["value"])}</div>'
-                  f'<div class="stat-sub">{esc(t.get("sub") or "")}</div></div>')
+    tiles = _stat_tiles_html(brief.get("stats", []))
+    extra_row = (f'<div class="stat-row" style="margin:6px 0 0;">{_stat_tiles_html(extra_stats)}</div>'
+                 if extra_stats else "")
     return f"""
     <div class="exec-brief {brief['health_cls']}">
       <div class="exec-brief-head">
@@ -1807,6 +1814,7 @@ def _exec_summary_html(brief: Dict[str, Any]) -> str:
       <div class="exec-brief-headline">{esc(brief['headline'])}</div>
       {rec_list}
       <div class="stat-row" style="margin-bottom:0;">{tiles}</div>
+      {extra_row}
     </div>"""
 
 
@@ -2169,18 +2177,30 @@ def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
         key=lambda f: {"critical": 0, "warning": 1, "info": 2}.get(f.get("severity"), 3))
     generated_at = _now_str()
     sev = _severity_counts(findings)
-    filter_note = ""
-    if type_filter is not None and len(type_filter) < len(ALL_FINDING_TYPES):
-        excluded = [FINDING_TYPE_LABEL_VI.get(t, t) for t in ALL_FINDING_TYPES if t not in type_filter]
-        filter_note = f"Đã loại {len(excluded)}/{len(ALL_FINDING_TYPES)} loại finding khỏi báo cáo: {', '.join(excluded)}."
-
-    policy_note = (f"Ngưỡng overcommit CPU {policy.cpu_overcommit_max:.1f}x · RAM {policy.ram_overcommit_max:.1f}x · "
-                   f"Hệ số HT {policy.ht_factor:.1f}x · Ngưỡng idle {policy.idle_days} ngày · "
-                   f"Storage: {'có đánh giá' if include_storage else 'không đánh giá (SAN)'}")
 
     headroom = capacity.estimate_capacity_headroom(model, vms, policy)
     growth = capacity.estimate_growth_scenarios(model)
     ha_rows = capacity.evaluate_ha_headroom(hosts, vms, policy)
+    # Same "Tổng kết khuyến nghị" box as the Operations report, plus one row
+    # of technical facts (replaces the former meta/policy lines).
+    brief = _management_brief(model, cluster_rows, findings, policy, vms, hosts, headroom, growth, ha_rows)
+    cpu_oc, ram_oc = model.get("cpuOvercommit"), model.get("ramOvercommit")
+    cpu_cls = capacity.get_status_for_pct(model.get("cpuPct"), 80, 100)["cls"]
+    ram_cls = capacity.get_status_for_pct(model.get("ramPct"), 80, 100)["cls"]
+    sev_cls = "crit" if sev["critical"] else ("warn" if sev["warning"] else "ok")
+    tech_stats = [
+        {"label": "Hosts / VMs", "value": f"{fmt_int(model['hostCount'])} / {fmt_int(model['vmCount'])}",
+         "sub": f"{fmt_int(model['poweredOnCount'])} bật · {fmt_int(model['poweredOffCount'])} tắt · {fmt_int(len(cluster_rows))} cluster", "cls": "na"},
+        {"label": "CPU overcommit", "value": fmt_num(cpu_oc, 2, "x"),
+         "sub": f"= {fmt_pct(model.get('cpuPct'))} ngưỡng {policy.cpu_overcommit_max:.1f}x · HT {policy.ht_factor:.1f}x", "cls": cpu_cls},
+        {"label": "RAM overcommit", "value": fmt_num(ram_oc, 2, "x"),
+         "sub": f"= {fmt_pct(model.get('ramPct'))} ngưỡng {policy.ram_overcommit_max:.1f}x", "cls": ram_cls},
+        {"label": "Findings", "value": f"{fmt_int(sev['critical'])} / {fmt_int(sev['warning'])} / {fmt_int(sev['info'])}",
+         "sub": "critical / warning / info", "cls": sev_cls},
+        {"label": "Chính sách", "value": f"Idle {policy.idle_days} ngày",
+         "sub": f"Storage: {'có đánh giá' if include_storage else 'không đánh giá (SAN)'}", "cls": "na"},
+    ]
+    summary_html = _exec_summary_html(brief, extra_stats=tech_stats)
     expansion_actions = _technical_headroom_actions(cluster_rows, policy)
     headroom_html = _headroom_cards_html(headroom, include_storage)
     growth_rows_html = _growth_scenario_rows_html(growth, include_storage)
@@ -2275,28 +2295,16 @@ def render_technical_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
   </div>
 """ if include_storage else ""
 
-    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"/><style>{_base_css('Báo cáo kỹ thuật', generated_at)}</style></head>
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"/><style>{_base_css('Báo cáo kỹ thuật', generated_at)}{_exec_visual_css()}</style></head>
 <body>
   <div class="cover-header">
     <div>
-      <div class="eyebrow">Infrastructure Capacity Ops · Technical Detail</div>
-      <div class="cover-title">Báo cáo Kỹ thuật — Capacity Ops</div>
-      <div class="cover-sub">Chi tiết overcommit, host{', datastore' if include_storage else ''} và compliance findings phục vụ vận hành kỹ thuật.</div>
+      <div class="eyebrow">Infrastructure Capacity Ops · Technical Detail · {esc(scope_label)} · {esc(generated_at.split(' ')[-1])}</div>
+      <div class="cover-title" style="margin-bottom:6px;">Báo cáo Kỹ thuật — Capacity Ops</div>
     </div>
     {logo_html}
   </div>
-  <div class="meta-row">
-    <span>Phạm vi: <b>{esc(scope_label)}</b></span>
-    <span>Thời điểm tạo báo cáo: <b>{generated_at}</b></span>
-    <span>{esc(policy_note)}</span>
-  </div>
-  <div class="meta-row" style="margin-top:-10px;">
-    <span class="chip">{fmt_int(model['hostCount'])} hosts</span>
-    <span class="chip">{fmt_int(model['vmCount'])} VMs</span>
-    <span class="chip">{fmt_int(sev['critical'])} nghiêm trọng</span>
-    <span class="chip">{fmt_int(sev['warning'])} cảnh báo</span>
-    <span class="chip">{fmt_int(sev['info'])} thông tin</span>
-  </div>
+  {summary_html}
   {storage_excluded_html}
 
   <div class="section">
