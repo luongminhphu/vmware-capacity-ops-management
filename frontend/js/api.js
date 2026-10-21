@@ -70,8 +70,10 @@ const api = {
 
   /* PDF report is a binary download, not JSON — bypasses apiRequest and
      streams the response straight into a file-save via an object URL. */
-  downloadPdfReport: async (view, vcenter, types, clusters, hosts, includeStorage, months) => {
+  downloadPdfReport: async (view, vcenter, types, clusters, hosts, includeStorage, months, extra) => {
     const params = { view, vcenter: vcenter || 'all' };
+    // Report-specific extras (e.g. planning assumptions); skip empty values.
+    if (extra) Object.entries(extra).forEach(([k, v]) => { if (v !== null && v !== undefined && v !== '') params[k] = String(v); });
     // Snapshot-history window (3/6/12 months) for the trend section + VM appendix.
     if (months) params.months = String(months);
     // Storage criteria toggle: always sent explicitly so the PDF matches what

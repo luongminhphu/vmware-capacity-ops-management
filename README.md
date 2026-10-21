@@ -46,6 +46,26 @@ A4 (in được trực tiếp) từ `GET /api/reports/pdf?view=executive|technic
   theo cluster, chi tiết từng host, từng datastore, và toàn bộ compliance findings (sắp xếp theo
   severity). Dài hơn, dành cho đội kỹ thuật.
 
+### Báo cáo Quy hoạch tài nguyên (Resource Planning)
+
+Nút **Xuất PDF · Quy hoạch** mở bảng giả định rồi tạo `view=planning` (3–4 trang) để làm căn cứ
+đề xuất mở rộng hạ tầng. Tham số (đều là query param của `GET /api/reports/pdf`):
+`horizon` (12–60 tháng, mặc định 36), `growth` (các kịch bản %/quý, mặc định `5,10,20` =
+Thấp/Cơ sở/Cao), `node_cores` + `node_ram` (spec node mới; để trống = host lớn nhất của từng
+cluster), `lead` (tháng mua sắm + triển khai, mặc định 3), `target` (% ngưỡng overcommit coi là
+đủ năng lực, mặc định 80). Theo phạm vi vCenter/cluster đang chọn như các báo cáo khác.
+
+- Logic (`backend/app/planning.py`): dự phóng vCPU/RAM **đã cấp phát** cho VM đang bật theo lãi
+  kép quý; với mỗi cluster × kịch bản × tháng, tìm số node nhỏ nhất sao cho mức dùng ≤ `target`
+  % ngưỡng **và** vẫn ≤ 100% khi mất 1 host lớn nhất (N+1). Nếu có lịch sử snapshot ≥ 30 ngày,
+  thêm kịch bản "Xu hướng N tháng" từ tăng trưởng thực tế (toàn phạm vi và từng cluster).
+  Khi chỉ RAM là ràng buộc, báo cáo nêu thêm phương án B nâng RAM (bội số 64 GB/host).
+- Bố cục (`backend/app/report_planning.py`): cùng mở đầu với hai báo cáo kia — hộp **Tổng kết đề
+  xuất** (số node theo kịch bản cơ sở, thời điểm cần/đặt hàng, ràng buộc CPU hay RAM, danh sách
+  đề nghị phê duyệt theo cluster), rồi Hiện trạng & giả định, Dự phóng nhu cầu so với năng lực
+  (toàn phạm vi + từng cluster, trục chặn ở 200%), Lộ trình bổ sung node theo mốc 6/12/…
+  tháng kèm biểu đồ, Đề xuất theo cluster (phương án A thêm node / B nâng RAM).
+
 ### Inventory — lọc VM theo cluster & xuất Excel
 
 Tab **Inventory** có bộ lọc **cluster riêng cho bảng VM** (độc lập với bộ lọc chung trên thanh

@@ -126,6 +126,25 @@
       </details>
       <button class="btn btn-secondary" id="btnExportPdfExec" type="button" title="Xuất Báo cáo Vận hành PDF khổ A4 (2–3 trang)">Xuất PDF · Vận hành</button>
       <button class="btn btn-secondary" id="btnExportPdfTech" type="button" title="Xuất báo cáo PDF khổ A4 chi tiết kỹ thuật">Xuất PDF · Kỹ thuật</button>
+      <details class="finding-filter-dropdown" id="planningDropdown">
+        <summary class="btn btn-secondary" title="Báo cáo Quy hoạch tài nguyên: dự phóng tăng trưởng CPU/RAM và đề xuất bổ sung node máy chủ">Xuất PDF · Quy hoạch</summary>
+        <div class="finding-filter-panel planning-panel">
+          <div class="planning-panel-title">Giả định quy hoạch tài nguyên</div>
+          <label class="planning-field"><span>Thời gian dự phóng</span>
+            <select id="planHorizon"><option value="12">12 tháng</option><option value="24">24 tháng</option><option value="36" selected>36 tháng</option><option value="48">48 tháng</option><option value="60">60 tháng</option></select></label>
+          <label class="planning-field"><span>Tăng trưởng %/quý (thấp, cơ sở, cao)</span><input type="text" id="planGrowth" value="5,10,20" placeholder="5,10,20"></label>
+          <div class="planning-row">
+            <label class="planning-field"><span>Node mới: cores</span><input type="number" id="planNodeCores" min="1" placeholder="theo host"></label>
+            <label class="planning-field"><span>Node mới: RAM (GB)</span><input type="number" id="planNodeRam" min="1" placeholder="theo host"></label>
+          </div>
+          <div class="planning-row">
+            <label class="planning-field"><span>Mua sắm + triển khai (tháng)</span><input type="number" id="planLead" min="0" max="12" value="3"></label>
+            <label class="planning-field"><span>Mục tiêu (% ngưỡng)</span><input type="number" id="planTarget" min="50" max="100" value="80"></label>
+          </div>
+          <p class="logo-upload-hint">Để trống cores/RAM: node mới lấy theo host lớn nhất của từng cluster. Điều kiện đủ năng lực: ≤ mục tiêu % ngưỡng overcommit và vẫn ≤ 100% khi mất 1 host (N+1). Theo phạm vi vCenter/cluster đang chọn.</p>
+          <button class="btn btn-primary btn-sm" id="btnExportPdfPlan" type="button">Tạo báo cáo PDF</button>
+        </div>
+      </details>
       <button class="btn icon-btn" id="themeToggle" type="button" aria-label="Chuyển dark/light mode" title="Chuyển dark/light mode">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
       </button>

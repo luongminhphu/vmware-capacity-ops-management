@@ -367,6 +367,20 @@ function bindLogoUploadDropdown() {
   if (removeBtn) removeBtn.addEventListener('click', handleRemoveLogo);
 }
 
+function getPlanningParams() {
+  const growthRaw = ($('#planGrowth').value || '').split(',').map(s => parseFloat(s.trim())).filter(n => isFinite(n) && n >= 0);
+  if (!growthRaw.length) throw new Error('Tăng trưởng %/quý không hợp lệ (ví dụ: 5,10,20).');
+  const num = (sel) => { const v = parseFloat($(sel).value); return isFinite(v) ? v : null; };
+  return {
+    horizon: $('#planHorizon').value,
+    growth: growthRaw.join(','),
+    node_cores: num('#planNodeCores'),
+    node_ram: num('#planNodeRam'),
+    lead: num('#planLead') ?? 3,
+    target: num('#planTarget') ?? 80,
+  };
+}
+
 async function handleExportPdf(view, btn) {
   const originalLabel = btn.textContent;
   btn.disabled = true;
@@ -377,7 +391,8 @@ async function handleExportPdf(view, btn) {
     const clusters = getSelectedPdfClusters();
     const hosts = getSelectedPdfHosts();
     const months = (typeof historyState !== 'undefined' && historyState.months) ? historyState.months : 12;
-    await api.downloadPdfReport(view, vcenterParam, findingTypes, clusters, hosts, !!appState.policy.includeStorage, months);
+    const extra = view === 'planning' ? getPlanningParams() : null;
+    await api.downloadPdfReport(view, vcenterParam, findingTypes, clusters, hosts, !!appState.policy.includeStorage, months, extra);
   } catch (err) {
     showValidationBanner([`Không thể xuất báo cáo PDF: ${err.message}`], []);
   } finally {
@@ -494,6 +509,7 @@ function bindTopBarInteractions() {
   $('#btnSyncNow').addEventListener('click', handleSyncNow);
   $('#btnExportPdfExec').addEventListener('click', e => handleExportPdf('executive', e.currentTarget));
   $('#btnExportPdfTech').addEventListener('click', e => handleExportPdf('technical', e.currentTarget));
+  $('#btnExportPdfPlan').addEventListener('click', e => handleExportPdf('planning', e.currentTarget));
   bindPdfFindingFilterDropdown();
   bindPdfScopeFilterDropdown();
   bindLogoUploadDropdown();

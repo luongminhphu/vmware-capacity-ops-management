@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
-from .. import capacity, data_access, history, report_pdf
+from .. import capacity, data_access, history, planning, report_pdf, report_planning
 from ..config import get_settings
 from ..database import get_db
 from ..models import ReportLogo, User
@@ -38,13 +38,19 @@ def _split_csv(value: Optional[str]) -> Optional[list]:
 
 @router.get("/pdf")
 def export_pdf(
-    view: str = Query(default="executive", pattern="^(executive|technical)$"),
+    view: str = Query(default="executive", pattern="^(executive|technical|planning)$"),
     vcenter: Optional[str] = Query(default="all"),
     types: Optional[str] = Query(default=None, description="Comma-separated finding types to include (omit = all types)"),
     clusters: Optional[str] = Query(default=None, description="Comma-separated cluster names to include (omit = every cluster)"),
     hosts: Optional[str] = Query(default=None, description="Comma-separated host names to include (omit = every host in scope)"),
     storage: Optional[str] = Query(default=None, description="'1'/'true' to include Storage criteria, '0'/'false' to exclude (omit = use saved setting)"),
     months: int = Query(default=12, description="Snapshot-history window for the trend section / VM appendix: 3, 6 or 12 months"),
+    horizon: int = Query(default=36, ge=6, le=60, description="[planning] projection horizon in months"),
+    growth: Optional[str] = Query(default=None, description="[planning] comma-separated quarterly growth %% scenarios, e.g. 5,10,20"),
+    node_cores: Optional[int] = Query(default=None, ge=1, description="[planning] physical cores of a new node (omit = largest host per cluster)"),
+    node_ram: Optional[int] = Query(default=None, ge=1, description="[planning] RAM GB of a new node (omit = largest host per cluster)"),
+    lead: int = Query(default=3, ge=0, le=12, description="[planning] procurement + deployment lead time in months"),
+    target: float = Query(default=80.0, ge=50, le=100, description="[planning] planning target as %% of the overcommit threshold"),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
@@ -101,12 +107,21 @@ def export_pdf(
         history_data, vm_changes = None, None
 
     try:
-        pdf_bytes = report_pdf.build_report_pdf(view, host_rows, vm_rows, policy, scope_label, run_meta, include_types, logo_data_url,
-                                                history=history_data, vm_changes=vm_changes)
+        if view == "planning":
+            growth_list = [float(g) for g in _split_csv(growth) or []] or None
+            params = planning.PlanningParams(horizon_months=horizon, growth=growth_list, node_cores=node_cores,
+                                             node_ram_gb=node_ram, lead_months=lead, target_pct=target)
+            pdf_bytes = report_planning.build_planning_pdf(host_rows, vm_rows, policy, scope_label, params, logo_data_url,
+                                                           history=history_data)
+        else:
+            pdf_bytes = report_pdf.build_report_pdf(view, host_rows, vm_rows, policy, scope_label, run_meta, include_types, logo_data_url,
+                                                    history=history_data, vm_changes=vm_changes)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Tham số quy hoạch không hợp lệ: {exc}")
     except Exception as exc:  # pragma: no cover - surfaced to the UI
         raise HTTPException(status_code=500, detail=f"Không thể tạo PDF: {exc}")
 
-    label = "van_hanh" if view == "executive" else "ky_thuat"
+    label = {"executive": "van_hanh", "technical": "ky_thuat", "planning": "quy_hoach"}[view]
     filename = f"vco_report_{label}_{dt.datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.pdf"
     return StreamingResponse(
         iter([pdf_bytes]),
