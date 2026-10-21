@@ -1269,18 +1269,18 @@ def _management_brief(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]],
             add("cao", f"Bổ sung năng lực {label} — đang vượt ngưỡng cho phép",
                 f"{label} đang cấp phát gấp {oc:.2f} lần năng lực vật lý, vượt mức tối đa {oc_max:.1f}x theo chính sách. "
                 f"Khi tải tăng, ứng dụng trên các cluster này có thể chậm.",
-                f"Bổ sung {need} cho các cluster vượt ngưỡng. System Owner của từng cluster cân bằng lại tải và thu hồi VM không dùng để giảm áp lực trước mắt.",
+                f"Bổ sung {need} cho cluster vượt ngưỡng; trước mắt System Owner thu hồi VM không dùng, cân bằng tải.",
                 "Ứng dụng chậm hoặc gián đoạn giờ cao điểm; không còn chỗ khôi phục khi một host gặp sự cố.",
-                f"Phê duyệt ngân sách bổ sung {label} (ưu tiên cao nhất).", "Trong quý này",
+                f"Phê duyệt ngân sách bổ sung {label}.", "Trong quý này",
                 refs=refs_from(by_type(f"overcommit_{key}", f"host_{key}")),
                 ref_note=f"Cluster/host đang vượt ngưỡng {label}")
         elif pct >= 80:
             months = cpu_m if key == "cpu" else ram_m
             add("tb", f"Lên kế hoạch mở rộng {label} trong 1–2 quý tới",
                 f"{label} đã dùng {pct:.0f}% ngưỡng cho phép. Với mức tăng 10%/quý, dự kiến chạm ngưỡng sau {_runway_phrase(months)}.",
-                f"Đưa hạng mục bổ sung host / {label} vào ngân sách kỳ tới; System Owner các cluster liên quan chuẩn bị cấu hình và báo giá.",
+                f"Đưa bổ sung host/{label} vào ngân sách kỳ tới; System Owner lập cấu hình và báo giá.",
                 "Nếu chờ chạm ngưỡng mới mua, thời gian đặt hàng và lắp đặt (8–12 tuần) khiến hệ thống chạy quá tải trong lúc chờ.",
-                f"Đồng ý chủ trương mở rộng {label}; lập dự toán chi tiết.", "1–2 quý tới",
+                f"Đồng ý chủ trương mở rộng {label}.", "1–2 quý tới",
                 refs=refs_from(by_type(f"overcommit_{key}", f"host_{key}")),
                 ref_note=f"Cluster/host đang tiến gần ngưỡng {label}")
 
@@ -1288,7 +1288,7 @@ def _management_brief(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]],
     if include_storage and _finite(storage_pct) and storage_pct >= 90:
         add("cao", "Dung lượng lưu trữ đã cấp phát gần đầy",
             f"Đã dùng {storage_pct:.0f}% dung lượng cấp phát cho các datastore. Khi datastore đầy, VM có thể bị tạm dừng.",
-            "System Owner dọn snapshot cũ, rà soát VM cấp phát thừa trước; nếu vẫn thiếu thì bổ sung dung lượng.",
+            "System Owner dọn snapshot, rà VM cấp phát thừa; còn thiếu thì bổ sung dung lượng.",
             "Rủi ro dừng dịch vụ ngoài kế hoạch do datastore đầy.",
             "Phê duyệt bổ sung dung lượng lưu trữ nếu sau rà soát vẫn thiếu.", "Trong quý này")
 
@@ -1299,9 +1299,9 @@ def _management_brief(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]],
         add("cao" if any(c["overall"]["cls"] == "crit" for c in risky) else "tb",
             f"{len(risky)} cluster cần được ưu tiên bổ sung host",
             f"Cluster {names} ở mức cảnh báo/vượt ngưỡng; các cluster còn lại vẫn trong ngưỡng. Đây là điểm nghẽn cục bộ.",
-            "Ưu tiên host mới (hoặc điều chuyển VM sang cluster còn dư) cho các cluster này trước khi mở rộng chung; System Owner từng cluster xác nhận nhu cầu.",
+            "Ưu tiên host mới hoặc điều chuyển VM sang cluster còn dư; System Owner xác nhận nhu cầu.",
             "Ứng dụng trên các cluster này chịu rủi ro hiệu năng cao hơn phần còn lại.",
-            "Đồng ý ưu tiên ngân sách/host cho các cluster nêu trên.", "Quý này",
+            "Đồng ý ưu tiên host cho các cluster nêu trên.", "Quý này",
             refs=refs_from([f for f in by_type("overcommit_cpu", "overcommit_ram", "host_cpu", "host_ram")
                             if f.get("cluster") in {c["name"] for c in risky}]),
             ref_note="Cluster: " + names)
@@ -1311,9 +1311,9 @@ def _management_brief(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]],
         names = ", ".join(r["cluster"] for r in ha_fail[:6])
         add("cao", f"{len(ha_fail)}/{len(ha_eligible)} cluster không còn dự phòng khi mất 1 host",
             f"Nếu một host trong cluster {names} hỏng hoặc bảo trì, các host còn lại không đủ chỗ cho toàn bộ VM.",
-            "Bổ sung 1 host dự phòng cho từng cluster nêu trên, hoặc System Owner giảm tải bằng cách thu hồi/điều chuyển VM.",
+            "Bổ sung 1 host dự phòng mỗi cluster, hoặc System Owner giảm tải bằng thu hồi/điều chuyển VM.",
             "Một sự cố phần cứng đơn lẻ có thể gây gián đoạn dịch vụ.",
-            "Phê duyệt bổ sung host dự phòng (N+1) cho các cluster nêu trên.", "Trong 1 quý",
+            "Phê duyệt host dự phòng N+1 cho các cluster nêu trên.", "Trong 1 quý",
             ref_note="Cluster: " + names + " — chi tiết tại bảng 'Dự phòng sự cố (N+1)' của Báo cáo Kỹ thuật")
 
     # 5) Critical operational findings
@@ -1322,9 +1322,9 @@ def _management_brief(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]],
         kinds = sorted({f.get("typeLabel") for f in crit if f.get("typeLabel")})
         add("tb", f"{sev['critical']} điểm nghiêm trọng cần System Owner xử lý",
             f"Cảnh báo mức nghiêm trọng ({'; '.join(kinds[:4])}). Phần lớn xử lý bằng thao tác vận hành, không cần mua sắm.",
-            "System Owner của từng cluster xử lý theo mã đối soát (bảng 'Điểm nghiêm trọng' cuối báo cáo và mục Compliance Findings của Báo cáo Kỹ thuật), báo cáo kết quả kỳ tới.",
+            "System Owner xử lý theo mã đối soát, báo cáo kết quả kỳ tới.",
             "Để lâu, các điểm này tích tụ thành rủi ro hiệu năng và chi phí.",
-            "Không cần ngân sách — ghi nhận và theo dõi tiến độ xử lý.", "2–4 tuần", tone="neutral",
+            "Không cần ngân sách — theo dõi tiến độ.", "2–4 tuần", tone="neutral",
             refs=refs_from(crit, limit=10))
 
     # 6) Reclaim opportunity
@@ -1333,9 +1333,9 @@ def _management_brief(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]],
         add("thap", f"Thu hồi {reclaim['count']} VM không sử dụng",
             f"{reclaim['count']} VM idle hoặc tắt lâu ngày vẫn giữ {fmt_int(reclaim['vcpu'])} vCPU và {fmt_int(reclaim['ramGB'])} GB RAM"
             f"{equiv}, khoảng {reclaim_pct_ram:.0f}% dư địa RAM cho phép.",
-            "System Owner xác nhận với chủ ứng dụng rồi thu hồi hoặc dừng hẳn. Giải phóng năng lực trước khi cân nhắc mua thêm.",
+            "System Owner xác nhận với chủ ứng dụng rồi thu hồi; giải phóng năng lực trước khi mua thêm.",
             "Tiếp tục trả chi phí license, backup, vận hành cho tài nguyên không dùng; phải mua sắm sớm hơn cần thiết.",
-            "Đồng ý chủ trương rà soát và thu hồi VM không sử dụng.", "Trong 1 tháng", tone="opportunity",
+            "Đồng ý chủ trương thu hồi VM không sử dụng.", "Trong 1 tháng", tone="opportunity",
             refs=refs_from(by_type("vm_idle", "vm_off")))
 
     # 7) Over-provisioned VMs
@@ -1343,21 +1343,27 @@ def _management_brief(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]],
     if len(overprov) >= 3:
         add("thap", f"{len(overprov)} VM cấp phát dư so với mức dùng thực",
             "Các VM này được cấp nhiều vCPU nhưng dùng rất ít, làm chỉ số overcommit cao hơn nhu cầu thật.",
-            "System Owner phối hợp chủ ứng dụng giảm cấu hình (right-size) theo lộ trình an toàn.",
+            "System Owner cùng chủ ứng dụng giảm cấu hình (right-size).",
             "Chỉ số overcommit tăng ảo, dẫn tới mua sắm sớm hơn nhu cầu.",
-            "Không cần ngân sách — ủng hộ chủ trương right-size.", "1–2 tháng", tone="opportunity",
+            "Không cần ngân sách — ủng hộ right-size.", "1–2 tháng", tone="opportunity",
             refs=refs_from(overprov))
 
-    # 8) Healthy → say so, with a forward date
-    if worst < 80:
+    # 8) Healthy → say so, with a forward date (only when nothing high-priority is open)
+    if worst < 80 and not any(r["priority"] == "cao" for r in recs):
         add("info", "Chưa cần đầu tư phần cứng mới — tiếp tục theo dõi định kỳ",
             f"CPU ({fmt_pct(cpu_pct, 0)}) và RAM ({fmt_pct(ram_pct, 0)}) còn xa ngưỡng cho phép. Hệ thống còn tiếp nhận thêm khoảng {fmt_int(binding_fit) if binding_fit is not None else '—'} VM cỡ trung bình.",
-            f"Duy trì báo cáo hàng quý. Mốc xem xét đầu tư tiếp theo (nếu tăng 10%/quý): {_runway_phrase(binding_months)} ở {binding}.",
+            f"Duy trì báo cáo quý; xem xét đầu tư lại {_runway_phrase(binding_months)} ở {binding}.",
             "Không có rủi ro trọng yếu tại thời điểm báo cáo.",
-            "Không cần quyết định đầu tư trong kỳ này.", "Rà soát lại quý sau", tone="ok")
+            "Không cần quyết định đầu tư kỳ này.", "Quý sau", tone="ok")
 
     recs.sort(key=lambda r: PRIORITY_ORDER.get(r["priority"], 9))
     recs = recs[:6]
+
+    # Overall status may be fine while one cluster is over policy or has lost
+    # N+1; the headline must not contradict a high-priority request below it.
+    high = [r for r in recs if r["priority"] == "cao"]
+    if high and health_cls in ("ok", "warn"):
+        headline = f"Tổng thể {health_word.lower()}, nhưng cần xử lý cục bộ: " + "; ".join(r["title"].rstrip(".") for r in high[:2]) + "."
 
     # --- 30-second summary bullets ---
     points = []
@@ -1376,76 +1382,44 @@ def _management_brief(model: Dict[str, Any], cluster_rows: List[Dict[str, Any]],
 
     decisions = [r for r in recs if r["priority"] in ("cao", "tb")]
     if decisions:
-        decision_line = f"Cần phê duyệt {len(decisions)} nội dung: " + "; ".join(d["decision"].rstrip(".") for d in decisions[:3]) + "."
+        decision_line = f"{len(decisions)} nội dung — " + "; ".join(d["decision"].rstrip(".") for d in decisions[:3]) + "."
     else:
-        decision_line = "Không có quyết định đầu tư cần phê duyệt trong kỳ này; các đề xuất còn lại do System Owner từng cluster xử lý."
+        decision_line = "Không có quyết định đầu tư kỳ này; đề xuất còn lại do System Owner từng cluster xử lý."
+
+    # --- number tiles for the PDF conclusion box (no prose) ---
+    def months_short(m):
+        if m is None:
+            return "không tăng"
+        if m <= 0.05:
+            return "đã chạm"
+        if m > 36:
+            return "> 3 năm"
+        return f"~{m:.0f} tháng"
+    stats = [
+        {"label": "Dư địa", "value": f"~{fmt_int(binding_fit)} VM" if binding_fit is not None else "—",
+         "sub": f"{binding} hết trước", "cls": "na"},
+        {"label": "Chạm ngưỡng", "value": months_short(binding_months),
+         "sub": (f"≈ {_quarter_label(binding_months)} · +10%/quý" if binding_months and 0.05 < binding_months <= 36 else "giả định +10%/quý"),
+         "cls": _months_cls(binding_months) if binding_months is not None else "na"},
+    ]
+    if ha_eligible:
+        stats.append({"label": "Dự phòng N+1", "value": f"{len(ha_eligible) - len(ha_fail)}/{len(ha_eligible)} cluster",
+                      "sub": "giữ ngưỡng nếu mất 1 host", "cls": "crit" if ha_fail else "ok"})
+    stats.append({"label": "Thu hồi được", "value": f"{fmt_int(reclaim['count'])} VM",
+                  "sub": f"{fmt_int(reclaim['vcpu'])} vCPU · {fmt_int(reclaim['ramGB'])} GB RAM", "cls": "ok" if reclaim["count"] >= 3 else "na"})
+    stats.append({"label": "Nghiêm trọng", "value": fmt_int(sev["critical"]),
+                  "sub": f"{fmt_int(sev['warning'])} cảnh báo · {fmt_int(sev['info'])} thông tin", "cls": "crit" if sev["critical"] else "ok"})
 
     return {"health_cls": health_cls, "health_word": health_word, "headline": headline, "points": points,
-            "decision_line": decision_line, "recommendations": recs, "binding": binding}
+            "decision_line": decision_line, "recommendations": recs, "binding": binding, "stats": stats}
 
 
-def _brief_html(brief: Dict[str, Any]) -> str:
-    fg_key, bg_key = STATUS_COLOR.get(brief["health_cls"], STATUS_COLOR["na"])
-    items = "".join(f'<li>{esc(pt)}</li>' for pt in brief["points"])
-    return f"""
-    <div class="exec-brief {brief['health_cls']}">
-      <div class="exec-brief-head">
-        <span class="pill" style="color:{COLORS[fg_key]};background:{COLORS[bg_key]};border-color:{COLORS[fg_key]}55;font-size:9px;">{esc(brief['health_word'])}</span>
-        <span class="exec-brief-title">Tóm tắt</span>
-      </div>
-      <div class="exec-brief-headline">{esc(brief['headline'])}</div>
-      <ul class="brief-list">{items}</ul>
-      <div class="exec-brief-decision"><b>Quyết định cần phê duyệt:</b> {esc(brief['decision_line'])}</div>
-    </div>"""
 
 
-def _refs_html(r: Dict[str, Any], compact: bool = False) -> str:
-    """'Đối soát' line under a recommendation: ticket-style finding codes with
-    object and measured value, plus a pointer to the full tables."""
-    refs = r.get("refs") or {}
-    items = refs.get("items") or []
-    note = r.get("refNote") or ""
-    if not items and not note:
-        return ""
-    compact = compact or bool(refs.get("compact"))
-    parts = []
-    for it in items:
-        detail = "" if compact else f" — {esc(it.get('metric') or it.get('typeLabel') or '')}"
-        vc = f" ({esc(it.get('vcenterKey'))})" if it.get("vcenterKey") else ""
-        parts.append(f'<span class="ref-item"><span class="ref-code">{esc(it.get("code"))}</span> {esc(it.get("entity"))}{vc}{detail}</span>')
-    more = refs.get("total", 0) - len(items)
-    if more > 0:
-        parts.append(f'<span class="ref-item muted">+{more} mã khác — xem bảng Compliance Findings (Báo cáo Kỹ thuật)</span>')
-    body = ("".join(parts)) if parts else ""
-    note_html = f'<div class="ref-note">{esc(note)}</div>' if note else ""
-    return f'<div class="rec-refs"><b>Đối soát:</b> {body}{note_html}</div>'
 
 
-def _register_codes_html(r: Dict[str, Any], limit: int = 5) -> str:
-    items = (r.get("refs") or {}).get("items") or []
-    if not items or limit <= 0:
-        return ""
-    codes = ", ".join(str(it.get("code")) for it in items[:limit])
-    more = (r.get("refs") or {}).get("total", 0) - min(len(items), limit)
-    return f'<div class="ref-codes-inline">Mã đối soát: {esc(codes)}{f" (+{more})" if more > 0 else ""}</div>'
 
 
-def _decision_register_html(recs: List[Dict[str, Any]], code_limit: int = 5, show_title: bool = True) -> str:
-    rows = []
-    for i, r in enumerate(recs, 1):
-        title_html = f'<div class="small-note" style="margin-top:1px;">{esc(r["title"])}</div>' if show_title else ""
-        rows.append(f"""
-      <tr>
-        <td style="text-align:center;">{i}</td>
-        <td><b>{esc(r['decision'])}</b>{title_html}{_register_codes_html(r, code_limit)}</td>
-        <td><span class="priority-pill priority-{r['priority']}">{PRIORITY_LABEL_VI.get(r['priority'], '')}</span></td>
-        <td>{esc(r['timeframe'])}</td>
-        <td>{esc(r['impact'])}</td>
-        <td style="width:74px;"><span class="sign-box"></span></td>
-      </tr>""")
-    if not rows:
-        rows.append('<tr><td colspan="6" class="small-note">Không có nội dung cần phê duyệt.</td></tr>')
-    return "".join(rows)
 
 
 def build_management_brief(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]],
@@ -1710,102 +1684,189 @@ body.exec-compact.dense .page-2 .small-note {{ margin-top:3px; }}
 """
 
 
-def _recommendations_compact_html(recs: List[Dict[str, Any]], limit: int = 4) -> str:
-    """Two-column card grid: meaning → proposal → decision, plus compact
-    reconciliation codes. 'Nếu chưa hành động' moves to the decision register
-    to save space; full narrative lives in the web Executive View. At most
-    ``limit`` cards are drawn; any remainder stays in the decision register."""
-    cards = []
-    hidden = max(0, len(recs) - limit)
-    for i, r in enumerate(recs[:limit], 1):
-        refs = r.get("refs") or {}
-        items = (refs.get("items") or [])[:4]
-        total = refs.get("total", 0)
-        chips = ""
-        for it in items:
-            where = f" ({esc(it.get('vcenterKey'))})" if it.get("vcenterKey") else ""
-            chips += f'<span class="ref-item"><span class="ref-code">{esc(it.get("code"))}</span> {esc(it.get("entity"))}{where}</span>'
-
-        more = total - len(items)
-        if more > 0:
-            chips += f'<span class="ref-item muted">+{more} mã khác — Báo cáo Kỹ thuật, mục Compliance Findings</span>'
-        note = r.get("refNote") or ""
-        refs_html = ""
-        if chips or note:
-            note_html = f'<div class="ref-note">{esc(note)}</div>' if note else ""
-            refs_html = f'<div class="rec-refs"><b>Đối soát:</b> {chips}{note_html}</div>'
-        cards.append(f"""
-      <div class="rec-card compact tone-{r['tone']} prio-{r['priority']}">
-        <div class="rec-head"><span class="rec-num">{i}</span><span class="rec-title">{esc(r['title'])}</span></div>
-        <div class="rec-meta"><span class="priority-pill priority-{r['priority']}">{PRIORITY_LABEL_VI.get(r['priority'], '')}</span><span class="chip">{esc(r['timeframe'])}</span></div>
-        <div class="rec-line"><b>Ý nghĩa</b>{esc(r['meaning'])}</div>
-        <div class="rec-line"><b>Đề xuất</b>{esc(r['action'])}</div>
-        <div class="rec-decision"><b>Đề nghị phê duyệt:</b> {esc(r['decision'])}</div>
-        {refs_html}
-      </div>""")
-    # WeasyPrint has limited flex-wrap support, so pair the cards into explicit
-    # two-column rows instead of relying on wrapping.
-    rows = []
-    for i in range(0, len(cards), 2):
-        pair = cards[i:i + 2]
-        if len(pair) == 1:
-            pair.append('<div class="rec-card compact spacer"></div>')
-        rows.append(f'<div class="rec-row">{"".join(pair)}</div>')
-    if hidden:
-        rows.append(f'<div class="small-note" style="margin-top:4px;">+{hidden} đề xuất khác (ưu tiên thấp hơn) được liệt kê trong '
-                    'Danh mục quyết định và Báo cáo Kỹ thuật.</div>')
-    return "".join(rows)
 
 
-def _exec_outlook_table_html(model: Dict[str, Any], headroom: Dict[str, Any], growth: Dict[str, Any],
-                             include_storage: bool) -> str:
-    """One table: current % of policy, absolute headroom, VM-equivalents and
-    months-to-threshold under three growth assumptions."""
-    def fit(v):
-        return "—" if v is None else (f"~{v} VM" if v < 9999 else "> 9,999 VM")
-    rows = []
-    spec = [("cpu", "CPU", model.get("cpuPct"), f"{fmt_int(headroom['cpu']['freeVcpu'])} vCPU", headroom["cpu"]["vmsFit"]),
-            ("ram", "RAM", model.get("ramPct"), f"{fmt_int(headroom['ram']['freeRamGB'])} GB", headroom["ram"]["vmsFit"])]
+
+
+
+
+
+
+
+
+# ---------------------------------------------------------------------------
+# Operations (management) report — visual-first helpers
+# ---------------------------------------------------------------------------
+def _months_cls(months: Optional[float]) -> str:
+    if months is None:
+        return "na"
+    if months <= 6:
+        return "crit"
+    if months <= 12:
+        return "warn"
+    return "ok"
+
+
+def svg_runway_chart(growth: Dict[str, Any], model: Dict[str, Any], include_storage: bool,
+                     width: int = 330, max_months: int = 36) -> str:
+    """'How long until we hit the threshold' chart: one group per resource,
+    one horizontal bar per growth assumption (+5/+10/+20 % per quarter).
+    Bar length = months to threshold (capped at `max_months`); colour = red
+    (≤ 6 months), amber (≤ 12), green (> 12). Vertical guides at 1/2/3 years."""
+    resources = [("cpu", "CPU", model.get("cpuPct")), ("ram", "RAM", model.get("ramPct"))]
     if include_storage:
-        spec.append(("storage", "Storage", model.get("storagePct"), f"{fmt_int(headroom['storage']['freeStorageGB'])} GB", headroom["storage"]["vmsFit"]))
-    for key, label, pct, free_txt, vms_fit in spec:
-        g = growth.get(key, {})
-        cells = "".join(f"<td>{_fmt_months(sc['months'])}</td>" for sc in g.get("scenarios", []))
-        st = capacity.get_status_for_pct(pct, 80, 100) if key != "storage" else capacity.get_status_for_pct(pct, 80, 90)
-        rows.append(f"<tr><td><b>{label}</b></td><td>{bar_cell(pct, st['cls'])}</td><td>{free_txt}</td><td>{fit(vms_fit)}</td>{cells}</tr>")
-    avg = headroom["avg"]
-    return (f'<table><thead><tr><th>Chỉ số</th><th>Hiện tại (% ngưỡng)</th><th>Dư địa còn lại</th><th>Còn nạp thêm</th>'
-            f'<th>Chạm ngưỡng nếu +5%/quý</th><th>+10%/quý</th><th>+20%/quý</th></tr></thead><tbody>{"".join(rows)}</tbody></table>'
-            f'<div class="small-note">"Còn nạp thêm" tính theo VM cỡ trung bình đang bật ({fmt_num(avg["avgVcpu"],1)} vCPU · {fmt_num(avg["avgRamGB"],1)} GB RAM); '
-            f'số tháng tới ngưỡng là giả định tăng đều theo quý để lập ngân sách, không phải cam kết.</div>')
+        resources.append(("storage", "Storage", model.get("storagePct")))
+    pad_l, pad_r, pad_t = 50, 46, 16
+    bar_h, bar_gap, head_h, group_gap = 7, 2, 11, 7
+    group_h = head_h + 3 * (bar_h + bar_gap) + group_gap
+    height = pad_t + len(resources) * group_h
+    plot_w = width - pad_l - pad_r
+    x_of = lambda m: pad_l + min(max(m, 0.0), max_months) / max_months * plot_w
+    parts = [f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" font-family="Roboto, Noto Sans, sans-serif">']
+    parts.append(f'<rect x="{pad_l}" y="{pad_t-4}" width="{plot_w}" height="{height-pad_t+2}" fill="{COLORS["surface2"]}" rx="3"/>')
+    for m, lb in ((6, "6 th"), (12, "1 năm"), (18, "18 th"), (24, "2 năm"), (30, "30 th"), (36, "3 năm")):
+        x = x_of(m)
+        parts.append(f'<line x1="{x:.1f}" y1="{pad_t-4}" x2="{x:.1f}" y2="{height-2}" stroke="#ffffff" stroke-width="{1.4 if m % 12 == 0 else 0.8}"/>')
+        parts.append(f'<text x="{x:.1f}" y="{pad_t-7}" text-anchor="middle" font-size="6.6" fill="{COLORS["muted"]}" font-weight="{700 if m % 12 == 0 else 400}">{lb}</text>')
+    y = pad_t
+    for key, label, pct in resources:
+        parts.append(f'<text x="{pad_l-6}" y="{y+7}" text-anchor="end" font-size="8.4" font-weight="700" fill="{COLORS["ink"]}">{label}</text>')
+        parts.append(f'<text x="{pad_l+3}" y="{y+6.5}" font-size="6.6" fill="{COLORS["muted"]}">hiện {fmt_pct(pct, 0)} ngưỡng</text>')
+        by = y + head_h
+        for sc in growth.get(key, {}).get("scenarios", []):
+            months = sc.get("months")
+            g = sc.get("growthPct", 0)
+            cls = _months_cls(months)
+            fg, _ = STATUS_COLOR.get(cls, STATUS_COLOR["na"])
+            parts.append(f'<text x="{pad_l-6}" y="{by+bar_h-1}" text-anchor="end" font-size="6.4" fill="{COLORS["muted"]}">+{g:.0f}%/quý</text>')
+            if months is None:
+                parts.append(f'<rect x="{pad_l}" y="{by}" width="{plot_w}" height="{bar_h}" rx="2" fill="{COLORS["ok"]}" opacity=".28"/>')
+                txt = "không tăng"
+            else:
+                w = max(2.0, x_of(months) - pad_l)
+                parts.append(f'<rect x="{pad_l}" y="{by}" width="{w:.1f}" height="{bar_h}" rx="2" fill="{COLORS[fg]}"/>')
+                txt = ("đã chạm" if months <= 0.05 else "> 36 th" if months > max_months else
+                       "< 1 th" if months < 1 else f"~{months:.0f} th")
+            parts.append(f'<text x="{pad_l+plot_w+4}" y="{by+bar_h-0.8}" font-size="6.8" font-weight="700" fill="{COLORS["ink"]}">{txt}</text>')
+            by += bar_h + bar_gap
+        y += group_h
+    parts.append('</svg>')
+    return "".join(parts)
 
 
-def _exec_history_compact_html(history: Optional[Dict[str, Any]], vm_changes: Optional[Dict[str, Any]],
-                               chart_height: int = 88) -> str:
+def svg_count_bars(rows: List[Dict[str, Any]], width: int = 200, color: Optional[str] = None,
+                   name_max_len: int = 16, top_n: int = 6) -> str:
+    """Horizontal count bars (integer scale) for 'critical findings by X'."""
+    rows = sorted([r for r in rows if (r.get("count") or 0) > 0], key=lambda r: r["count"], reverse=True)[:top_n]
+    if not rows:
+        return f'<div style="color:{COLORS["faint"]};font-size:8px;padding:6px 0;">Không có.</div>'
+    row_h, pad_l, pad_r, pad_t = 15, max(60, round(name_max_len * 4.6) + 8), 22, 2
+    height = pad_t + len(rows) * row_h + 2
+    plot_w = width - pad_l - pad_r
+    mx = max(r["count"] for r in rows) or 1
+    parts = [f'<svg width="{width}" height="{height}" viewBox="0 0 {width} {height}" font-family="Roboto, Noto Sans, sans-serif">']
+    for i, r in enumerate(rows):
+        y = pad_t + i * row_h
+        name = str(r.get("name", ""))
+        if len(name) > name_max_len:
+            name = name[:name_max_len - 1] + "…"
+        w = max(3.0, r["count"] / mx * plot_w)
+        parts.append(f'<text x="{pad_l-5}" y="{y+9.5}" text-anchor="end" font-size="7.6" fill="{COLORS["ink"]}">{esc(name)}</text>')
+        parts.append(f'<rect x="{pad_l}" y="{y+2}" width="{plot_w}" height="{row_h-5}" rx="2" fill="{COLORS["surface2"]}"/>')
+        parts.append(f'<rect x="{pad_l}" y="{y+2}" width="{w:.1f}" height="{row_h-5}" rx="2" fill="{r.get("color") or color or COLORS["crit"]}"/>')
+        parts.append(f'<text x="{pad_l+w+4:.1f}" y="{y+9.5}" font-size="7.6" font-weight="700" fill="{COLORS["ink"]}">{fmt_int(r["count"])}</text>')
+    parts.append('</svg>')
+    return "".join(parts)
+
+
+def _exec_summary_html(brief: Dict[str, Any]) -> str:
+    """Conclusion box: status pill, one-sentence headline, a row of number
+    tiles and the decision line. No explanatory prose."""
+    fg_key, bg_key = STATUS_COLOR.get(brief["health_cls"], STATUS_COLOR["na"])
+    tiles = ""
+    for t in brief.get("stats", [])[:5]:
+        cls = t.get("cls") or "na"
+        tfg, _ = STATUS_COLOR.get(cls, STATUS_COLOR["na"])
+        tiles += (f'<div class="stat-tile"><div class="stat-label">{esc(t["label"])}</div>'
+                  f'<div class="stat-value" style="color:{COLORS[tfg] if cls != "na" else COLORS["ink"]};">{esc(t["value"])}</div>'
+                  f'<div class="stat-sub">{esc(t.get("sub") or "")}</div></div>')
+    return f"""
+    <div class="exec-brief {brief['health_cls']}">
+      <div class="exec-brief-head">
+        <span class="pill" style="color:{COLORS[fg_key]};background:{COLORS[bg_key]};border-color:{COLORS[fg_key]}55;font-size:9px;">{esc(brief['health_word'])}</span>
+        <span class="exec-brief-title">Kết luận</span>
+      </div>
+      <div class="exec-brief-headline">{esc(brief['headline'])}</div>
+      <div class="stat-row">{tiles}</div>
+      <div class="exec-brief-decision"><b>Cần phê duyệt:</b> {esc(brief['decision_line'])}</div>
+    </div>"""
+
+
+def _exec_decisions_table_html(recs: List[Dict[str, Any]], limit: int = 6) -> str:
+    """One table that replaces the recommendation cards + decision register:
+    proposal (title + one-line action) → priority → timing → decision → sign box."""
+    rows = []
+    for i, r in enumerate(recs[:limit], 1):
+        total = (r.get("refs") or {}).get("total", 0)
+        codes = f' <span class="muted-inline">· {fmt_int(total)} mã đối soát</span>' if total else ""
+        rows.append(f"""
+      <tr class="tone-{r['tone']}">
+        <td style="text-align:center;"><span class="rec-num">{i}</span></td>
+        <td><b>{esc(r['title'])}</b>{codes}<div class="decision-action">{esc(r['action'])}</div></td>
+        <td><span class="priority-pill priority-{r['priority']}">{PRIORITY_LABEL_VI.get(r['priority'], '')}</span></td>
+        <td style="white-space:nowrap;">{esc(r['timeframe'])}</td>
+        <td><b>{esc(r['decision'])}</b></td>
+        <td style="width:62px;"><span class="sign-box"></span></td>
+      </tr>""")
+    if not rows:
+        rows.append('<tr><td colspan="6" class="small-note">Không có nội dung cần phê duyệt.</td></tr>')
+    hidden = max(0, len(recs) - limit)
+    more = f'<div class="small-note">+{hidden} đề xuất ưu tiên thấp hơn — xem Báo cáo Kỹ thuật.</div>' if hidden else ""
+    return (f'<table class="decision-table"><thead><tr><th style="width:18px;">#</th><th>Đề xuất · việc cần làm</th><th>Ưu tiên</th>'
+            f'<th>Thời điểm</th><th style="width:27%;">Đề nghị phê duyệt</th><th>Ý kiến</th></tr></thead><tbody>{"".join(rows)}</tbody></table>{more}')
+
+
+def _exec_trend_html(history: Optional[Dict[str, Any]], vm_changes: Optional[Dict[str, Any]], chart_height: int = 120) -> str:
+    """Trend section: two line charts + four delta tiles, no paragraph."""
     months = (history or {}).get("months", 12)
-    title = f"Biến động tài nguyên {months} tháng gần nhất"
+    title = f"Xu hướng {months} tháng"
     if not history or not history.get("available"):
         count = (history or {}).get("pointCount", 0)
-        msg = ("Hệ thống mới có 1 ngày snapshot trong khoảng thời gian này — biểu đồ biến động sẽ xuất hiện từ lần đồng bộ tiếp theo."
-               if count == 1 else "Chưa có snapshot nào trong khoảng thời gian này. Lịch sử được tích lũy tự động sau mỗi lần đồng bộ vCenter.")
+        msg = ("Mới có 1 ngày snapshot — biểu đồ xuất hiện từ lần đồng bộ tiếp theo." if count == 1
+               else "Chưa có snapshot trong khoảng thời gian này.")
         return f'<div class="section"><div class="section-title">{esc(title)}</div><div class="assumption-note">{esc(msg)}</div></div>'
     s = history["overall"]["summary"]
+    d = s.get("delta", {})
+    first, last = s.get("first", {}), s.get("last", {})
     cpu_dates, cpu_series = _history_series(history, "cpuPct")
     ram_dates, ram_series = _history_series(history, "ramPct")
-    insights = _history_insights(history)
-    first_insight = insights[0] if insights else ""
-    vm_line = ""
+
+    def delta_cls(v):
+        # Small movements are neutral; only sizeable increases get a colour.
+        if v is None or abs(v) < 5:
+            return "na"
+        if v <= 0:
+            return "ok"
+        return "warn" if v < 10 else "crit"
+
+    vm_sub = f"{fmt_int(first.get('vmCount'))} → {fmt_int(last.get('vmCount'))}"
     if vm_changes and vm_changes.get("available"):
         a, r = vm_changes["addedTotals"], vm_changes["removedTotals"]
-        vm_line = (f' Biến động VM: <b style="color:{COLORS["ok"]};">+{a["count"]} thêm mới</b> ({fmt_int(a["vcpu"])} vCPU · {fmt_int(a["ramGB"])} GB RAM) · '
-                   f'<b style="color:{COLORS["warn"]};">−{r["count"]} loại bỏ</b> ({fmt_int(r["vcpu"])} vCPU · {fmt_int(r["ramGB"])} GB RAM){esc(_vm_changes_excluded_note(vm_changes, compact=True))} — chi tiết tại Phụ lục A của Báo cáo Kỹ thuật.')
-    scope_clusters = history.get("clusters")
-    scope_txt = ""
-    if scope_clusters is not None:
-        shown = ", ".join(scope_clusters[:4]) + (f" và {len(scope_clusters) - 4} cluster khác" if len(scope_clusters) > 4 else "")
-        scope_txt = f" Phạm vi: cluster {shown}." if scope_clusters else " Phạm vi: không có cluster nào được chọn."
-    sub = (f"Mỗi cluster do một System Owner phụ trách; so sánh {_fmt_short_date(s.get('firstDate'))} → {_fmt_short_date(s.get('lastDate'))} "
-           f"qua {fmt_int(history.get('pointCount'))} ngày có snapshot. 100% = chạm ngưỡng overcommit đang áp dụng.{scope_txt}")
+        vm_sub = f"+{a['count']} thêm mới · −{r['count']} loại bỏ"
+    tiles = [
+        ("CPU (% ngưỡng)", _fmt_delta(d.get("cpuPct"), 1, " điểm"), f"{fmt_num(first.get('cpuPct'))}% → {fmt_num(last.get('cpuPct'))}%", delta_cls(d.get("cpuPct"))),
+        ("RAM (% ngưỡng)", _fmt_delta(d.get("ramPct"), 1, " điểm"), f"{fmt_num(first.get('ramPct'))}% → {fmt_num(last.get('ramPct'))}%", delta_cls(d.get("ramPct"))),
+        ("Số VM", _fmt_delta(d.get("vmCount"), 0), vm_sub, "na"),
+        ("Số host", _fmt_delta(d.get("hostCount"), 0), f"{fmt_int(first.get('hostCount'))} → {fmt_int(last.get('hostCount'))}", "na"),
+    ]
+    tiles_html = ""
+    for label, value, sub, cls in tiles:
+        fg, _ = STATUS_COLOR.get(cls, STATUS_COLOR["na"])
+        tiles_html += (f'<div class="stat-tile"><div class="stat-label">{esc(label)}</div>'
+                       f'<div class="stat-value" style="color:{COLORS[fg] if cls != "na" else COLORS["ink"]};">{value}</div>'
+                       f'<div class="stat-sub">{esc(sub)}</div></div>')
+    sub = (f"{_fmt_short_date(s.get('firstDate'))} → {_fmt_short_date(s.get('lastDate'))} · {fmt_int(history.get('pointCount'))} ngày snapshot · "
+           f"100% = ngưỡng overcommit. Biến động VM đã loại migrate/rename/resize — chi tiết Phụ lục A, Báo cáo Kỹ thuật.")
     cpu_chart = svg_line_chart(cpu_dates, cpu_series, width=330, height=chart_height)
     ram_chart = svg_line_chart(ram_dates, ram_series, width=330, height=chart_height)
     return (
@@ -1817,51 +1878,88 @@ def _exec_history_compact_html(history: Optional[Dict[str, Any]], vm_changes: Op
         f'<div class="chart-card soft" style="padding:4px 6px;"><div class="chart-card-title">RAM — % ngưỡng theo cluster</div>{ram_chart}</div>'
         '</div>'
         f'{_history_legend_html(history)}'
-        f'<div class="insight-box" style="margin-top:4px;">{first_insight}{vm_line}</div>'
+        f'<div class="stat-row" style="margin-top:5px;">{tiles_html}</div>'
         '</div>')
 
 
-def _exec_critical_table_html(findings: List[Dict[str, Any]], limit: int = 7) -> str:
-    crit = sorted([f for f in findings if f.get("severity") == "critical"],
-                  key=lambda f: (str(f.get("cluster") or ""), str(f.get("entity") or "")))
+def _exec_findings_html(findings: List[Dict[str, Any]], limit: int = 6) -> str:
+    """Findings section: severity donut + critical-by-cluster + critical-by-type
+    charts, then a short top-N critical table."""
     sev = _severity_counts(findings)
+    total = sum(sev.values())
+    donut = svg_donut([
+        {"label": "Nghiêm trọng", "value": sev["critical"], "color": COLORS["crit"]},
+        {"label": "Cảnh báo", "value": sev["warning"], "color": COLORS["warn"]},
+        {"label": "Thông tin", "value": sev["info"], "color": COLORS["primary"]},
+    ], size=92, hole=0.64, center_label=fmt_int(total), center_sub="finding")
+    def leg(color, n, label):
+        return (f'<div class="donut-leg"><span class="dot" style="background:{color};"></span>'
+                f'<b>{fmt_int(n)}</b> {label}</div>')
+    legend = ('<div class="donut-legend">' + leg(COLORS["crit"], sev["critical"], "nghiêm trọng")
+              + leg(COLORS["warn"], sev["warning"], "cảnh báo") + leg(COLORS["primary"], sev["info"], "thông tin") + '</div>')
+    crit = [f for f in findings if f.get("severity") == "critical"]
+    by_cluster: Dict[str, int] = {}
+    by_type: Dict[str, int] = {}
+    for f in crit:
+        by_cluster[f.get("cluster") or "—"] = by_cluster.get(f.get("cluster") or "—", 0) + 1
+        by_type[f.get("typeLabel") or "—"] = by_type.get(f.get("typeLabel") or "—", 0) + 1
+    cl_chart = svg_count_bars([{"name": k, "count": v} for k, v in by_cluster.items()], width=205, name_max_len=15)
+    ty_chart = svg_count_bars([{"name": k, "count": v} for k, v in by_type.items()], width=205, name_max_len=21)
+    charts = (
+        '<div class="chart-row" style="gap:8px;align-items:stretch;">'
+        f'<div class="chart-card soft" style="flex:0 0 190px;padding:5px 8px;display:flex;gap:8px;align-items:center;">{donut}{legend}</div>'
+        f'<div class="chart-card soft" style="padding:5px 8px;"><div class="chart-card-title">Nghiêm trọng theo cluster</div>{cl_chart}</div>'
+        f'<div class="chart-card soft" style="padding:5px 8px;"><div class="chart-card-title">Nghiêm trọng theo loại</div>{ty_chart}</div>'
+        '</div>')
     if not crit:
-        return (f'<div class="insight-box"><b>Không có điểm nghiêm trọng cần xử lý ngay.</b><br/>'
-                f'Còn {fmt_int(sev["warning"])} cảnh báo và {fmt_int(sev["info"])} thông tin (chủ yếu tối ưu cấp phát) — danh sách đầy đủ kèm mã đối soát tại Báo cáo Kỹ thuật, mục "Compliance Findings đầy đủ".</div>')
-    rows = "".join(f"""
+        table = '<div class="insight-box" style="margin-top:6px;"><b>Không có điểm nghiêm trọng.</b> Cảnh báo/thông tin: xem Báo cáo Kỹ thuật.</div>'
+    else:
+        crit_sorted = sorted(crit, key=lambda f: (str(f.get("cluster") or ""), str(f.get("entity") or "")))
+        rows = "".join(f"""
       <tr>
         <td class="code-cell">{esc(f.get('code'))}</td>
         <td style="white-space:nowrap;"><b>{esc(f.get('entity'))}</b></td>
         <td style="white-space:nowrap;">{esc(' · '.join(x for x in (f.get('cluster'), f.get('vcenterKey')) if x))}</td>
         <td>{esc(f.get('typeLabel'))}</td>
         <td>{esc(f.get('metric') or '')}</td>
-      </tr>""" for f in crit[:limit])
-    more = len(crit) - limit
-    more_html = f'<div class="small-note">+{more} điểm nghiêm trọng khác — xem Báo cáo Kỹ thuật.</div>' if more > 0 else ""
-    return (f'<table class="crit-table"><thead><tr><th style="width:56px;">Mã</th><th>Đối tượng</th><th>Cluster · vCenter</th><th>Vấn đề</th><th>Chỉ số</th></tr></thead><tbody>{rows}</tbody></table>{more_html}'
-            f'<div class="small-note">Tổng finding: {fmt_int(sev["critical"])} nghiêm trọng · {fmt_int(sev["warning"])} cảnh báo · {fmt_int(sev["info"])} thông tin. '
-            f'System Owner của cluster tương ứng xử lý theo mã; mã đối soát dùng chung với Báo cáo Kỹ thuật và tab Compliance trên web.</div>')
+      </tr>""" for f in crit_sorted[:limit])
+        more = len(crit) - limit
+        table = (f'<table class="crit-table" style="margin-top:6px;"><thead><tr><th style="width:56px;">Mã</th><th>Đối tượng</th><th>Cluster · vCenter</th><th>Vấn đề</th><th>Chỉ số</th></tr></thead><tbody>{rows}</tbody></table>'
+                 + (f'<div class="small-note">Hiển thị {limit}/{len(crit)} điểm nghiêm trọng; đủ danh sách tại Báo cáo Kỹ thuật. System Owner cluster tương ứng xử lý theo mã.</div>'
+                    if more > 0 else '<div class="small-note">System Owner cluster tương ứng xử lý theo mã; mã dùng chung với Báo cáo Kỹ thuật và tab Compliance.</div>'))
+    return charts + table
 
 
-def _exec_reference_html(include_storage: bool, months: int) -> str:
-    """Compact map from executive topics to the Technical report sections."""
-    rows = [
-        ("Overcommit từng cluster/host", "Overcommit theo Cluster · Chi tiết Host · Top-10 Host"),
-        ("Dư địa & số core/RAM cần bổ sung", "Phân tích Headroom & Khuyến nghị mở rộng"),
-        ("Dự phòng N+1 theo cluster", "Kiểm tra dự phòng N+1 (mất 1 host)"),
-        (f"Biến động CPU/RAM {months} tháng (bảng số)", f"Biến động tài nguyên {months} tháng gần nhất"),
-        ("VM thêm mới / loại bỏ theo cluster, host", "Phụ lục A"),
-        ("Toàn bộ finding kèm mã đối soát", "Compliance Findings đầy đủ (cột Mã)"),
-    ]
-    if include_storage:
-        rows.insert(3, ("Dung lượng theo datastore", "Top-10 Datastore · Utilization theo Datastore"))
-    cells = [f'<td><b>{esc(a)}</b> → {esc(b)}</td>' for a, b in rows]
-    if len(cells) % 2:
-        cells.append("<td></td>")
-    body = "".join(f"<tr>{cells[i]}{cells[i + 1]}</tr>" for i in range(0, len(cells), 2))
-    return (f'<div class="ref-map-box"><div class="ref-map-title">Tham chiếu chi tiết tại Báo cáo Kỹ thuật '
-            f'<span>(xuất cùng phạm vi lọc vCenter / cluster / host / khoảng thời gian để mã đối soát và số liệu khớp nhau)</span></div>'
-            f'<table class="ref-map"><tbody>{body}</tbody></table></div>')
+def _exec_reference_line_html(months: int) -> str:
+    return (f'<div class="ref-map-box"><div class="ref-map-title">Chi tiết tại Báo cáo Kỹ thuật cùng kỳ '
+            f'<span>(xuất cùng bộ lọc để mã đối soát và số liệu khớp)</span></div>'
+            f'<div class="ref-line">Overcommit theo cluster/host · Headroom &amp; số core/RAM cần bổ sung · Dự phòng N+1 · '
+            f'Biến động {months} tháng (bảng số) · Phụ lục A (VM thêm mới/loại bỏ) · Compliance Findings đầy đủ (cột Mã)</div></div>')
+
+
+def _exec_visual_css() -> str:
+    return f"""
+.stat-row {{ display:flex; gap:6px; margin:5px 0 6px; }}
+.stat-tile {{ flex:1; background:#ffffff; border:1px solid {COLORS['border']}; border-radius:6px; padding:5px 8px 4px; }}
+.stat-label {{ font-size:7px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:{COLORS['muted']}; }}
+.stat-value {{ font-size:13.5px; font-weight:800; color:{COLORS['ink']}; line-height:1.25; margin-top:1px; }}
+.stat-sub {{ font-size:7.3px; color:{COLORS['muted']}; margin-top:1px; }}
+.exec-brief .stat-tile {{ background:rgba(255,255,255,.75); }}
+.decision-table td {{ vertical-align:top; }}
+.decision-table .rec-num {{ display:inline-block; width:14px; height:14px; line-height:14px; border-radius:50%; background:{COLORS['primary']}; color:#fff; font-size:7.6px; font-weight:700; text-align:center; }}
+.decision-table .decision-action {{ color:{COLORS['muted']}; font-size:7.8px; margin-top:1px; line-height:1.4; }}
+.decision-table .muted-inline {{ color:{COLORS['faint']}; font-size:7.2px; font-weight:400; }}
+.decision-table tr.tone-risk td:first-child {{ border-left:3px solid {COLORS['crit']}; }}
+.decision-table tr.tone-opportunity td:first-child {{ border-left:3px solid {COLORS['ok']}; }}
+.decision-table tr.tone-neutral td:first-child {{ border-left:3px solid {COLORS['warn']}; }}
+.decision-table tr.tone-ok td:first-child {{ border-left:3px solid {COLORS['primary']}; }}
+.ref-line {{ font-size:7.6px; color:{COLORS['muted']}; }}
+.donut-legend {{ display:block; font-size:8px; color:{COLORS['muted']}; }}
+.donut-leg {{ display:block; white-space:nowrap; margin:2px 0; }}
+.donut-leg .dot {{ display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:5px; vertical-align:middle; }}
+.donut-leg b {{ color:{COLORS['ink']}; font-size:9px; }}
+body.exec-compact .chart-card-title {{ font-size:8.2px; }}
+"""
 
 
 def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]], policy: capacity.Policy,
@@ -1913,23 +2011,7 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
         c["model"]["cpuPct"] if _finite(c["model"]["cpuPct"]) else -1,
         c["model"]["ramPct"] if _finite(c["model"]["ramPct"]) else -1), reverse=True)[:8]
 
-    brief_html = _brief_html(brief)
-    # Page budget: the operations report may run 2–3 A4 pages depending on
-    # content. Page 1 holds the summary, overview and recommendation cards;
-    # the rest flows from page 2, with the critical table + reference box kept
-    # together so a third page never contains only the small reference box.
-    dense = False
-    decision_rows_html = _decision_register_html([r for r in brief["recommendations"] if r["priority"] in ("cao", "tb", "thap")],
-                                                 code_limit=0)
-
-    ha_eligible = [r for r in ha_rows if r.get("eligible")]
-    ha_fail = [r for r in ha_eligible if not r.get("survives")]
-    ha_summary_html = (
-        f'<div class="insight-box risk"><b>{len(ha_fail)}/{len(ha_eligible)} cluster c\u00f3 \u2265 2 host s\u1ebd v\u01b0\u1ee3t ng\u01b0\u1ee1ng overcommit n\u1ebfu m\u1ea5t 1 host</b><br/>'
-        f'Cluster r\u1ee7i ro: {esc(", ".join(r["cluster"] for r in ha_fail[:6]))}. C\u1ea7n b\u1ed5 sung d\u1ef1 ph\u00f2ng N+1 ho\u1eb7c chu\u1ea9n b\u1ecb k\u1ebf ho\u1ea1ch failover th\u1ee7 c\u00f4ng cho c\u00e1c cluster n\u00e0y.</div>'
-        if ha_fail else
-        '<div class="insight-box"><b>To\u00e0n b\u1ed9 cluster \u0111\u1ee7 \u0111i\u1ec1u ki\u1ec7n \u0111\u1ec1u \u0111\u00e1p \u1ee9ng d\u1ef1 ph\u00f2ng N+1</b><br/>H\u1ec7 th\u1ed1ng v\u1eabn gi\u1eef \u0111\u01b0\u1ee3c ng\u01b0\u1ee1ng overcommit c\u1ea5u h\u00ecnh n\u1ebfu m\u1ea5t 1 host b\u1ea5t k\u1ef3 trong m\u1ed7i cluster.</div>'
-    ) if ha_eligible else '<div class="insight-box"><b>Ch\u01b0a \u0111\u1ee7 d\u1eef li\u1ec7u \u0111\u1ec3 \u0111\u00e1nh gi\u00e1 d\u1ef1 ph\u00f2ng N+1</b><br/>Kh\u00f4ng c\u00f3 cluster n\u00e0o c\u00f3 t\u1eeb 2 host tr\u1edf l\u00ean trong ph\u1ea1m vi b\u00e1o c\u00e1o.</div>'
+    summary_html = _exec_summary_html(brief)
 
     scope_note = ""
     if run_meta:
@@ -1942,11 +2024,10 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
     filter_note = ""
     if type_filter is not None and len(type_filter) < len(ALL_FINDING_TYPES):
         excluded = [FINDING_TYPE_LABEL_VI.get(t, t) for t in ALL_FINDING_TYPES if t not in type_filter]
-        filter_note = f"Đã loại {len(excluded)}/{len(ALL_FINDING_TYPES)} loại finding khỏi báo cáo: {', '.join(excluded)}."
+        filter_note = f"Đã loại {len(excluded)}/{len(ALL_FINDING_TYPES)} loại finding: {', '.join(excluded)}."
 
     logo_html = f'<img class="cover-logo" src="{esc(logo_data_url)}"/>' if logo_data_url else ''
 
-    history_compact_html = _exec_history_compact_html(history, vm_changes)
     months_win = (history or {}).get("months", 12)
     ha_by_cluster = {r["cluster"]: r for r in ha_rows}
 
@@ -1965,35 +2046,56 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
         <td>{ha_cell(c['name'])}</td>
         <td>{status_pill(c['overall'])}</td>
       </tr>""" for c in top_risk_clusters[:6])
-    recommendations_compact_html = _recommendations_compact_html(brief["recommendations"], limit=6)
-    outlook_html = _exec_outlook_table_html(model, headroom, growth, include_storage)
-    critical_html = _exec_critical_table_html(findings, limit=10)
-    reference_html = _exec_reference_html(include_storage, months_win)
-    storage_line = "" if include_storage else f'<div class="small-note" style="margin-top:3px;"><b>Storage không đánh giá:</b> {esc(STORAGE_EXCLUDED_NOTE)}</div>'
 
-    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"/><style>{_base_css('Báo cáo vận hành', generated_at)}{_exec_compact_css()}</style></head>
-<body class="exec-compact{' dense' if dense else ''}">
+    # Page-1 charts: months-to-threshold runway and per-cluster utilisation.
+    runway_chart = svg_runway_chart(growth, model, include_storage, width=330)
+    chart_clusters = top_risk_clusters[:6]
+    cluster_chart = svg_bar_chart(
+        [c["name"] for c in chart_clusters],
+        [{"name": "CPU", "color": COLORS["primary"],
+          "values": [c["model"]["cpuPct"] if _finite(c["model"]["cpuPct"]) else 0 for c in chart_clusters]},
+         {"name": "RAM", "color": COLORS["accent"],
+          "values": [c["model"]["ramPct"] if _finite(c["model"]["ramPct"]) else 0 for c in chart_clusters]}],
+        width=330, height=16 + (3 if include_storage else 2) * 47,
+        threshold=100, threshold_label="Ngưỡng", unit="%")
+    avg = headroom["avg"]
+    runway_note = (f"Giả định tăng đều theo quý, dùng để lập ngân sách. Còn nạp thêm ~{fmt_int(headroom['ram']['vmsFit']) if headroom['ram']['vmsFit'] is not None else '—'} VM theo RAM, "
+                   f"~{fmt_int(headroom['cpu']['vmsFit']) if headroom['cpu']['vmsFit'] is not None else '—'} VM theo CPU (VM trung bình {fmt_num(avg['avgVcpu'],1)} vCPU · {fmt_num(avg['avgRamGB'],1)} GB).")
+    ha_eligible = [r for r in ha_rows if r.get("eligible")]
+    ha_fail = [r for r in ha_eligible if not r.get("survives")]
+    ha_note = (f"N+1: {len(ha_fail)}/{len(ha_eligible)} cluster vượt ngưỡng nếu mất 1 host ({esc(', '.join(r['cluster'] for r in ha_fail[:4]))})."
+               if ha_fail else f"N+1: {len(ha_eligible)}/{len(ha_eligible)} cluster vẫn giữ ngưỡng nếu mất 1 host." if ha_eligible
+               else "N+1: chưa đủ dữ liệu (không cluster nào ≥ 2 host).")
+
+    decisions_html = _exec_decisions_table_html(brief["recommendations"], limit=6)
+    trend_html = _exec_trend_html(history, vm_changes)
+    findings_html = _exec_findings_html(findings, limit=6)
+    reference_html = _exec_reference_line_html(months_win)
+    storage_line = "" if include_storage else '<div class="small-note" style="margin-top:3px;"><b>Storage không đánh giá:</b> SAN dùng chung, quản lý riêng ở tầng SAN.</div>'
+
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"/><style>{_base_css('Báo cáo vận hành', generated_at)}{_exec_compact_css()}{_exec_visual_css()}</style></head>
+<body class="exec-compact">
   <div class="cover-header">
     <div>
       <div class="eyebrow">Infrastructure Capacity Ops · Operations Summary</div>
       <div class="cover-title">Báo cáo Vận hành — Capacity Ops</div>
-      <div class="cover-sub">Năng lực hạ tầng ảo hóa VMware theo cluster, các điểm cần xử lý và quyết định cần phê duyệt. Chi tiết kỹ thuật tại Báo cáo Kỹ thuật cùng kỳ.</div>
+      <div class="cover-sub">Năng lực hạ tầng VMware, việc cần làm và quyết định cần phê duyệt. Chi tiết: Báo cáo Kỹ thuật cùng kỳ.</div>
     </div>
     {logo_html}
   </div>
   <div class="meta-row">
     <span>Phạm vi: <b>{esc(scope_label)}</b></span>
-    <span>Thời điểm tạo báo cáo: <b>{generated_at}</b></span>
-    <span>Trạng thái tổng thể: {status_pill(overall)}</span>
+    <span>Ngày báo cáo: <b>{generated_at}</b></span>
+    <span>Trạng thái: {status_pill(overall)}</span>
     {f'<span>Đồng bộ vCenter: <b>{scope_note}</b></span>' if scope_note else ''}
     {f'<span>{esc(filter_note)}</span>' if filter_note else ''}
   </div>
 
-  {brief_html}
+  {summary_html}
 
   <div class="section">
-    <div class="section-title">Tổng quan năng lực</div>
-    <div class="section-sub">Mức đã dùng so với ngưỡng overcommit cho phép: xanh an toàn, vàng (từ 80%) cần lên kế hoạch, 100% vượt ngưỡng.</div>
+    <div class="section-title">Mức dùng so với ngưỡng cho phép</div>
+    <div class="section-sub">Xanh: an toàn · vàng (từ 80%): cần kế hoạch · 100%: vượt ngưỡng overcommit.</div>
     <div class="overview-row">
       <div class="gauge-row" style="flex-basis:{'57%' if include_storage else '46%'};">
         <div class="gauge-card {gauge_cpu_cls}">{gauge_cpu}<div class="kpi-label" style="margin-top:1px;">CPU</div><div class="gauge-caption">{esc(cpu_status['text'])} · overcommit {fmt_num(model['cpuOvercommit'],2,'x')} / tối đa {fmt_num(policy.cpu_overcommit_max,1,'x')}</div></div>
@@ -2014,42 +2116,35 @@ def render_executive_html(hosts: List[Dict[str, Any]], vms: List[Dict[str, Any]]
     {storage_line}
   </div>
 
-  <div class="section breakable">
-    <div class="section-title">Nhận định &amp; đề xuất</div>
-    <div class="section-sub">Mỗi đề xuất gồm ý nghĩa, việc cần làm và nội dung cần phê duyệt. Mã đối soát dẫn tới dòng cụ thể trong Báo cáo Kỹ thuật (Compliance Findings) và tab Compliance trên web.</div>
-    {recommendations_compact_html}
-  </div>
-
-  <div class="section page-2">
-    <div class="section-title">Danh mục quyết định cần phê duyệt</div>
-    <div class="section-sub">Nội dung cần phê duyệt hoặc ghi nhận chủ trương, xếp theo ưu tiên; ô cuối dành cho ý kiến/ký duyệt.</div>
-    <table>
-      <thead><tr><th style="width:20px;text-align:center;">#</th><th>Nội dung quyết định</th><th>Ưu tiên</th><th>Thời điểm</th><th>Rủi ro tránh được / lợi ích</th><th>Ý kiến</th></tr></thead>
-      <tbody>{decision_rows_html}</tbody>
-    </table>
+  <div class="section">
+    <div class="section-title">Bao lâu nữa chạm ngưỡng · Cluster nào dùng nhiều nhất</div>
+    <div class="chart-row" style="gap:8px;align-items:stretch;">
+      <div class="chart-card soft" style="padding:5px 8px;"><div class="chart-card-title">Số tháng tới ngưỡng theo 3 kịch bản tăng trưởng</div>{runway_chart}<div class="small-note" style="margin-top:2px;">{runway_note}</div></div>
+      <div class="chart-card soft" style="padding:5px 8px;"><div class="chart-card-title">Mức dùng theo cluster (% ngưỡng)</div>{cluster_chart}<div class="legend" style="margin-top:2px;"><span><span class="dot" style="background:{COLORS['primary']}"></span>CPU</span><span><span class="dot" style="background:{COLORS['accent']}"></span>RAM</span></div><div class="small-note" style="margin-top:2px;">{ha_note}</div></div>
+    </div>
   </div>
 
   <div class="section">
-    <div class="section-title">Dư địa &amp; dự báo</div>
-    {outlook_html}
-    {ha_summary_html}
+    <div class="section-title">Đề xuất &amp; quyết định cần phê duyệt</div>
+    <div class="section-sub">Xếp theo ưu tiên. System Owner của từng cluster (phòng ban công nghệ phụ trách) thực hiện; ô cuối dành cho ý kiến/ký duyệt.</div>
+    {decisions_html}
   </div>
 
-  {history_compact_html}
+  {trend_html}
 
   <div class="section">
-    <div class="section-title">Cluster cần quan tâm nhất</div>
+    <div class="section-title">Cluster cần quan tâm</div>
     <table>
       <thead><tr><th>Cluster</th><th style="white-space:nowrap;">Host / VM</th><th>CPU (% ngưỡng)</th><th>RAM (% ngưỡng)</th><th>N+1</th><th>Trạng thái</th></tr></thead>
       <tbody>{cluster_rows_compact_html}</tbody>
     </table>
-    <div class="small-note">Sắp theo mức dùng cao nhất; N+1 = còn giữ được ngưỡng nếu mất 1 host. Đủ {fmt_int(len(cluster_rows))} cluster tại Báo cáo Kỹ thuật.</div>
+    <div class="small-note">Sắp theo mức dùng cao nhất; N+1 = còn giữ ngưỡng nếu mất 1 host. Đủ {fmt_int(len(cluster_rows))} cluster tại Báo cáo Kỹ thuật.</div>
   </div>
 
   <div class="keep-together">
   <div class="section">
-    <div class="section-title">Điểm nghiêm trọng cần System Owner xử lý</div>
-    {critical_html}
+    <div class="section-title">Điểm cần System Owner xử lý</div>
+    {findings_html}
   </div>
 
   <div class="section" style="margin-top:7px;">

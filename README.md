@@ -22,18 +22,18 @@ Hai nút **Xuất PDF · Vận hành** và **Xuất PDF · Kỹ thuật** ở he
 A4 (in được trực tiếp) từ `GET /api/reports/pdf?view=executive|technical&vcenter=<key|all>`
 (yêu cầu đăng nhập), theo scope vCenter đang chọn trên thanh lọc:
 
-- **Báo cáo Vận hành** (`view=executive`) — **2–3 trang tùy nội dung**, chỉ chứa thông tin tổng
-  thể và tham chiếu chi tiết sang Báo cáo Kỹ thuật; câu chữ ngắn gọn, trách nhiệm xử lý quy về
-  System Owner của từng cluster:
-  - *Trang 1*: hộp "Tóm tắt", đồng hồ (gauge) CPU/RAM (và Storage nếu bật) đặt cạnh 4 KPI tổng
-    quan, các thẻ nhận định & đề xuất xếp 2 cột (ý nghĩa → việc cần làm → đề nghị phê duyệt, kèm
-    mã đối soát; tối đa 6 thẻ).
-  - *Từ trang 2*: **Danh mục quyết định cần phê duyệt** có ô ký ý kiến (kèm rủi ro tránh được),
-    bảng "Dư địa & dự báo" (hiện tại / dư địa / còn nạp thêm / tháng tới ngưỡng theo 3 kịch bản),
-    kết luận dự phòng N+1, biểu đồ biến động CPU/RAM theo cluster, bảng cluster cần quan tâm (có
-    cột N+1), bảng **điểm nghiêm trọng cần System Owner xử lý** (chỉ severity critical, có Mã, tối
-    đa 10 dòng) và hộp "Tham chiếu chi tiết tại Báo cáo Kỹ thuật"; hai khối cuối luôn đi cùng nhau
-    để trang 3 (nếu có) không chỉ chứa hộp tham chiếu.
+- **Báo cáo Vận hành** (`view=executive`) — **2 trang** (tối đa 3), dành cho góc nhìn quản trị:
+  ít chữ, nhiều biểu đồ, đủ ý để ra quyết định; phần giải thích chi tiết để ở Báo cáo Kỹ thuật.
+  Trách nhiệm xử lý quy về System Owner của từng cluster:
+  - *Trang 1*: hộp **Kết luận** (1 câu + 5 ô số liệu: dư địa, số tháng tới ngưỡng, dự phòng N+1,
+    VM thu hồi được, số điểm nghiêm trọng + dòng "Cần phê duyệt"), gauge CPU/RAM (và Storage nếu
+    bật) cạnh 4 KPI, biểu đồ **Bao lâu nữa chạm ngưỡng** (3 kịch bản +5/+10/+20 %/quý, mốc 1–2–3
+    năm) cạnh biểu đồ **Mức dùng theo cluster**, và một bảng **Đề xuất & quyết định cần phê duyệt**
+    (đề xuất + 1 dòng việc cần làm → ưu tiên → thời điểm → đề nghị phê duyệt → ô ký; tối đa 6 dòng).
+  - *Trang 2*: biểu đồ **Xu hướng** CPU/RAM theo cluster + 4 ô biến động (CPU, RAM, số VM, số
+    host), bảng cluster cần quan tâm (có cột N+1), **Điểm cần System Owner xử lý** gồm donut
+    finding theo mức độ, biểu đồ nghiêm trọng theo cluster và theo loại, top-6 điểm nghiêm trọng có
+    Mã, và một dòng tham chiếu sang Báo cáo Kỹ thuật.
   - Các biểu đồ so sánh/rủi ro theo cluster, donut VM/finding, bảng lịch sử theo cluster và danh
     sách cảnh báo/thông tin không nằm trong Báo cáo Vận hành — xem Báo cáo Kỹ thuật.
 - **Báo cáo Kỹ thuật** — bảng overcommit theo cluster, chi tiết từng host, từng datastore, và
