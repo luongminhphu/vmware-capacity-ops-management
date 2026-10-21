@@ -3,9 +3,11 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+import hashlib
 
 from .collectors.scheduler import scheduler_loop
 from .config import get_settings
@@ -72,5 +74,33 @@ def health():
     return {"status": "ok", "app": "VMware Capacity Ops Management"}
 
 
+def _asset_version() -> str:
+    """Short fingerprint of the frontend JS/CSS. index.html references assets
+    as `js/core.js?v=<fingerprint>` so browsers fetch new files after every
+    deploy instead of reusing a heuristically cached copy."""
+    h = hashlib.sha1()
+    for f in sorted(list(FRONTEND_DIR.glob("js/**/*.js")) + list(FRONTEND_DIR.glob("css/*.css"))):
+        h.update(f.read_bytes())
+    return h.hexdigest()[:10]
+
+
+@app.middleware("http")
+async def _static_no_cache(request: Request, call_next):
+    response = await call_next(request)
+    if not request.url.path.startswith("/api/"):
+        # Always revalidate static files (ETag keeps it cheap); versioned
+        # query strings make the actual cache-busting deterministic.
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 if FRONTEND_DIR.exists():
+    _INDEX_FILE = FRONTEND_DIR / "index.html"
+
+    @app.get("/", include_in_schema=False)
+    @app.get("/index.html", include_in_schema=False)
+    def index_html():
+        html = _INDEX_FILE.read_text(encoding="utf-8").replace("__ASSET_V__", _asset_version())
+        return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
+
     app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")

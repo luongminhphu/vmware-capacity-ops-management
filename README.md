@@ -55,6 +55,11 @@ vCenter, bộ lọc cluster/host/power/tìm kiếm và thứ tự sắp xếp), 
 bộ lọc và thời điểm xuất. Backend tạo file bằng `openpyxl` tại `POST /api/export/xlsx`
 (yêu cầu đăng nhập; header cố định, autofilter, tối đa 100 000 dòng).
 
+> Cache trình duyệt: `index.html` được backend render với tham số phiên bản
+> (`js/core.js?v=<fingerprint>` tính từ nội dung JS/CSS) và mọi file tĩnh trả `Cache-Control:
+> no-cache`, nên sau mỗi lần deploy image mới trình duyệt tự tải JS/CSS mới — không còn tình
+> trạng giao diện mới nhưng logic cũ (ví dụ dropdown cluster trống).
+
 ### Mã đối soát (ticket code) — dẫn chứng cho từng khuyến nghị
 
 Mỗi compliance finding có một **mã đối soát ổn định** dạng `HRAM-C4C34`, `IDLE-F916A`… (tiền tố

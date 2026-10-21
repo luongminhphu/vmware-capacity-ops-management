@@ -953,7 +953,7 @@ function getVmTableRows() {
 function syncVmClusterFilterOptions() {
   const sel = $('#vmClusterFilter');
   if (!sel) return;
-  const clusters = Array.from(new Set(getFilteredVms().map(v => v.cluster))).sort((a, b) => a.localeCompare(b));
+  const clusters = Array.from(new Set(getFilteredVms().map(v => v.cluster).filter(Boolean).map(String))).sort((a, b) => a.localeCompare(b));
   if (!clusters.includes(appState.vmClusterFilter)) appState.vmClusterFilter = 'all';
   sel.innerHTML = `<option value="all">Mọi cluster (${clusters.length})</option>` +
     clusters.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('');
