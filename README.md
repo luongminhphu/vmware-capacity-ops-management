@@ -66,6 +66,17 @@ cluster), `lead` (tháng mua sắm + triển khai, mặc định 3), `target` (%
   (toàn phạm vi + từng cluster, trục chặn ở 200%), Lộ trình bổ sung node theo mốc 6/12/…
   tháng kèm biểu đồ, Đề xuất theo cluster (phương án A thêm node / B nâng RAM).
 
+### What-if Simulation — Upgrade Host (nâng cấp host hiện hữu)
+
+Ngoài Add Host / Add VM / Resize VM / Decommission, tab **Upgrade Host** mô phỏng nâng cấp tại
+chỗ (thêm DIMM, đổi CPU) cho các host đang tick trong cluster mục tiêu. Quy tắc riêng cho CPU
+cores và RAM: *Giữ nguyên / Đặt thành / Cộng thêm / Tăng theo %*; bảng host xem trước cấu hình
+sau nâng cấp. Kết quả gồm before/after như các kịch bản khác, bảng Δ từng host, tổng cores/GB thêm
+quy đổi ra "tương đương bao nhiêu host trung bình" để so với phương án mua host mới, và kiểm tra
+N+1 sau nâng cấp (mất host lớn nhất mới) — vì nâng cấp tại chỗ không tăng số host nên không cải
+thiện dự phòng N+1. Template nhanh **Host upgrade** (RAM ×2 toàn bộ host) cũng dùng logic này
+(`getEffectiveData({ upgradeHosts })`).
+
 ### Inventory — lọc VM theo cluster & xuất Excel
 
 Tab **Inventory** có bộ lọc **cluster riêng cho bảng VM** (độc lập với bộ lọc chung trên thanh
