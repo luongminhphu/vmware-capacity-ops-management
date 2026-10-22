@@ -26,12 +26,15 @@ A4 (in được trực tiếp) từ `GET /api/reports/pdf?view=executive|technic
   ít chữ, nhiều biểu đồ, đủ ý để ra quyết định; phần giải thích chi tiết để ở Báo cáo Kỹ thuật.
   Trách nhiệm xử lý quy về System Owner của từng cluster:
   - *Trang 1*: tiêu đề gọn (dòng eyebrow ghi phạm vi + ngày; không có đoạn mô tả hay dòng meta
-    Phạm vi/Ngày/Trạng thái/Đồng bộ), ngay dưới là hộp **Tổng kết khuyến nghị** (trạng thái + 1 câu
-    kết luận + danh sách khuyến nghị đánh số: ưu tiên · đề xuất → đề nghị phê duyệt · thời điểm
-    + 5 ô số liệu: dư địa, số tháng tới ngưỡng, dự phòng N+1, VM thu hồi được, số điểm nghiêm
-    trọng), gauge CPU/RAM (và Storage nếu bật) cạnh 4 KPI, biểu đồ **Bao lâu nữa chạm ngưỡng** (3 kịch bản +5/+10/+20 %/quý, mốc 1–2–3
-    năm) cạnh biểu đồ **Mức dùng theo cluster**, và một bảng **Đề xuất & quyết định cần phê duyệt**
-    (đề xuất + 1 dòng việc cần làm → ưu tiên → thời điểm → đề nghị phê duyệt → ô ký; tối đa 6 dòng).
+    Phạm vi/Ngày/Trạng thái/Đồng bộ), ngay dưới là hộp **Tổng kết — vấn đề & quyết định đề nghị**
+    (trạng thái + 1 câu kết luận + danh sách đánh số, mỗi dòng là *pain point* → quyết định đề
+    nghị · thời điểm, ví dụ "1/3 cluster không chịu được mất 1 host (DR-CLUSTER) → Duyệt host dự
+    phòng N+1 cho 1 cluster · Trong 1 quý"; + 5 ô số liệu: dư địa, số tháng tới ngưỡng, dự phòng
+    N+1, VM thu hồi được, số điểm nghiêm trọng), gauge CPU/RAM (và Storage nếu bật) cạnh 4 KPI,
+    biểu đồ **Bao lâu nữa chạm ngưỡng** (3 kịch bản +5/+10/+20 %/quý, mốc 1–2–3 năm) cạnh biểu đồ
+    **Mức dùng theo cluster**, và bảng **Vấn đề cần quyết định** (tiêu đề = vấn đề/pain point,
+    1 dòng *Rủi ro*, 1 dòng *Đề xuất* → ưu tiên → thời điểm → đề nghị phê duyệt → ô ký; tối đa 6
+    dòng). Toàn bộ câu chữ viết ngắn, nêu thẳng vấn đề và quyết định cần lấy, không mô tả kỹ thuật.
   - *Trang 2*: biểu đồ **Xu hướng** CPU/RAM theo cluster + 4 ô biến động (CPU, RAM, số VM, số
     host), bảng cluster cần quan tâm (có cột N+1), **Điểm cần System Owner xử lý** gồm donut
     finding theo mức độ, biểu đồ nghiêm trọng theo cluster và theo loại, top-6 điểm nghiêm trọng có
