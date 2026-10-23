@@ -130,9 +130,9 @@ def sizing_pdf(payload: SizingPayload, user: User = Depends(get_current_user), d
                                                    include_new=payload.includeNewOption, include_existing=payload.includeExisting)
     except Exception as exc:  # pragma: no cover - surfaced to the UI
         raise HTTPException(status_code=500, detail=f"Không thể tạo PDF: {exc}")
-    label = _ascii_slug(params.environment)
+    label = _ascii_slug(params.environment, fallback="")
     kind = "tan_dung_hien_huu" if payload.mode == "reuse" else "trang_bi_moi"
-    filename = f"VCO_De_xuat_cau_hinh_may_chu_{label}_{kind}_{dt.datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
+    filename = f"VCO_De_xuat_cau_hinh_may_chu_{(label + '_') if label else ''}{kind}_{dt.datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
     return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf", headers=_attachment_headers(filename))
 
 
@@ -160,7 +160,7 @@ async def sizing_import(file: UploadFile = File(...), user: User = Depends(get_c
 
 def _ascii_slug(text: Optional[str], fallback: str = "may_chu", limit: int = 40) -> str:
     """ASCII-only file-name fragment. HTTP headers are latin-1, so Vietnamese
-    project names ("Ví dụ — ứng dụng 3 lớp") must be transliterated, not just
+    project names ("Dự án Đầu tư / CRM 2026") must be transliterated, not just
     filtered with str.isalnum() (which accepts Unicode letters)."""
     text = (text or "").replace("đ", "d").replace("Đ", "D")
     text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
@@ -302,5 +302,5 @@ def sizing_export(payload: SizingPayload, user: User = Depends(get_current_user)
     ws3.freeze_panes = "A2"
     _autowidth(ws3)
 
-    base = "VCO_Sizing_" + _ascii_slug(params.get("environment"))
+    base = "VCO_Sizing" + (("_" + _ascii_slug(params.get("environment"), fallback="")) if (params.get("environment") or "").strip() else "")
     return _xlsx_response(wb, base)

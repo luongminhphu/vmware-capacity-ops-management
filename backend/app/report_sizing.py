@@ -318,7 +318,10 @@ def render_sizing_html(vms: List[sizing.VmSpec], params: sizing.SizingParams, pr
     best = result["results"][result["recommendedIndex"]] if result["recommendedIndex"] is not None else None
     existing = existing or []
     generated_at = _now_str()
-    project = params.environment.strip() or "dự án mới"
+    env_name = params.environment.strip()
+    project = env_name or "dự án mới"          # used inside sentences ("… VM của dự án mới …")
+    title = "Đề xuất cấu hình máy chủ" + (f" — {esc(env_name)}" if env_name else "")
+    eyebrow_project = f" · {esc(env_name)}" if env_name else ""
     logo_html = f'<img class="cover-logo" src="{logo_data_url}" alt="logo"/>' if logo_data_url else ""
     vm_dicts = [{"name": v.name, "qty": v.qty, "vcpu": v.vcpu, "ramGB": v.ram_gb, "diskGB": v.disk_gb, "note": v.note} for v in vms]
     appendix_break = "breakable" if len(vm_dicts) > 12 else ""
@@ -373,8 +376,8 @@ def render_sizing_html(vms: List[sizing.VmSpec], params: sizing.SizingParams, pr
 <body>
   <div class="cover-header">
     <div>
-      <div class="eyebrow">Infrastructure Capacity Ops · Host Sizing · {'Tận dụng hiện hữu' if mode == 'reuse' else 'Trang bị mới'} · {esc(project)} · {esc(generated_at.split(' ')[-1])}</div>
-      <div class="cover-title" style="margin-bottom:6px;">Đề xuất cấu hình máy chủ — {esc(project)}</div>
+      <div class="eyebrow">Infrastructure Capacity Ops · Host Sizing · {'Tận dụng hiện hữu' if mode == 'reuse' else 'Trang bị mới'}{eyebrow_project} · {esc(generated_at.split(' ')[-1])}</div>
+      <div class="cover-title" style="margin-bottom:6px;">{title}</div>
     </div>
     {logo_html}
   </div>

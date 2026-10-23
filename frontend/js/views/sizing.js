@@ -378,7 +378,7 @@ async function loadSizingSample() {
     const defaults = await api.getSizingDefaults();
     const st = sizingState();
     st.vms = (defaults.sampleVms || []).map(r => ({ id: nextSizingId(), name: r.name, qty: r.qty, vcpu: r.vcpu, ramGB: r.ramGB, diskGB: r.diskGB, note: r.note || '' }));
-    if (!st.params.environment) { st.params.environment = 'Ví dụ — ứng dụng 3 lớp'; sizingParamsToDom(); }
+    // Sample data never names the project — the user types the real project/system name so titles stay clean.
     persistSizing();
     renderSizingVmTable();
     $('#sizingResult').classList.add('hidden');
