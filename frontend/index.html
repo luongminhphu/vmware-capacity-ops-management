@@ -520,7 +520,25 @@
               <div class="multi-row-add"><button class="btn btn-secondary btn-sm" id="btnSizingAddProfile" type="button">+ Thêm cấu hình</button></div>
               <div class="sim-actions">
                 <button class="btn btn-primary" id="btnSizingRun" type="button">Tính sizing</button>
-                <button class="btn btn-secondary" id="btnSizingPdf" type="button" title="PDF 'Đề xuất cấu hình máy chủ' theo bố cục báo cáo quản trị (tóm tắt → so sánh → giả định) để đính kèm tờ trình">Xuất PDF · Đề xuất</button>
+                <details class="finding-filter-dropdown" id="sizingPdfDropdown">
+                  <summary class="btn btn-secondary" title="PDF 'Đề xuất cấu hình máy chủ' theo bố cục báo cáo quản trị (tóm tắt → so sánh → giả định) để đính kèm tờ trình">Xuất PDF · Đề xuất ▾</summary>
+                  <div class="finding-filter-panel planning-panel sz-pdf-panel">
+                    <div class="planning-panel-title">Nội dung đề xuất</div>
+                    <label class="sz-radio"><input type="radio" name="szPdfMode" value="new" checked> <span><b>Trang bị mới server</b> <span class="muted-sub">(mặc định)</span><br><span class="muted-sub">Số host vật lý cần mua theo từng cấu hình ứng viên, ngân sách ước tính.</span></span></label>
+                    <label class="sz-radio"><input type="radio" name="szPdfMode" value="reuse"> <span><b>Tận dụng server hiện hữu</b><br><span class="muted-sub">Đặt dự án lên cluster đang có: CPU/RAM sau tiếp nhận, N+1, dư địa còn lại, chi phí tránh được.</span></span></label>
+                    <div id="szPdfNewOpts">
+                      <label class="sz-check"><input type="checkbox" id="szPdfIncludeExisting" checked> Kèm mục kiểm tra "hạ tầng hiện hữu có hấp thụ được không"</label>
+                    </div>
+                    <div id="szPdfReuseOpts" class="hidden">
+                      <label class="planning-field">Cluster tiếp nhận
+                        <select id="szPdfCluster"><option value="">Tự chọn cluster phù hợp nhất</option></select>
+                      </label>
+                      <p class="logo-upload-hint" id="szPdfClusterHint"></p>
+                      <label class="sz-check"><input type="checkbox" id="szPdfIncludeNew" checked> Kèm phương án B — trang bị mới để đối chiếu</label>
+                    </div>
+                    <button class="btn btn-primary btn-sm" id="btnSizingPdf" type="button" style="align-self:flex-start;">Tạo PDF</button>
+                  </div>
+                </details>
                 <button class="btn btn-secondary" id="btnSizingExport" type="button" title="Xuất Excel: tóm tắt + so sánh cấu hình + danh sách VM">Xuất Excel</button>
               </div>
             </div>

@@ -122,6 +122,16 @@ team Infra cần đề xuất số lượng và cấu hình máy chủ vật lý
   **Giả định** (kèm công thức tính) → **Hạ tầng hiện hữu có hấp thụ được không?** (UI gửi kèm kết quả
   kiểm tra trên dữ liệu vCenter hiện tại) → **Phụ lục** danh sách VM (tự sang trang mới nếu > 12 dòng).
   Dùng logo báo cáo đã cấu hình.
+  Nút "Xuất PDF · Đề xuất" mở hộp **Nội dung đề xuất** với 2 tùy chọn (`mode`):
+  - **Trang bị mới server** (mặc định) — bố cục trên; có thể bỏ mục kiểm tra hạ tầng hiện hữu
+    (`includeExisting=false` → 1 trang).
+  - **Tận dụng server hiện hữu** (`mode=reuse`) — đặt dự án lên một cluster đang có: chọn cluster tiếp nhận
+    (`targetCluster`; mặc định tự chọn cluster an toàn nhất: dưới 80% ngưỡng và giữ N+1). Hộp Tổng kết
+    đổi sang trạng thái TẬN DỤNG HIỆN HỮU / CẦN CÂN NHẮC / KHÔNG AN TOÀN, các dòng quyết định "Duyệt chủ
+    trương dùng chung hạ tầng với System Owner cluster X", host dự phòng, dư địa còn lại (~VM cỡ dự án),
+    ô "Chi phí tránh được" (= ngân sách phương án mua mới). Bảng cluster hiện hữu tô màu cluster đang xét
+    kèm đoạn chi tiết cores/RAM/overcommit; tuỳ chọn kèm **Phương án B — trang bị mới (đối chiếu)**
+    (`includeNewOption`). Tên file kết thúc bằng `_trang_bi_moi` / `_tan_dung_hien_huu`.
 
 ### Inventory — lọc VM theo cluster & xuất Excel
 

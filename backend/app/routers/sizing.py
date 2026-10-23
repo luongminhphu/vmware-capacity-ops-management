@@ -67,6 +67,14 @@ class ExistingClusterIn(BaseModel):
     n1RamPct: Optional[float] = None
     n1Ok: Optional[bool] = None
     cls: str = "na"
+    totalCores: Optional[float] = None
+    totalRamGB: Optional[float] = None
+    usedVcpu: Optional[float] = None
+    usedRamGB: Optional[float] = None
+    poweredOnCount: Optional[int] = None
+    cpuOcAfter: Optional[float] = None
+    ramOcAfter: Optional[float] = None
+    extraAvgVms: Optional[int] = None
 
 
 class SizingPayload(BaseModel):
@@ -77,6 +85,11 @@ class SizingPayload(BaseModel):
     policyText: str = Field(default="", max_length=120)
     currency: str = Field(default="VND", max_length=8)
     preparedBy: str = Field(default="", max_length=80)
+    # PDF content: 'new' = buy new servers (default) · 'reuse' = place the project on an existing cluster
+    mode: str = Field(default="new", pattern="^(new|reuse)$")
+    targetCluster: Optional[str] = Field(default=None, max_length=120)
+    includeNewOption: bool = True      # reuse mode: append the buy-new comparison as option B
+    includeExisting: bool = True       # new mode: append the existing-cluster absorption check
 
 
 def _inputs(payload: SizingPayload):
@@ -111,11 +124,14 @@ def sizing_pdf(payload: SizingPayload, user: User = Depends(get_current_user), d
     existing = [e.model_dump() for e in (payload.existing or [])][:20]
     try:
         pdf_bytes = report_sizing.build_sizing_pdf(vms, params, profiles, existing=existing, policy_txt=payload.policyText,
-                                                   currency=payload.currency, logo_data_url=logo_data_url, prepared_by=payload.preparedBy)
+                                                   currency=payload.currency, logo_data_url=logo_data_url, prepared_by=payload.preparedBy,
+                                                   mode=payload.mode, target_cluster=payload.targetCluster,
+                                                   include_new=payload.includeNewOption, include_existing=payload.includeExisting)
     except Exception as exc:  # pragma: no cover - surfaced to the UI
         raise HTTPException(status_code=500, detail=f"Không thể tạo PDF: {exc}")
     label = "".join(ch for ch in (params.environment or "may_chu") if ch.isalnum() or ch in "-_")[:40] or "may_chu"
-    filename = f"VCO_De_xuat_cau_hinh_may_chu_{label}_{dt.datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
+    kind = "tan_dung_hien_huu" if payload.mode == "reuse" else "trang_bi_moi"
+    filename = f"VCO_De_xuat_cau_hinh_may_chu_{label}_{kind}_{dt.datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
     return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf",
                              headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 

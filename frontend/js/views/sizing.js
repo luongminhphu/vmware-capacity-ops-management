@@ -253,7 +253,14 @@ function sizingAbsorptionRows(demand) {
     }
     const worst = Math.max(after.cpuPct || 0, after.ramPct || 0);
     const cls = worst > 100 ? 'crit' : worst > 80 ? 'warn' : 'ok';
-    return { name, hostCount: hosts.length, before, after, n1, cls };
+    // Headroom left after absorbing: how many more project-average VMs fit under 80% of the policy ceiling.
+    let extraAvgVms = null;
+    if (demand.avgVcpu > 0 && demand.avgRamGB > 0 && isFinite(after.cpuPct) && isFinite(after.ramPct)) {
+      const capVcpu = after.totalLogicalCores * appState.policy.cpuOvercommitMax * 0.8;
+      const capRam = after.totalRamGB * appState.policy.ramOvercommitMax * 0.8;
+      extraAvgVms = Math.max(0, Math.floor(Math.min((capVcpu - after.usedVcpu) / demand.avgVcpu, (capRam - after.usedRamGB) / demand.avgRamGB)));
+    }
+    return { name, hostCount: hosts.length, before, after, n1, cls, extraAvgVms };
   });
 }
 
@@ -385,15 +392,46 @@ function sizingExistingPayload() {
   const payload = sizingPayload();
   const t = sizingTotals(sizingState().vms);
   const g = 1 + Math.max(0, cleanNum(payload.params.growth_pct)) / 100;
-  const demand = { vcpuPlanned: t.vcpu * g, ramPlannedGB: t.ram * g };
+  const demand = { vcpuPlanned: t.vcpu * g, ramPlannedGB: t.ram * g, avgVcpu: t.count ? t.vcpu / t.count : 0, avgRamGB: t.count ? t.ram / t.count : 0 };
   const rows = sizingAbsorptionRows(demand);
+  const fin = v => (v === null || v === undefined || !isFinite(v)) ? null : v;
   const existing = rows.map(a => ({
     name: a.name, hostCount: a.hostCount,
-    cpuBefore: a.before.cpuPct, cpuAfter: a.after.cpuPct, ramBefore: a.before.ramPct, ramAfter: a.after.ramPct,
-    n1CpuPct: a.n1 ? a.n1.cpuPct : null, n1RamPct: a.n1 ? a.n1.ramPct : null, n1Ok: a.n1 ? a.n1.ok : null, cls: a.cls,
+    cpuBefore: fin(a.before.cpuPct), cpuAfter: fin(a.after.cpuPct), ramBefore: fin(a.before.ramPct), ramAfter: fin(a.after.ramPct),
+    n1CpuPct: a.n1 ? fin(a.n1.cpuPct) : null, n1RamPct: a.n1 ? fin(a.n1.ramPct) : null, n1Ok: a.n1 ? a.n1.ok : null, cls: a.cls,
+    totalCores: a.after.totalCores, totalRamGB: a.after.totalRamGB, usedVcpu: a.before.usedVcpu, usedRamGB: a.before.usedRamGB,
+    poweredOnCount: a.before.poweredOnCount, cpuOcAfter: fin(a.after.cpuOvercommit), ramOcAfter: fin(a.after.ramOvercommit),
+    extraAvgVms: a.extraAvgVms,
   }));
   const policyText = appState.policy ? `${appState.policy.cpuOvercommitMax}x CPU · ${appState.policy.ramOvercommitMax}x RAM` : '';
-  return { ...payload, existing, policyText };
+  // PDF content options from the dropdown (default: buy new servers).
+  const mode = (document.querySelector('input[name="szPdfMode"]:checked') || {}).value === 'reuse' ? 'reuse' : 'new';
+  const clusterSel = $('#szPdfCluster');
+  const targetCluster = clusterSel && clusterSel.value ? clusterSel.value : null;
+  const includeNewOption = $('#szPdfIncludeNew') ? $('#szPdfIncludeNew').checked : true;
+  const includeExisting = $('#szPdfIncludeExisting') ? $('#szPdfIncludeExisting').checked : true;
+  return { ...payload, existing, policyText, mode, targetCluster, includeNewOption, includeExisting };
+}
+
+/* Fill the "cluster tiếp nhận" select and toggle option rows for the chosen PDF content. */
+function refreshSizingPdfOptions() {
+  const sel = $('#szPdfCluster');
+  if (!sel) return;
+  const mode = (document.querySelector('input[name="szPdfMode"]:checked') || {}).value === 'reuse' ? 'reuse' : 'new';
+  $('#szPdfReuseOpts').classList.toggle('hidden', mode !== 'reuse');
+  $('#szPdfNewOpts').classList.toggle('hidden', mode !== 'new');
+  const prev = sel.value;
+  let rows = [];
+  try {
+    const t = sizingTotals(sizingState().vms);
+    const g = 1 + Math.max(0, cleanNum(sizingState().params.growth_pct)) / 100;
+    rows = sizingAbsorptionRows({ vcpuPlanned: t.vcpu * g, ramPlannedGB: t.ram * g, avgVcpu: t.count ? t.vcpu / t.count : 0, avgRamGB: t.count ? t.ram / t.count : 0 });
+  } catch (_) { rows = []; }
+  const label = a => `${a.name} — ${a.cls === 'ok' ? 'hấp thụ được' : a.cls === 'warn' ? 'sát ngưỡng' : 'vượt ngưỡng'}${a.n1 ? (a.n1.ok ? ', N+1 đạt' : ', mất N+1') : ''}`;
+  sel.innerHTML = `<option value="">Tự chọn cluster phù hợp nhất</option>` + rows.map(a => `<option value="${esc(a.name)}">${esc(label(a))}</option>`).join('');
+  if (rows.some(a => a.name === prev)) sel.value = prev;
+  const hint = $('#szPdfClusterHint');
+  if (hint) hint.textContent = rows.length ? `${rows.length} cluster trong phạm vi vCenter đang chọn; % tính sau khi cộng toàn bộ nhu cầu dự án.` : 'Chưa có dữ liệu cluster hiện hữu — PDF sẽ ghi rõ không có cluster để đối chiếu.';
 }
 
 async function exportSizingPdf(btn) {
@@ -401,7 +439,10 @@ async function exportSizingPdf(btn) {
   if (!payload.vms.length) { showValidationBanner(['Danh sách VM trống — chưa có gì để lập đề xuất.'], []); return; }
   const label = btn.textContent;
   btn.disabled = true; btn.textContent = 'Đang tạo PDF…';
-  try { await api.downloadSizingPdf(payload); }
+  try {
+    await api.downloadSizingPdf(payload);
+    const dd = $('#sizingPdfDropdown'); if (dd) dd.removeAttribute('open');
+  }
   catch (err) { showValidationBanner([`Không tạo được PDF: ${err.message}`], []); }
   finally { btn.disabled = false; btn.textContent = label; }
 }
@@ -443,6 +484,12 @@ function bindSizingView() {
   $('#btnSizingRun').addEventListener('click', e => runSizing(e.currentTarget));
   $('#btnSizingExport').addEventListener('click', e => exportSizingXlsx(e.currentTarget));
   $('#btnSizingPdf').addEventListener('click', e => exportSizingPdf(e.currentTarget));
+  $('#sizingPdfDropdown').addEventListener('toggle', e => { if (e.currentTarget.open) refreshSizingPdfOptions(); });
+  document.querySelectorAll('input[name="szPdfMode"]').forEach(r => r.addEventListener('change', refreshSizingPdfOptions));
+  document.addEventListener('click', e => {
+    const dd = $('#sizingPdfDropdown');
+    if (dd && dd.open && !dd.contains(e.target)) dd.removeAttribute('open');
+  });
 
   Object.values(SIZING_PARAM_FIELDS).forEach(id => {
     const el = document.getElementById(id);
