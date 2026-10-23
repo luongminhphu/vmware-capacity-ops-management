@@ -155,7 +155,8 @@ def export_xlsx(payload: XlsxPayload, user: User = Depends(get_current_user)):
     out = io.BytesIO()
     wb.save(out)
     out.seek(0)
-    safe = "".join(ch for ch in payload.filename if ch.isalnum() or ch in "-_") or "export"
+    # ASCII only: HTTP headers are latin-1 and str.isalnum() accepts Vietnamese letters.
+    safe = "".join(ch for ch in payload.filename if (ch.isalnum() and ch.isascii()) or ch in "-_") or "export"
     filename = f"{safe}_{dt.datetime.now().strftime('%Y%m%d_%H%M')}.xlsx"
     return StreamingResponse(
         out,

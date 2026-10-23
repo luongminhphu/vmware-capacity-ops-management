@@ -2,6 +2,7 @@
 template, and export the sizing result to Excel."""
 import datetime as dt
 import io
+import unicodedata
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -129,11 +130,10 @@ def sizing_pdf(payload: SizingPayload, user: User = Depends(get_current_user), d
                                                    include_new=payload.includeNewOption, include_existing=payload.includeExisting)
     except Exception as exc:  # pragma: no cover - surfaced to the UI
         raise HTTPException(status_code=500, detail=f"Không thể tạo PDF: {exc}")
-    label = "".join(ch for ch in (params.environment or "may_chu") if ch.isalnum() or ch in "-_")[:40] or "may_chu"
+    label = _ascii_slug(params.environment)
     kind = "tan_dung_hien_huu" if payload.mode == "reuse" else "trang_bi_moi"
     filename = f"VCO_De_xuat_cau_hinh_may_chu_{label}_{kind}_{dt.datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
-    return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf",
-                             headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+    return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf", headers=_attachment_headers(filename))
 
 
 @router.get("/defaults")
@@ -158,6 +158,23 @@ async def sizing_import(file: UploadFile = File(...), user: User = Depends(get_c
     return parsed
 
 
+def _ascii_slug(text: Optional[str], fallback: str = "may_chu", limit: int = 40) -> str:
+    """ASCII-only file-name fragment. HTTP headers are latin-1, so Vietnamese
+    project names ("Ví dụ — ứng dụng 3 lớp") must be transliterated, not just
+    filtered with str.isalnum() (which accepts Unicode letters)."""
+    text = (text or "").replace("đ", "d").replace("Đ", "D")
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+    slug = "".join(ch if (ch.isalnum() or ch in "-_") else "_" for ch in text.strip()).strip("_")
+    while "__" in slug:
+        slug = slug.replace("__", "_")
+    return slug[:limit].strip("_") or fallback
+
+
+def _attachment_headers(filename: str) -> Dict[str, str]:
+    safe = filename.encode("ascii", "ignore").decode("ascii").replace('"', "")
+    return {"Content-Disposition": f'attachment; filename="{safe}"'}
+
+
 def _xlsx_response(wb, base: str) -> StreamingResponse:
     out = io.BytesIO()
     wb.save(out)
@@ -166,7 +183,7 @@ def _xlsx_response(wb, base: str) -> StreamingResponse:
     return StreamingResponse(
         out,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers=_attachment_headers(filename),
     )
 
 
@@ -285,5 +302,5 @@ def sizing_export(payload: SizingPayload, user: User = Depends(get_current_user)
     ws3.freeze_panes = "A2"
     _autowidth(ws3)
 
-    base = "VCO_Sizing_" + "".join(ch for ch in (params.get("environment") or "may_chu") if ch.isalnum() or ch in "-_")[:40]
+    base = "VCO_Sizing_" + _ascii_slug(params.get("environment"))
     return _xlsx_response(wb, base)

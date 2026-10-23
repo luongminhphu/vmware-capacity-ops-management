@@ -434,17 +434,34 @@ function refreshSizingPdfOptions() {
   if (hint) hint.textContent = rows.length ? `${rows.length} cluster trong phạm vi vCenter đang chọn; % tính sau khi cộng toàn bộ nhu cầu dự án.` : 'Chưa có dữ liệu cluster hiện hữu — PDF sẽ ghi rõ không có cluster để đối chiếu.';
 }
 
+function szPdfStatus(msg, isError = false) {
+  // Inline status inside the options panel — the global banner sits at the top of the page and is easy to miss here.
+  const el = $('#szPdfStatus');
+  if (!el) return;
+  el.textContent = msg || '';
+  el.classList.toggle('sz-pdf-status-error', !!isError);
+  el.classList.toggle('hidden', !msg);
+}
+
 async function exportSizingPdf(btn) {
-  const payload = sizingExistingPayload();
-  if (!payload.vms.length) { showValidationBanner(['Danh sách VM trống — chưa có gì để lập đề xuất.'], []); return; }
   const label = btn.textContent;
   btn.disabled = true; btn.textContent = 'Đang tạo PDF…';
+  szPdfStatus('Đang tổng hợp dữ liệu và tạo PDF…');
   try {
+    const payload = sizingExistingPayload();
+    if (!payload.vms.length) {
+      szPdfStatus('Danh sách VM trống hoặc chưa có dòng hợp lệ (cần số lượng > 0 và vCPU/RAM > 0) — chưa có gì để lập đề xuất.', true);
+      return;
+    }
     await api.downloadSizingPdf(payload);
+    szPdfStatus('');
     const dd = $('#sizingPdfDropdown'); if (dd) dd.removeAttribute('open');
-  }
-  catch (err) { showValidationBanner([`Không tạo được PDF: ${err.message}`], []); }
-  finally { btn.disabled = false; btn.textContent = label; }
+  } catch (err) {
+    console.error('Sizing PDF export failed', err);
+    const msg = `Không tạo được PDF: ${err && err.message ? err.message : err}`;
+    szPdfStatus(msg, true);
+    showValidationBanner([msg], []);
+  } finally { btn.disabled = false; btn.textContent = label; }
 }
 
 async function exportSizingXlsx(btn) {
@@ -484,7 +501,12 @@ function bindSizingView() {
   $('#btnSizingRun').addEventListener('click', e => runSizing(e.currentTarget));
   $('#btnSizingExport').addEventListener('click', e => exportSizingXlsx(e.currentTarget));
   $('#btnSizingPdf').addEventListener('click', e => exportSizingPdf(e.currentTarget));
-  $('#sizingPdfDropdown').addEventListener('toggle', e => { if (e.currentTarget.open) refreshSizingPdfOptions(); });
+  $('#sizingPdfDropdown').addEventListener('toggle', e => {
+    if (!e.currentTarget.open) return;
+    szPdfStatus('');
+    try { refreshSizingPdfOptions(); }
+    catch (err) { console.error('Sizing PDF options failed', err); szPdfStatus(`Không nạp được danh sách cluster: ${err.message}`, true); }
+  });
   document.querySelectorAll('input[name="szPdfMode"]').forEach(r => r.addEventListener('change', refreshSizingPdfOptions));
   document.addEventListener('click', e => {
     const dd = $('#sizingPdfDropdown');
