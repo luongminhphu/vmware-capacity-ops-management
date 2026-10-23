@@ -34,6 +34,8 @@ function sizingState() {
         const saved = JSON.parse(raw);
         if (Array.isArray(saved.vms)) appState.sizing.vms = saved.vms;
         if (saved.params) appState.sizing.params = { ...SIZING_DEFAULT_PARAMS, ...saved.params };
+        // Older builds auto-filled the sample project name into "Tên dự án / hệ thống" and persisted it; drop it once.
+        if (/^Ví dụ\s*[—-]\s*ứng dụng 3 lớp$/i.test(String(appState.sizing.params.environment || '').trim())) appState.sizing.params.environment = '';
         if (Array.isArray(saved.profiles) && saved.profiles.length) appState.sizing.profiles = saved.profiles;
       }
     } catch (e) { /* ignore corrupt storage */ }
