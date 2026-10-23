@@ -258,6 +258,7 @@
         <button class="tab-btn" data-view="compliance" type="button">Compliance</button>
         <button class="tab-btn" data-view="inventory" type="button">Inventory</button>
         <button class="tab-btn" data-view="whatif" type="button">What-if Simulation</button>
+        <button class="tab-btn" data-view="sizing" type="button">Sizing máy chủ</button>
       </div>
       <div class="panel-toolbar">
         <select id="filterCluster"><option value="all">Tất cả cluster</option></select>
@@ -462,6 +463,71 @@
         </div>
       </section>
 
+      <!-- ================= SIZING VIEW ================= -->
+      <section id="viewSizing" class="view-section hidden">
+        <section class="table-card">
+          <div class="panel-head">
+            <div><div class="panel-title">Danh sách VM yêu cầu</div><p class="panel-sub">Team Dev cung cấp danh sách máy chủ ảo cho dự án mới (số lượng, vCPU, RAM, Disk). Nhập trực tiếp vào bảng hoặc import file Excel/CSV theo mẫu; từ tổng nhu cầu này hệ thống tính số host vật lý cần mua.</p></div>
+            <div class="panel-toolbar">
+              <input type="file" id="sizingFile" accept=".xlsx,.xlsm,.csv,.txt" hidden>
+              <button class="btn btn-primary btn-sm" id="btnSizingImport" type="button" title="Đọc file .xlsx hoặc .csv: cột Tên VM, Số lượng, vCPU, RAM (GB), Disk (GB), Ghi chú">Import Excel/CSV</button>
+              <button class="btn btn-secondary btn-sm" id="btnSizingTemplate" type="button">Tải file mẫu</button>
+              <button class="btn btn-secondary btn-sm" id="btnSizingSample" type="button">Nạp ví dụ</button>
+              <button class="btn btn-secondary btn-sm" id="btnSizingAddRow" type="button">+ Thêm dòng</button>
+              <button class="btn btn-secondary btn-sm btn-danger" id="btnSizingClear" type="button">Xoá danh sách</button>
+            </div>
+          </div>
+          <div class="table-scroll">
+            <table class="data-table sizing-table" id="sizingVmTable">
+              <thead><tr>
+                <th>#</th><th>Tên VM / nhóm</th><th>Số lượng</th><th>vCPU / VM</th><th>RAM GB / VM</th><th>Disk GB / VM</th>
+                <th>Tổng vCPU</th><th>Tổng RAM</th><th>Tổng Disk</th><th>Ghi chú</th><th></th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="row-count" id="sizingVmFoot"></div>
+        </section>
+
+        <div class="layout-2col">
+          <aside class="side-card">
+            <h4>Giả định sizing</h4>
+            <div class="sizing-params">
+              <div class="field"><label for="szEnv">Tên dự án / hệ thống</label><input id="szEnv" placeholder="VD: Core Banking phase 2"></div>
+              <div class="field"><label for="szCpuRatio" title="Số vCPU cấp phát trên mỗi pCPU logic. Prod thường 2–4x, Dev/Test 4–8x.">Overcommit CPU mục tiêu (vCPU : pCPU logic)</label><input id="szCpuRatio" value="3"></div>
+              <div class="field"><label for="szHt">Hệ số Hyperthreading</label><input id="szHt" value="2"></div>
+              <div class="field"><label for="szRamRatio" title="1.0 = không overcommit RAM (khuyến nghị cho Prod)">Overcommit RAM mục tiêu</label><input id="szRamRatio" value="1.0"></div>
+              <div class="field"><label for="szUtil" title="Chỉ quy hoạch dùng tới mức này của năng lực host; phần còn lại là headroom cho tải đột biến và vận hành.">Mức dùng tối đa mỗi host (%)</label><input id="szUtil" value="80"></div>
+              <div class="field"><label for="szGrowth" title="Cộng thêm vào yêu cầu của team Dev để không phải mua lại sớm.">Dự phòng tăng trưởng (%)</label><input id="szGrowth" value="20"></div>
+              <div class="field"><label for="szRedundancy">Dự phòng hỏng hóc (N + x)</label>
+                <select id="szRedundancy"><option value="0">N (không dự phòng)</option><option value="1" selected>N + 1</option><option value="2">N + 2</option></select></div>
+              <div class="field"><label for="szMinHosts">Số host tối thiểu / cluster</label><input id="szMinHosts" value="2"></div>
+              <div class="field"><label for="szReserveCores" title="ESXi và các dịch vụ hệ thống chiếm một phần CPU/RAM mỗi host.">ESXi chiếm: cores / host</label><input id="szReserveCores" value="2"></div>
+              <div class="field"><label for="szReserveRam">ESXi chiếm: RAM GB / host</label><input id="szReserveRam" value="16"></div>
+              <div class="field"><label for="szStorageMode">Lưu trữ</label>
+                <select id="szStorageMode"><option value="san" selected>SAN dùng chung (Pure / NetApp)</option><option value="local">Đĩa cục bộ / vSAN trên host</option></select></div>
+              <div class="field"><label for="szStorageOverhead" title="Snapshot, swap, tăng trưởng vmdk, mức trống tối thiểu của datastore.">Overhead lưu trữ (%)</label><input id="szStorageOverhead" value="25"></div>
+              <div class="field hidden" id="szProtectionField"><label for="szProtection" title="vSAN FTT=1 mirror = 2.0; RAID-5 = 1.33; RAID-6 = 1.5">Hệ số bảo vệ dữ liệu (×)</label><input id="szProtection" value="2.0"></div>
+            </div>
+          </aside>
+
+          <div class="sim-shell">
+            <div class="sim-card">
+              <div class="panel-head" style="margin-bottom:var(--space-3);">
+                <div><div class="panel-title" style="font-size:var(--text-base);">Cấu hình host ứng viên</div><p class="panel-sub">Khai các cấu hình máy chủ vật lý đang cân nhắc (socket × cores, RAM, đĩa cục bộ nếu dùng vSAN, đơn giá nếu có). Hệ thống tính số host cho từng cấu hình và đánh dấu phương án đề xuất.</p></div>
+              </div>
+              <div class="multi-row-list" id="sizingProfiles"></div>
+              <div class="multi-row-add"><button class="btn btn-secondary btn-sm" id="btnSizingAddProfile" type="button">+ Thêm cấu hình</button></div>
+              <div class="sim-actions">
+                <button class="btn btn-primary" id="btnSizingRun" type="button">Tính sizing</button>
+                <button class="btn btn-secondary" id="btnSizingExport" type="button" title="Xuất Excel: tóm tắt + so sánh cấu hình + danh sách VM">Xuất Excel</button>
+              </div>
+            </div>
+            <div class="sim-card sim-result hidden" id="sizingResult"></div>
+          </div>
+        </div>
+      </section>
+
     </main>
   </div>
 
@@ -472,6 +538,7 @@
 <script src="js/core.js?v=__ASSET_V__"></script>
 <script src="js/views/history.js?v=__ASSET_V__"></script>
 <script src="js/views/executive.js?v=__ASSET_V__"></script>
+<script src="js/views/sizing.js?v=__ASSET_V__"></script>
 <script src="js/app.js?v=__ASSET_V__"></script>
 </body>
 </html>

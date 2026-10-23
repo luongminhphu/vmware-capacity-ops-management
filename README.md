@@ -11,7 +11,8 @@ gian bằng PostgreSQL, và giao diện chia hai góc nhìn:
   gọn; trách nhiệm xử lý quy về **System Owner của từng cluster** (mỗi cluster do một phòng ban
   công nghệ phụ trách), không quy riêng cho IT.
 - **Technical View** — dashboard capacity chi tiết, bảng host/VM, compliance findings, what-if
-  simulation (Add Host, Upgrade Host, Upgrade + Add Host, Add VM, Resize VM, Decommission Idle VM + 8 scenario template dựng sẵn).
+  simulation (Add Host, Upgrade Host, Upgrade + Add Host, Add VM, Resize VM, Decommission Idle VM + 8 scenario template dựng sẵn),
+  và **Sizing máy chủ** (tính số host vật lý cần mua từ danh sách VM của dự án mới).
 
 Giao diện dùng tone màu lạnh (slate-blue) đồng nhất ở cả dark và light theme, giá trị số
 dùng tabular-nums, màu trạng thái AN TOÀN/THEO DÕI/VƯỢT NGƯỠNG nhất quán.
@@ -86,6 +87,33 @@ chi tiết liệt kê cả host nâng cấp (Δ cores/RAM) lẫn host mới (nh�
 riêng phần năng lực đến từ nâng cấp và từ host mới, số host trước → sau, và N+1 tính trên cụm
 sau thay đổi (mất host lớn nhất, kể cả host mới). Template **Upgrade + expansion** = RAM ×2 host
 hiện hữu + 1 host mới bằng host lớn nhất sau nâng cấp.
+
+### Sizing máy chủ (HW sizing từ danh sách VM của dự án)
+
+Bài toán: team Dev gửi danh sách VM cho một ứng dụng/hệ thống mới (tên, số lượng, vCPU, RAM, Disk);
+team Infra cần đề xuất số lượng và cấu hình máy chủ vật lý. Tab **Sizing máy chủ** (Technical View):
+
+- **Nhập liệu**: bảng sửa trực tiếp (Enter ở dòng cuối tạo dòng mới), hoặc **Import Excel/CSV**
+  (`POST /api/sizing/import`, đọc `.xlsx`/`.csv`, nhận tiêu đề tiếng Việt lẫn tiếng Anh: Tên VM / VM name,
+  Số lượng / Qty, vCPU / CPU, RAM / Memory, Disk / Storage, Ghi chú / Note; tự quy đổi "2 TB", "512 GB").
+  Nút **Tải file mẫu** (`GET /api/sizing/template`) và **Nạp ví dụ** để thử nhanh. Danh sách, giả định và
+  cấu hình ứng viên lưu trong trình duyệt (localStorage) nên không mất khi tải lại trang.
+- **Giả định sizing** (cột trái): overcommit CPU mục tiêu (vCPU : pCPU logic, mặc định 3x), hệ số HT,
+  overcommit RAM (mặc định 1.0), mức dùng tối đa mỗi host (80 %), dự phòng tăng trưởng (20 %), dự phòng
+  hỏng hóc N+x, số host tối thiểu, phần ESXi chiếm (cores/RAM mỗi host), lưu trữ SAN dùng chung hoặc
+  đĩa cục bộ/vSAN (có hệ số bảo vệ FTT/RAID) và overhead lưu trữ.
+- **Cấu hình host ứng viên**: nhiều dòng (sockets × cores/socket, RAM, đĩa cục bộ nếu vSAN, đơn giá
+  tuỳ chọn). Mặc định 2×16C/512 GB, 2×24C/768 GB, 2×32C/1 TB.
+- **Kết quả** (`POST /api/sizing/calc`, logic trong `backend/app/sizing.py`): với mỗi cấu hình — số host
+  theo CPU, theo RAM, +dự phòng → tổng host; ràng buộc chính; tổng cores/RAM; overcommit CPU/RAM sau khi
+  lắp; % năng lực khi mất đúng số host dự phòng (đạt N+x hay chưa); số VM cỡ trung bình của dự án còn
+  thêm được; ngân sách ước tính nếu có đơn giá. Phương án **Đề xuất** = ít host nhất → ngân sách thấp nhất
+  → hiệu suất dùng cao nhất. Ô số liệu nêu nhu cầu trước/sau tăng trưởng và **dung lượng SAN cần cấp**
+  (đã gồm overhead). Khối **Hạ tầng hiện hữu có hấp thụ được không?** đưa toàn bộ nhu cầu vào từng
+  cluster đang có (dữ liệu vCenter hiện tại), tính % ngưỡng trước → sau và N+1, kết luận có thể chưa
+  cần mua host hay bắt buộc bổ sung.
+- **Xuất Excel** (`POST /api/sizing/export`): 3 sheet — Tóm tắt (đề xuất, nhu cầu, giả định), So sánh
+  cấu hình (dòng đề xuất tô xanh), Danh sách VM (kèm tổng).
 
 ### Inventory — lọc VM theo cluster & xuất Excel
 

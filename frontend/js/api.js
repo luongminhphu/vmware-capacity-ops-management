@@ -155,6 +155,35 @@ const api = {
     return apiRequest(`/reports/brief?${qs}`);
   },
 
+  // Host sizing from a requested-VM list
+  getSizingDefaults: () => apiRequest('/sizing/defaults'),
+  calcSizing: (payload) => apiRequest('/sizing/calc', { method: 'POST', body: JSON.stringify(payload) }),
+  importSizingFile: (file) => { const fd = new FormData(); fd.append('file', file, file.name); return apiRequest('/sizing/import', { method: 'POST', body: fd }); },
+  downloadSizingTemplate: () => api._downloadBlob(`${API_BASE}/sizing/template`, { method: 'GET' }, 'VCO_Sizing_mau.xlsx'),
+  downloadSizingXlsx: (payload) => api._downloadBlob(`${API_BASE}/sizing/export`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, 'VCO_Sizing.xlsx'),
+
+  _downloadBlob: async (url, options, fallbackName) => {
+    const res = await fetch(url, { credentials: 'include', ...options });
+    if (res.status === 401) {
+      if (window.onApiUnauthorized) window.onApiUnauthorized();
+      throw new ApiError(401, 'Phiên đăng nhập đã hết hạn.');
+    }
+    if (!res.ok) {
+      let detail = `Lỗi API (${res.status})`;
+      try { const data = await res.json(); if (data && data.detail) detail = data.detail; } catch { /* not JSON */ }
+      throw new ApiError(res.status, detail);
+    }
+    const blob = await res.blob();
+    const cd = res.headers.get('Content-Disposition') || '';
+    const match = /filename="?([^";]+)"?/.exec(cd);
+    const filename = match ? match[1] : fallbackName;
+    const href = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = href; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(href), 1000);
+  },
+
   getLogo: () => apiRequest('/settings/logo'),
   saveLogo: (dataUrl, filename) => apiRequest('/settings/logo', { method: 'PUT', body: JSON.stringify({ data_url: dataUrl, filename }) }),
   deleteLogo: () => apiRequest('/settings/logo', { method: 'DELETE' }),

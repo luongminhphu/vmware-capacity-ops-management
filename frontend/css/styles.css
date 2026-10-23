@@ -406,3 +406,27 @@ td.finding-code{font-weight:700;color:var(--primary);white-space:nowrap;font-siz
 .history-insights div+div{margin-top:.3rem;}
 .history-insights b{color:var(--primary);}
 .history-vm-card tr.group-row td{background:var(--surface-2);font-size:var(--text-xs);padding:.35rem .75rem;}
+
+/* sizing view */
+.sizing-params{display:grid;gap:var(--space-3);}
+.sizing-table td{padding:.3rem .4rem;}
+.sizing-table input.sz-cell{width:100%;min-width:70px;min-height:30px;padding:.3rem .5rem;border:1px solid var(--border);border-radius:var(--radius-xs);background:var(--surface-3);color:var(--text);font-size:var(--text-xs);}
+.sizing-table input.sz-cell.num{max-width:90px;text-align:right;font-variant-numeric:tabular-nums lining-nums;}
+.sizing-table input.sz-name{min-width:160px;}
+.sizing-table input.sz-note{min-width:180px;}
+.sizing-table input.sz-cell:focus{outline:none;border-color:var(--primary);}
+.sizing-table td.sz-total{text-align:right;color:var(--muted);font-weight:600;}
+.sizing-table td.muted{color:var(--faint);}
+.sz-profile-grid{grid-template-columns:minmax(140px,1.4fr) repeat(5,minmax(90px,1fr)) !important;}
+.sz-kpis{grid-template-columns:repeat(4,minmax(0,1fr));margin:var(--space-3) 0;}
+.sz-kpis .value{font-size:clamp(1.05rem,.9rem + .6vw,1.35rem);}
+.sz-arrow{color:var(--faint);font-weight:400;margin:0 .15rem;}
+.sz-section-title{font-size:var(--text-sm);font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:var(--space-4) 0 var(--space-2);}
+.sz-compare td.num,.sz-compare th{white-space:nowrap;}
+.sz-compare td.num{text-align:right;}
+.sz-compare tr.sz-best td{background:color-mix(in oklab,var(--ok) 10%,transparent);}
+.sz-compare td.sz-hosts{font-size:var(--text-base);}
+.muted-sub{font-size:10.5px;color:var(--muted);margin-top:.15rem;white-space:nowrap;}
+.sz-headline .sz-detail{margin-top:.4rem;color:var(--text);font-weight:400;}
+.sz-assumptions{margin-top:var(--space-3);font-size:var(--text-xs);color:var(--muted);line-height:1.5;}
+@media (max-width:1240px){.sz-kpis{grid-template-columns:repeat(2,minmax(0,1fr));}.sz-profile-grid{grid-template-columns:repeat(3,minmax(0,1fr)) !important;}}
