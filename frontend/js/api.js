@@ -160,6 +160,7 @@ const api = {
   calcSizing: (payload) => apiRequest('/sizing/calc', { method: 'POST', body: JSON.stringify(payload) }),
   importSizingFile: (file) => { const fd = new FormData(); fd.append('file', file, file.name); return apiRequest('/sizing/import', { method: 'POST', body: fd }); },
   downloadSizingTemplate: () => api._downloadBlob(`${API_BASE}/sizing/template`, { method: 'GET' }, 'VCO_Sizing_mau.xlsx'),
+  downloadSizingPdf: (payload) => api._downloadBlob(`${API_BASE}/sizing/pdf`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, 'VCO_De_xuat_cau_hinh_may_chu.pdf'),
   downloadSizingXlsx: (payload) => api._downloadBlob(`${API_BASE}/sizing/export`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }, 'VCO_Sizing.xlsx'),
 
   _downloadBlob: async (url, options, fallbackName) => {

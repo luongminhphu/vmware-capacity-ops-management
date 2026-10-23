@@ -7,9 +7,11 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
-from .. import sizing
-from ..models import User
+from .. import report_sizing, sizing
+from ..database import get_db
+from ..models import ReportLogo, User
 from ..security import get_current_user
 
 router = APIRouter(prefix="/api/sizing", tags=["sizing"])
@@ -53,13 +55,31 @@ class ParamsIn(BaseModel):
     environment: str = Field(default="", max_length=120)
 
 
+class ExistingClusterIn(BaseModel):
+    """Absorption check computed by the UI from current vCenter data (optional, PDF only)."""
+    name: str
+    hostCount: int = 0
+    cpuBefore: Optional[float] = None
+    cpuAfter: Optional[float] = None
+    ramBefore: Optional[float] = None
+    ramAfter: Optional[float] = None
+    n1CpuPct: Optional[float] = None
+    n1RamPct: Optional[float] = None
+    n1Ok: Optional[bool] = None
+    cls: str = "na"
+
+
 class SizingPayload(BaseModel):
     vms: List[VmIn]
     params: ParamsIn = ParamsIn()
     profiles: List[ProfileIn]
+    existing: Optional[List[ExistingClusterIn]] = None
+    policyText: str = Field(default="", max_length=120)
+    currency: str = Field(default="VND", max_length=8)
+    preparedBy: str = Field(default="", max_length=80)
 
 
-def _build(payload: SizingPayload) -> Dict[str, Any]:
+def _inputs(payload: SizingPayload):
     if len(payload.vms) > MAX_VMS:
         raise HTTPException(status_code=413, detail=f"Quá nhiều dòng VM ({len(payload.vms)}); giới hạn {MAX_VMS}.")
     if not payload.profiles:
@@ -73,7 +93,31 @@ def _build(payload: SizingPayload) -> Dict[str, Any]:
         sockets=p.sockets, cores_per_socket=p.coresPerSocket, ram_gb=p.ramGB, disk_gb=p.diskGB, unit_price=p.unitPrice,
     ) for p in payload.profiles]
     params = sizing.SizingParams(**payload.params.model_dump())
+    return vms, params, profiles
+
+
+def _build(payload: SizingPayload) -> Dict[str, Any]:
+    vms, params, profiles = _inputs(payload)
     return sizing.build_sizing(vms, params, profiles)
+
+
+@router.post("/pdf")
+def sizing_pdf(payload: SizingPayload, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    vms, params, profiles = _inputs(payload)
+    if not vms or not any(v.qty > 0 for v in vms):
+        raise HTTPException(status_code=422, detail="Danh sách VM trống — không có gì để lập đề xuất.")
+    logo_row = db.query(ReportLogo).filter(ReportLogo.id == 1).first()
+    logo_data_url = f"data:{logo_row.mime_type};base64,{logo_row.data_base64}" if logo_row else None
+    existing = [e.model_dump() for e in (payload.existing or [])][:20]
+    try:
+        pdf_bytes = report_sizing.build_sizing_pdf(vms, params, profiles, existing=existing, policy_txt=payload.policyText,
+                                                   currency=payload.currency, logo_data_url=logo_data_url, prepared_by=payload.preparedBy)
+    except Exception as exc:  # pragma: no cover - surfaced to the UI
+        raise HTTPException(status_code=500, detail=f"Không thể tạo PDF: {exc}")
+    label = "".join(ch for ch in (params.environment or "may_chu") if ch.isalnum() or ch in "-_")[:40] or "may_chu"
+    filename = f"VCO_De_xuat_cau_hinh_may_chu_{label}_{dt.datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
+    return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf",
+                             headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @router.get("/defaults")

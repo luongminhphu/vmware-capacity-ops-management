@@ -114,6 +114,14 @@ team Infra cần đề xuất số lượng và cấu hình máy chủ vật lý
   cần mua host hay bắt buộc bổ sung.
 - **Xuất Excel** (`POST /api/sizing/export`): 3 sheet — Tóm tắt (đề xuất, nhu cầu, giả định), So sánh
   cấu hình (dòng đề xuất tô xanh), Danh sách VM (kèm tổng).
+- **Xuất PDF · Đề xuất** (`POST /api/sizing/pdf`, `backend/app/report_sizing.py`): file "Đề xuất cấu hình
+  máy chủ — <dự án>" khổ A4, 2 trang, bố cục báo cáo quản trị để đính kèm tờ trình: hộp **Tổng kết — đề
+  xuất & quyết định đề nghị** (câu đề xuất; các dòng "Mua N host … → Duyệt ngân sách …", "Cấp X TB SAN →
+  Duyệt cấp dung lượng", dự phòng N+x, phương án thay thế dùng cluster hiện hữu nếu hấp thụ được; 5 ô số
+  liệu) → bảng **So sánh cấu hình host ứng viên** (dòng đề xuất tô xanh + đoạn "Phương án đề xuất") →
+  **Giả định** (kèm công thức tính) → **Hạ tầng hiện hữu có hấp thụ được không?** (UI gửi kèm kết quả
+  kiểm tra trên dữ liệu vCenter hiện tại) → **Phụ lục** danh sách VM (tự sang trang mới nếu > 12 dòng).
+  Dùng logo báo cáo đã cấu hình.
 
 ### Inventory — lọc VM theo cluster & xuất Excel
 

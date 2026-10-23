@@ -380,6 +380,32 @@ async function loadSizingSample() {
   }
 }
 
+function sizingExistingPayload() {
+  // Absorption check for the PDF — needs the planned demand, so compute it locally with the same growth factor.
+  const payload = sizingPayload();
+  const t = sizingTotals(sizingState().vms);
+  const g = 1 + Math.max(0, cleanNum(payload.params.growth_pct)) / 100;
+  const demand = { vcpuPlanned: t.vcpu * g, ramPlannedGB: t.ram * g };
+  const rows = sizingAbsorptionRows(demand);
+  const existing = rows.map(a => ({
+    name: a.name, hostCount: a.hostCount,
+    cpuBefore: a.before.cpuPct, cpuAfter: a.after.cpuPct, ramBefore: a.before.ramPct, ramAfter: a.after.ramPct,
+    n1CpuPct: a.n1 ? a.n1.cpuPct : null, n1RamPct: a.n1 ? a.n1.ramPct : null, n1Ok: a.n1 ? a.n1.ok : null, cls: a.cls,
+  }));
+  const policyText = appState.policy ? `${appState.policy.cpuOvercommitMax}x CPU · ${appState.policy.ramOvercommitMax}x RAM` : '';
+  return { ...payload, existing, policyText };
+}
+
+async function exportSizingPdf(btn) {
+  const payload = sizingExistingPayload();
+  if (!payload.vms.length) { showValidationBanner(['Danh sách VM trống — chưa có gì để lập đề xuất.'], []); return; }
+  const label = btn.textContent;
+  btn.disabled = true; btn.textContent = 'Đang tạo PDF…';
+  try { await api.downloadSizingPdf(payload); }
+  catch (err) { showValidationBanner([`Không tạo được PDF: ${err.message}`], []); }
+  finally { btn.disabled = false; btn.textContent = label; }
+}
+
 async function exportSizingXlsx(btn) {
   const payload = sizingPayload();
   if (!payload.vms.length) { showValidationBanner(['Danh sách VM trống — chưa có gì để xuất.'], []); return; }
@@ -416,6 +442,7 @@ function bindSizingView() {
   });
   $('#btnSizingRun').addEventListener('click', e => runSizing(e.currentTarget));
   $('#btnSizingExport').addEventListener('click', e => exportSizingXlsx(e.currentTarget));
+  $('#btnSizingPdf').addEventListener('click', e => exportSizingPdf(e.currentTarget));
 
   Object.values(SIZING_PARAM_FIELDS).forEach(id => {
     const el = document.getElementById(id);
