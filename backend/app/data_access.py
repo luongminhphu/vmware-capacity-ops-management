@@ -33,6 +33,9 @@ def _host_to_row(h: HostSnapshot) -> Dict[str, Any]:
         "cluster": h.cluster, "host": h.host, "cores": h.cores, "cpuMhz": h.cpu_mhz,
         "ramGB": h.ram_gb, "cpuUsagePctRaw": h.cpu_usage_pct_raw, "ramUsagePctRaw": h.ram_usage_pct_raw,
         "status": h.status, "vcenterKey": h.vcenter_key,
+        "vendor": h.vendor, "model": h.model, "esxiVersion": h.esxi_version, "esxiBuild": h.esxi_build,
+        "cpuModel": h.cpu_model, "cpuSockets": h.cpu_sockets, "cpuThreads": h.cpu_threads,
+        "clusterHa": h.cluster_ha, "clusterDrs": h.cluster_drs,
     }
 
 
@@ -44,6 +47,8 @@ def _vm_to_row(v: VmSnapshot) -> Dict[str, Any]:
         "cpuUsagePctRaw": v.cpu_usage_pct_raw, "ramUsagePctRaw": v.ram_usage_pct_raw,
         "lastActivityDays": v.last_activity_days, "powerOffDays": v.power_off_days,
         "vcenterKey": v.vcenter_key,
+        "guestId": v.guest_id, "guestFullName": v.guest_full_name, "toolsGuestFullName": v.tools_guest_full_name,
+        "toolsGuestFamily": v.tools_guest_family, "toolsStatus": v.tools_status, "guestHostname": v.guest_hostname,
     }
 
 

@@ -54,6 +54,16 @@ class HostSnapshot(Base):
     cpu_usage_pct_raw = Column(Float, nullable=True)
     ram_usage_pct_raw = Column(Float, nullable=True)
     status = Column(String(64), default="Connected")
+    # --- Inventory & License Assessment (hardware facts, read-only from vCenter) ---
+    vendor = Column(String(128), nullable=True)
+    model = Column(String(128), nullable=True)
+    esxi_version = Column(String(64), nullable=True)
+    esxi_build = Column(String(64), nullable=True)
+    cpu_model = Column(String(255), nullable=True)
+    cpu_sockets = Column(Integer, nullable=True)      # physical processors (numCpuPkgs)
+    cpu_threads = Column(Integer, nullable=True)      # logical threads (numCpuThreads) — NOT licensable cores
+    cluster_ha = Column(Boolean, nullable=True)       # vSphere HA enabled on the parent cluster
+    cluster_drs = Column(Boolean, nullable=True)      # DRS enabled on the parent cluster
     captured_at = Column(DateTime, default=utcnow, index=True)
 
     run = relationship("SnapshotRun", back_populates="hosts")
@@ -83,6 +93,13 @@ class VmSnapshot(Base):
     ram_usage_pct_raw = Column(Float, nullable=True)
     last_activity_days = Column(Float, nullable=True)
     power_off_days = Column(Float, nullable=True)
+    # --- Guest OS evidence for OS classification (kept raw; classification is derived) ---
+    guest_id = Column(String(64), nullable=True)            # config.guestId (configured OS type)
+    guest_full_name = Column(String(255), nullable=True)    # config.guestFullName (configured)
+    tools_guest_full_name = Column(String(255), nullable=True)  # guest.guestFullName (reported by VMware Tools)
+    tools_guest_family = Column(String(64), nullable=True)  # guest.guestFamily (windowsGuest / linuxGuest / otherGuestFamily)
+    tools_status = Column(String(32), nullable=True)        # guest.toolsRunningStatus
+    guest_hostname = Column(String(255), nullable=True)
     captured_at = Column(DateTime, default=utcnow, index=True)
 
     run = relationship("SnapshotRun", back_populates="vms")
@@ -153,3 +170,84 @@ class ReportLogo(Base):
     mime_type = Column(String(64), nullable=False)
     data_base64 = Column(Text, nullable=False)
     uploaded_at = Column(DateTime, default=utcnow)
+
+
+# =====================================================================
+# Inventory & License Assessment module
+# =====================================================================
+
+class VmOsOverride(Base):
+    """Manual OS classification override for one VM. Keyed by vCenter +
+    instanceUuid when available (stable across rename/vMotion), falling back to
+    vCenter + VM name for imported data without UUIDs."""
+    __tablename__ = "vm_os_overrides"
+
+    id = Column(Integer, primary_key=True)
+    vcenter_key = Column(String(64), nullable=True, index=True)
+    instance_uuid = Column(String(64), nullable=True, index=True)
+    vm = Column(String(255), nullable=False, index=True)
+    category = Column(String(32), nullable=False)          # windows_server | windows_client | linux | appliance | other_unknown
+    os_version = Column(String(128), nullable=True)
+    os_edition = Column(String(64), nullable=True)          # e.g. Standard / Datacenter (Windows Server)
+    note = Column(Text, nullable=True)
+    updated_by = Column(String(64), nullable=True)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class LicenseRuleSet(Base):
+    """Versioned, auditable licensing rule set. `params` is JSON text; the
+    engine never hardcodes policy values — it reads them from the active row.
+    Seeded defaults carry their public source URL and start as
+    status='needs_verification' until a user records who verified them and when."""
+    __tablename__ = "license_rule_sets"
+
+    id = Column(Integer, primary_key=True)
+    product = Column(String(32), nullable=False, index=True)    # windows_server | vmware
+    key = Column(String(64), nullable=False, index=True)        # e.g. ws_core_2022, vmware_core_2024
+    version = Column(Integer, nullable=False, default=1)
+    name = Column(String(255), nullable=False)
+    params_json = Column(Text, nullable=False, default="{}")
+    source_url = Column(Text, nullable=True)
+    source_note = Column(Text, nullable=True)
+    verified_at = Column(DateTime, nullable=True)
+    verified_by = Column(String(64), nullable=True)
+    status = Column(String(32), nullable=False, default="needs_verification")  # needs_verification | verified | retired
+    is_active = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=utcnow)
+    created_by = Column(String(64), nullable=True)
+
+
+class LicenseEntitlement(Base):
+    """Licenses the organisation already owns (or quotes being evaluated)."""
+    __tablename__ = "license_entitlements"
+
+    id = Column(Integer, primary_key=True)
+    product = Column(String(32), nullable=False, index=True)    # ws_std | ws_dc | vsphere_std | vsphere_ent_plus | vvf | vcf | vmware_cpu_legacy
+    metric = Column(String(32), nullable=False, default="core")  # core | pack2 | pack16 | cpu
+    quantity = Column(Float, nullable=False, default=0)
+    unit_price = Column(Float, nullable=True)
+    currency = Column(String(8), nullable=False, default="VND")
+    has_sa = Column(Boolean, nullable=False, default=False)      # Software Assurance / subscription (license mobility)
+    scope_vcenter = Column(String(64), nullable=True)            # null = all vCenters
+    scope_cluster = Column(String(128), nullable=True)           # null = all clusters in scope
+    valid_to = Column(DateTime, nullable=True)
+    note = Column(Text, nullable=True)
+    updated_by = Column(String(64), nullable=True)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class LicenseAssessment(Base):
+    """Immutable assessment snapshot: every input needed to re-run the
+    computation (inventory rows, overrides, rule-set versions + params,
+    entitlements) plus the result, so a reviewer can reproduce it later."""
+    __tablename__ = "license_assessments"
+
+    id = Column(Integer, primary_key=True)
+    created_at = Column(DateTime, default=utcnow, index=True)
+    created_by = Column(String(64), nullable=True)
+    title = Column(String(255), nullable=True)
+    note = Column(Text, nullable=True)
+    scope_json = Column(Text, nullable=False, default="{}")
+    inputs_json = Column(Text, nullable=False)
+    result_json = Column(Text, nullable=False)
+    result_hash = Column(String(64), nullable=True)

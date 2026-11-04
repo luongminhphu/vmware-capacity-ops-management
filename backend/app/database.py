@@ -20,8 +20,19 @@ def ensure_schema() -> None:
 
     Base.metadata.create_all(bind=engine)
     additive = {
-        "vm_snapshots": [("instance_uuid", "VARCHAR(64)")],
+        "vm_snapshots": [
+            ("instance_uuid", "VARCHAR(64)"),
+            ("guest_id", "VARCHAR(64)"), ("guest_full_name", "VARCHAR(255)"),
+            ("tools_guest_full_name", "VARCHAR(255)"), ("tools_guest_family", "VARCHAR(64)"),
+            ("tools_status", "VARCHAR(32)"), ("guest_hostname", "VARCHAR(255)"),
+        ],
+        "host_snapshots": [
+            ("vendor", "VARCHAR(128)"), ("model", "VARCHAR(128)"), ("esxi_version", "VARCHAR(64)"),
+            ("esxi_build", "VARCHAR(64)"), ("cpu_model", "VARCHAR(255)"), ("cpu_sockets", "INTEGER"),
+            ("cpu_threads", "INTEGER"), ("cluster_ha", "BOOLEAN"), ("cluster_drs", "BOOLEAN"),
+        ],
     }
+    indexed = {"instance_uuid"}
     insp = inspect(engine)
     with engine.begin() as conn:
         for table, cols in additive.items():
@@ -31,7 +42,8 @@ def ensure_schema() -> None:
             for name, ddl in cols:
                 if name not in existing:
                     conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {name} {ddl}"))
-                    conn.execute(text(f"CREATE INDEX IF NOT EXISTS ix_{table}_{name} ON {table} ({name})"))
+                    if name in indexed:
+                        conn.execute(text(f"CREATE INDEX IF NOT EXISTS ix_{table}_{name} ON {table} ({name})"))
 
 
 def get_db():

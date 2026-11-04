@@ -99,6 +99,7 @@ def sync_vcenter(db: Session, cfg: VCenterConfig, settings: Optional[Settings] =
                 cores=h["cores"], cpu_mhz=h.get("cpuMhz", 0), ram_gb=h["ramGB"],
                 cpu_usage_pct_raw=h.get("cpuUsagePctRaw"), ram_usage_pct_raw=h.get("ramUsagePctRaw"),
                 status=h.get("status", "connected"),
+                **_host_inventory_cols(h),
             ))
         for v in vm_rows:
             db.add(VmSnapshot(
@@ -109,6 +110,7 @@ def sync_vcenter(db: Session, cfg: VCenterConfig, settings: Optional[Settings] =
                 disk_prov_gb=v["diskProvGB"], disk_used_gb=v["diskUsedGB"], datastore=v["datastore"],
                 cpu_usage_pct_raw=v.get("cpuUsagePctRaw"), ram_usage_pct_raw=v.get("ramUsagePctRaw"),
                 last_activity_days=v.get("lastActivityDays"), power_off_days=v.get("powerOffDays"),
+                **_vm_inventory_cols(v),
             ))
 
         cluster_rows = capacity.build_cluster_rows(host_rows, vm_rows, policy)
@@ -152,6 +154,31 @@ def sync_vcenter(db: Session, cfg: VCenterConfig, settings: Optional[Settings] =
 def _safe(v):
     import math
     return v if (v is not None and math.isfinite(v)) else None
+
+
+def _int_or_none(v):
+    try:
+        return int(v) if v not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _host_inventory_cols(h: Dict[str, Any]) -> Dict[str, Any]:
+    """Map camelCase collector/import row → HostSnapshot inventory columns."""
+    return {
+        "vendor": h.get("vendor"), "model": h.get("model"), "esxi_version": h.get("esxiVersion"),
+        "esxi_build": h.get("esxiBuild"), "cpu_model": h.get("cpuModel"),
+        "cpu_sockets": _int_or_none(h.get("cpuSockets")), "cpu_threads": _int_or_none(h.get("cpuThreads")),
+        "cluster_ha": h.get("clusterHa"), "cluster_drs": h.get("clusterDrs"),
+    }
+
+
+def _vm_inventory_cols(v: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "guest_id": v.get("guestId"), "guest_full_name": v.get("guestFullName"),
+        "tools_guest_full_name": v.get("toolsGuestFullName"), "tools_guest_family": v.get("toolsGuestFamily"),
+        "tools_status": v.get("toolsStatus"), "guest_hostname": v.get("guestHostname"),
+    }
 
 
 def _sync_vcenter_in_thread(

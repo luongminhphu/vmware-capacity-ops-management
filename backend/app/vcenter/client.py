@@ -64,6 +64,34 @@ def _cluster_name_of(host) -> str:
     return parent.name if parent is not None else "UNKNOWN"
 
 
+def _cluster_features_of(host) -> Tuple[Any, Any]:
+    """(HA enabled, DRS enabled) of the parent cluster — None for standalone
+    hosts. Licensing scope follows these: a VM in an HA/DRS cluster may run on
+    any host of that cluster, so every host must be licensed for it."""
+    try:
+        parent = host.parent
+        if isinstance(parent, vim.ClusterComputeResource):
+            cfg = parent.configurationEx
+            ha = bool(cfg.dasConfig.enabled) if cfg and cfg.dasConfig else None
+            drs = bool(cfg.drsConfig.enabled) if cfg and cfg.drsConfig else None
+            return ha, drs
+    except Exception:  # noqa: BLE001
+        pass
+    return None, None
+
+
+def _safe_attr(obj, *path, default=None):
+    cur = obj
+    for name in path:
+        try:
+            cur = getattr(cur, name)
+        except Exception:  # noqa: BLE001
+            return default
+        if cur is None:
+            return default
+    return cur
+
+
 def _datastore_name(vm) -> str:
     try:
         ds = vm.datastore
@@ -97,6 +125,8 @@ def collect_inventory(cfg: VCenterConfig) -> Tuple[List[Dict[str, Any]], List[Di
             total_mhz = (cores or 0) * (cpu_mhz_per_core or 0)
             cpu_usage_pct = (qs.overallCpuUsage / total_mhz * 100) if qs and total_mhz else None
             ram_usage_pct = (qs.overallMemoryUsage / (ram_gb * 1024) * 100) if qs and ram_gb else None
+            ha, drs = _cluster_features_of(h)
+            product = _safe_attr(summary, "config", "product")
             host_rows.append({
                 "cluster": _cluster_name_of(h),
                 "host": h.name,
@@ -106,6 +136,16 @@ def collect_inventory(cfg: VCenterConfig) -> Tuple[List[Dict[str, Any]], List[Di
                 "cpuUsagePctRaw": cpu_usage_pct,
                 "ramUsagePctRaw": ram_usage_pct,
                 "status": str(summary.runtime.connectionState) if summary.runtime else "connected",
+                # Inventory & License Assessment facts (all read-only summary properties)
+                "vendor": _safe_attr(hw, "vendor"),
+                "model": _safe_attr(hw, "model"),
+                "esxiVersion": _safe_attr(product, "version"),
+                "esxiBuild": _safe_attr(product, "build"),
+                "cpuModel": _safe_attr(hw, "cpuModel"),
+                "cpuSockets": int(_safe_attr(hw, "numCpuPkgs", default=0) or 0) or None,
+                "cpuThreads": int(_safe_attr(hw, "numCpuThreads", default=0) or 0) or None,
+                "clusterHa": ha,
+                "clusterDrs": drs,
             })
 
         vm_rows: List[Dict[str, Any]] = []
@@ -149,6 +189,14 @@ def collect_inventory(cfg: VCenterConfig) -> Tuple[List[Dict[str, Any]], List[Di
                 # polling history (see collectors/scheduler.py::_enrich_activity).
                 "lastActivityDays": None,
                 "powerOffDays": None,
+                # Guest OS evidence: configured type (always present) and what
+                # VMware Tools actually reports (only when tools run — stronger evidence).
+                "guestId": _safe_attr(cfgd, "guestId"),
+                "guestFullName": _safe_attr(cfgd, "guestFullName"),
+                "toolsGuestFullName": _safe_attr(summary, "guest", "guestFullName"),
+                "toolsGuestFamily": _safe_attr(vm, "guest", "guestFamily"),
+                "toolsStatus": _safe_attr(summary, "guest", "toolsRunningStatus"),
+                "guestHostname": _safe_attr(summary, "guest", "hostName"),
             })
 
         return host_rows, vm_rows

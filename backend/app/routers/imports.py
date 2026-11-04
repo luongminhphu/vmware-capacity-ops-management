@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from .. import capacity, data_access
+from ..collectors.scheduler import _host_inventory_cols, _vm_inventory_cols
 from ..config import get_settings
 from ..database import get_db
 from ..models import (
@@ -37,6 +38,7 @@ def import_data(payload: ImportPayload, db: Session = Depends(get_db), user: Use
             cores=h.get("cores", 0) or 0, cpu_mhz=h.get("cpuMhz", 0) or 0, ram_gb=h.get("ramGB", 0) or 0,
             cpu_usage_pct_raw=h.get("cpuUsagePctRaw"), ram_usage_pct_raw=h.get("ramUsagePctRaw"),
             status=h.get("status", "imported"),
+            **_host_inventory_cols(h),
         ))
     for v in vm_rows:
         db.add(VmSnapshot(
@@ -49,6 +51,7 @@ def import_data(payload: ImportPayload, db: Session = Depends(get_db), user: Use
             datastore=v.get("datastore", "UNKNOWN"),
             cpu_usage_pct_raw=v.get("cpuUsagePctRaw"), ram_usage_pct_raw=v.get("ramUsagePctRaw"),
             last_activity_days=v.get("lastActivityDays"), power_off_days=v.get("powerOffDays"),
+            **_vm_inventory_cols(v),
         ))
 
     cluster_rows = capacity.build_cluster_rows(host_rows, vm_rows, policy)
