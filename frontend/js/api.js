@@ -185,6 +185,29 @@ const api = {
     setTimeout(() => URL.revokeObjectURL(href), 1000);
   },
 
+
+  // ---- Inventory & License Assessment ----
+  licInventory: (vcenter, cluster) => { const qs = new URLSearchParams({ vcenter: vcenter || 'all', ...(cluster && cluster !== 'all' ? { cluster } : {}) }); return apiRequest(`/licensing/inventory?${qs}`); },
+  licAssess: (vcenter, cluster) => { const qs = new URLSearchParams({ vcenter: vcenter || 'all', ...(cluster && cluster !== 'all' ? { cluster } : {}) }); return apiRequest(`/licensing/assess?${qs}`); },
+  licRules: () => apiRequest('/licensing/rules'),
+  licRuleVersion: (id, payload) => apiRequest(`/licensing/rules/${id}/versions`, { method: 'POST', body: JSON.stringify(payload) }),
+  licRuleActivate: (id) => apiRequest(`/licensing/rules/${id}/activate`, { method: 'POST' }),
+  licRuleDeactivate: (id) => apiRequest(`/licensing/rules/${id}/deactivate`, { method: 'POST' }),
+  licRuleVerify: (id, note) => apiRequest(`/licensing/rules/${id}/verify`, { method: 'POST', body: JSON.stringify({ note }) }),
+  licEntitlements: () => apiRequest('/licensing/entitlements'),
+  licEntitlementCreate: (payload) => apiRequest('/licensing/entitlements', { method: 'POST', body: JSON.stringify(payload) }),
+  licEntitlementUpdate: (id, payload) => apiRequest(`/licensing/entitlements/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
+  licEntitlementDelete: (id) => apiRequest(`/licensing/entitlements/${id}`, { method: 'DELETE' }),
+  licOverrides: () => apiRequest('/licensing/overrides'),
+  licOverrideSave: (payload) => apiRequest('/licensing/overrides', { method: 'PUT', body: JSON.stringify(payload) }),
+  licOverrideDelete: (id) => apiRequest(`/licensing/overrides/${id}`, { method: 'DELETE' }),
+  licSnapshots: () => apiRequest('/licensing/assessments'),
+  licSnapshotCreate: (payload) => apiRequest('/licensing/assessments', { method: 'POST', body: JSON.stringify(payload) }),
+  licSnapshotGet: (id) => apiRequest(`/licensing/assessments/${id}`),
+  licSnapshotRecompute: (id) => apiRequest(`/licensing/assessments/${id}/recompute`, { method: 'POST' }),
+  licSnapshotDelete: (id) => apiRequest(`/licensing/assessments/${id}`, { method: 'DELETE' }),
+  licWhatif: (payload) => apiRequest('/licensing/whatif', { method: 'POST', body: JSON.stringify(payload) }),
+
   getLogo: () => apiRequest('/settings/logo'),
   saveLogo: (dataUrl, filename) => apiRequest('/settings/logo', { method: 'PUT', body: JSON.stringify({ data_url: dataUrl, filename }) }),
   deleteLogo: () => apiRequest('/settings/logo', { method: 'DELETE' }),

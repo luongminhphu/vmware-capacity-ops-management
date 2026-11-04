@@ -438,3 +438,58 @@ td.finding-code{font-weight:700;color:var(--primary);white-space:nowrap;font-siz
 .sz-headline .sz-detail{margin-top:.4rem;color:var(--text);font-weight:400;}
 .sz-assumptions{margin-top:var(--space-3);font-size:var(--text-xs);color:var(--muted);line-height:1.5;}
 @media (max-width:1240px){.sz-kpis{grid-template-columns:repeat(2,minmax(0,1fr));}.sz-profile-grid{grid-template-columns:repeat(3,minmax(0,1fr)) !important;}}
+
+/* ---------- License & Inventory ---------- */
+.lic-head-card .sim-tabbar{margin-top:var(--space-3);margin-bottom:0;}
+.lic-kpi-6{grid-template-columns:repeat(6,minmax(0,1fr));}
+.lic-kpi-5{grid-template-columns:repeat(5,minmax(0,1fr));}
+.lic-kpi-4{grid-template-columns:repeat(4,minmax(0,1fr));}
+.lic-cat-card{cursor:pointer;transition:border-color var(--transition);}
+.lic-cat-card:hover{border-color:var(--primary);}
+.lic-dist{display:flex;flex-wrap:wrap;gap:.35rem;align-items:center;margin-top:var(--space-2);}
+.lic-dist-label{font-size:var(--text-xs);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;margin-right:.25rem;}
+.lic-table td.num,.lic-table th.num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
+.lic-table .lic-note{max-width:260px;white-space:normal;font-size:var(--text-xs);color:var(--text-muted);}
+.lic-cluster-row{cursor:pointer;background:var(--surface-2);}
+.lic-cluster-row:hover{background:var(--surface-3);}
+.lic-caret{display:inline-block;width:1em;color:var(--muted);}
+.lic-host-row td{font-size:var(--text-xs);}
+.lic-indent{padding-left:1.8rem !important;}
+.lic-editor{margin:var(--space-3) 0;display:flex;flex-direction:column;gap:var(--space-3);position:static;width:auto;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-md);padding:var(--space-3);}
+.lic-form-6{grid-template-columns:repeat(5,minmax(0,1fr));}
+.lic-form-5{grid-template-columns:repeat(5,minmax(0,1fr));}
+.lic-form-2{grid-template-columns:repeat(2,minmax(0,1fr));}
+.lic-json{width:100%;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:var(--text-xs);padding:.5rem .65rem;border:1.5px solid var(--border-strong);border-radius:var(--radius-sm);background:var(--surface-3);color:var(--text);resize:vertical;}
+.lic-3col{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:var(--space-4);margin-bottom:var(--space-4);}
+.lic-2col{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-4);margin-top:var(--space-3);}
+.lic-opt-card{padding:var(--space-4);}
+.lic-opt-head{display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);margin-bottom:var(--space-3);flex-wrap:wrap;}
+.lic-kv{width:100%;border-collapse:collapse;font-size:var(--text-sm);}
+.lic-kv td{padding:.4rem 0;border-bottom:1px solid var(--divider);vertical-align:top;}
+.lic-kv td.num{text-align:right;font-variant-numeric:tabular-nums;}
+.lic-kv td.lic-sep{padding-top:.8rem;font-size:var(--text-xs);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;border-bottom:none;}
+.lic-bad{color:var(--bad);}
+.lic-good{color:var(--ok);}
+.lic-h4{font-size:var(--text-xs);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:var(--space-2) 0 .4rem;font-weight:600;}
+.lic-h4:first-child{margin-top:0;}
+.lic-list{margin:0;padding-left:1.1rem;font-size:var(--text-sm);line-height:1.5;}
+.lic-list li{margin-bottom:.3rem;}
+.lic-gap-card{border-left:3px solid var(--warn);}
+.lic-warn-box{border-color:color-mix(in oklab,var(--warn) 40%,var(--border));background:var(--warn-bg);}
+.lic-warn-box strong{color:var(--warn);}
+.lic-snap-banner{display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap;}
+.lic-reasons{margin-top:.5rem;color:var(--bad);}
+.lic-actions{white-space:nowrap;}
+.lic-actions .btn{margin-bottom:.2rem;}
+.lic-rule-active td{background:color-mix(in oklab,var(--ok) 6%,transparent);}
+.lic-hash{font-size:var(--text-xs);}
+#licBody .table-card{margin-bottom:var(--space-4);}
+#licBody .panel-toolbar input,#licBody .panel-toolbar select{min-height:32px;}
+@media (max-width:1200px){
+  .lic-kpi-6,.lic-kpi-5{grid-template-columns:repeat(3,minmax(0,1fr));}
+  .lic-3col{grid-template-columns:1fr;}
+  .lic-form-6,.lic-form-5{grid-template-columns:repeat(3,minmax(0,1fr));}
+}
+@media (max-width:760px){
+  .lic-kpi-6,.lic-kpi-5,.lic-kpi-4,.lic-2col,.lic-form-6,.lic-form-5,.lic-form-2{grid-template-columns:1fr;}
+}

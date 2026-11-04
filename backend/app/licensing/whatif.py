@@ -268,10 +268,11 @@ def run_whatif(hosts: List[Dict[str, Any]], vms_classified: List[Dict[str, Any]]
         insights.append("Kịch bản vi phạm capacity/HA — KHÔNG đề xuất dù có tiết kiệm license.")
     elif worst == "warn":
         insights.append("Kịch bản đưa cluster vào vùng cảnh báo capacity — cần System Owner của cluster xác nhận.")
-    for k in ("wsStandardCost", "wsDatacenterCost", "vmwareCost"):
+    cost_labels = {"wsStandardCost": "Windows Server Standard", "wsDatacenterCost": "Windows Server Datacenter", "vmwareCost": "VMware per-core"}
+    for k, lbl in cost_labels.items():
         dd_ = delta[k]["delta"]
         if isinstance(dd_, (int, float)) and dd_:
-            insights.append(f"Chi phí {k.replace('Cost', '')}: {'+' if dd_ > 0 else '−'}{abs(dd_):,.0f}.")
+            insights.append(f"Chi phí {lbl} (toàn bộ nhu cầu): {'+' if dd_ > 0 else '−'}{abs(dd_):,.0f}.")
 
     return {
         "scenario": scenario, "description": applied["description"],

@@ -133,6 +133,51 @@ team Infra cần đề xuất số lượng và cấu hình máy chủ vật lý
     kèm đoạn chi tiết cores/RAM/overcommit; tuỳ chọn kèm **Phương án B — trang bị mới (đối chiếu)**
     (`includeNewOption`). Tên file kết thúc bằng `_trang_bi_moi` / `_tan_dung_hien_huu`.
 
+### License & Inventory — Inventory & License Assessment
+
+Tab **License & Inventory** (Technical View) dùng lại kết nối vCenter read-only, collector theo lịch/thủ công
+(mỗi vCenter đồng bộ và báo lỗi độc lập, credential chỉ nằm trong env/Secret), database, đăng nhập và bộ lọc
+vCenter / cluster hiện có. Gồm 5 phần:
+
+- **ESXi & phần cứng** — vendor/model, ESXi version/build, CPU model, **CPU socket**, **physical core**,
+  **logical thread**, RAM, số VM, HA/DRS theo vCenter → cluster → host (drill-down), phân bố model/ESXi,
+  xuất Excel. Collector lấy thêm `hardware.systemInfo`, `hardware.cpuInfo`, `config.product` của host và
+  `configurationEx.dasConfig/drsConfig` của cluster; chỉ **physical core** được dùng để tính license
+  (không phải vCPU, không phải thread).
+- **Phân loại OS** — mỗi VM được xếp vào Windows Server / Windows Client / Linux / Appliance / Other-Unknown
+  từ bằng chứng theo thứ tự ưu tiên *override thủ công → VMware Tools (`guest.guestFullName`) → cấu hình VM
+  (`config.guestId`) → tên VM*, kèm **nguồn**, **độ tin cậy** (confirmed/high/medium/low) và OS version khi
+  nhận diện được. Edition (Standard/Datacenter) không có trong vCenter API nên chỉ ghi khi người dùng
+  **override** (có ghi chú bằng chứng, người và thời điểm). Bộ lọc theo phân loại/độ tin cậy/nguồn/cluster/tìm kiếm.
+- **License assessment** — engine `backend/app/licensing/assess.py` tính theo **cluster** (HA/DRS/vMotion cho
+  phép VM chạy trên mọi host):
+  - Windows Server: core licensable mỗi host = max(physical core, 8 × socket, 16). **Standard**: số bộ
+    license/host = ceil(số VM Windows Server trong cluster / 2), nhân với core licensable của từng host;
+    **Datacenter**: core licensable mỗi host một lần, không giới hạn OSE. Đóng gói pack 2/16 core. VM
+    Other/Unknown tạo **khoảng** nhu cầu [min; max] thay vì đoán. Windows Client không thuộc phạm vi.
+  - VMware per-core (VCF/VVF/vSphere): max(physical core, 16 × socket) mỗi host, cộng mọi host trong
+    phạm vi; tuỳ chọn rule per-CPU legacy (≤32 core/CPU). Tham số "core tối thiểu mỗi đơn hàng" mặc định 0
+    vì không có trong tài liệu Broadcom hiện hành.
+  - Kết quả: nhu cầu, entitlement, thiếu hụt, công thức, giả định, **danh sách thiếu dữ liệu** và so sánh
+    chi phí Standard/Datacenter khi có đủ đơn giá. Trạng thái `ok / shortfall / insufficient_data /
+    no_entitlement` — không kết luận compliance khi thiếu entitlement hoặc rule chưa active.
+  - **Entitlement & đơn giá** do người dùng nhập (sản phẩm, đơn vị core/pack2/pack16/CPU, số lượng, đơn
+    giá, SA, phạm vi vCenter/cluster, hạn). Không có giá mặc định.
+  - **Rule licensing** có version, URL nguồn, ghi chú, trạng thái `needs_verification / verified`, người
+    và ngày xác minh. Rule không sửa đè: mỗi thay đổi tạo version mới; seed từ tài liệu công khai của
+    Microsoft (core-based licensing, Product Terms, virtualization guidance) và Broadcom (KB 313548, VCF
+    licensing model, vSphere Standard SPD) và luôn ở trạng thái "Chưa xác minh" cho tới khi được đối chiếu.
+- **What-if license** — Thêm host / Giảm host / Nâng cấp host / Thêm VM / Chuyển workload: tính lại license
+  (before → after → Δ, kèm chi phí nếu có đơn giá) **và** capacity (overcommit CPU/RAM theo chính sách, khả
+  năng chịu lỗi N+1 qua `capacity.evaluate_ha_headroom`). Kịch bản vượt ngưỡng hoặc làm mất N+1 bị gắn
+  **Không đề xuất** dù tiết kiệm license.
+- **Snapshot** — lưu toàn bộ đầu vào (inventory đã phân loại, override, version rule + tham số,
+  entitlement) cùng kết quả và hash; nút **Tái lập** chạy lại engine trên đầu vào đã lưu và so hash.
+
+API: `/api/licensing/inventory`, `/overrides`, `/rules` (+`/versions`, `/activate`, `/verify`),
+`/entitlements`, `/assess`, `/assessments` (+`/{id}/recompute`), `/whatif`. Tất cả yêu cầu đăng nhập
+(ứng dụng hiện có một vai trò; chưa có phân quyền chi tiết theo chức năng).
+
 ### Inventory — lọc VM theo cluster & xuất Excel
 
 Tab **Inventory** có bộ lọc **cluster riêng cho bảng VM** (độc lập với bộ lọc chung trên thanh

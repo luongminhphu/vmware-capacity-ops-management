@@ -1797,7 +1797,7 @@ function populateFilterSelects() {
 
 function syncViewSections() {
   $$('.view-section').forEach(sec => sec.classList.add('hidden'));
-  const map = { dashboard:'#viewDashboard', compliance:'#viewCompliance', inventory:'#viewInventory', whatif:'#viewWhatif', sizing:'#viewSizing' };
+  const map = { dashboard:'#viewDashboard', compliance:'#viewCompliance', inventory:'#viewInventory', whatif:'#viewWhatif', sizing:'#viewSizing', licensing:'#viewLicensing' };
   const target = $(map[appState.view] || map.dashboard);
   if (target) target.classList.remove('hidden');
   $$('#viewTabs .tab-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.view === appState.view));
@@ -1813,6 +1813,7 @@ function renderActiveView() {
   else if (appState.view === 'inventory') renderInventoryView();
   else if (appState.view === 'whatif') renderWhatifView();
   else if (appState.view === 'sizing' && typeof renderSizingView === 'function') renderSizingView();
+  else if (appState.view === 'licensing' && typeof renderLicensingView === 'function') renderLicensingView();
 }
 
 function refreshAll() {

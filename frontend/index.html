@@ -259,6 +259,7 @@
         <button class="tab-btn" data-view="inventory" type="button">Inventory</button>
         <button class="tab-btn" data-view="whatif" type="button">What-if Simulation</button>
         <button class="tab-btn" data-view="sizing" type="button">Sizing máy chủ</button>
+        <button class="tab-btn" data-view="licensing" type="button">License &amp; Inventory</button>
       </div>
       <div class="panel-toolbar">
         <select id="filterCluster"><option value="all">Tất cả cluster</option></select>
@@ -548,6 +549,29 @@
         </div>
       </section>
 
+      <!-- ================= LICENSE & INVENTORY VIEW ================= -->
+      <section id="viewLicensing" class="view-section hidden">
+        <section class="table-card lic-head-card">
+          <div class="panel-head">
+            <div><div class="panel-title">Inventory &amp; License Assessment</div>
+              <p class="panel-sub">Thống kê ESXi (model, phiên bản, socket, physical core, logical thread, RAM), phân loại guest OS và đánh giá nhu cầu license VMware per-core và Windows Server Standard/Datacenter theo rule có version, nguồn và ngày xác minh. Phạm vi theo bộ lọc vCenter / cluster phía trên.</p></div>
+            <div class="panel-toolbar">
+              <span class="pill na" id="licScopePill">—</span>
+              <button class="btn btn-secondary btn-sm" id="btnLicRefresh" type="button">Tải lại</button>
+            </div>
+          </div>
+          <div class="sim-tabbar" id="licTabs">
+            <button class="sim-tab active" data-lic="hardware" type="button">ESXi &amp; phần cứng</button>
+            <button class="sim-tab" data-lic="os" type="button">Phân loại OS</button>
+            <button class="sim-tab" data-lic="assess" type="button">License assessment</button>
+            <button class="sim-tab" data-lic="whatif" type="button">What-if license</button>
+            <button class="sim-tab" data-lic="snapshots" type="button">Snapshot</button>
+          </div>
+          <p class="logo-upload-hint hidden" id="licStatus" role="status" aria-live="polite"></p>
+        </section>
+        <div id="licBody"><div class="empty-note">Đang tải dữ liệu…</div></div>
+      </section>
+
     </main>
   </div>
 
@@ -559,6 +583,7 @@
 <script src="js/views/history.js?v=__ASSET_V__"></script>
 <script src="js/views/executive.js?v=__ASSET_V__"></script>
 <script src="js/views/sizing.js?v=__ASSET_V__"></script>
+<script src="js/views/licensing.js?v=__ASSET_V__"></script>
 <script src="js/app.js?v=__ASSET_V__"></script>
 </body>
 </html>
