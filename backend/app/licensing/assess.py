@@ -125,14 +125,18 @@ def _ent_summary(ents: List[Dict[str, Any]], product: str, unit: str) -> Dict[st
     total_cost = 0.0
     currencies = set()
     price_per_core: Optional[float] = None
+    declared_none = any((e.get("kind") or "owned") == "none" for e in rows)
     for e in rows:
-        if unit == "core":
+        if (e.get("kind") or "owned") == "none":
+            units = 0.0          # explicit "chưa có license": contributes a quote (unitPrice) but no entitlement
+        elif unit == "core":
             units = _ent_cores(e)
         else:
             units = float(e.get("quantity") or 0)
         qty += units
-        if e.get("unitPrice") is not None and units > 0:
-            total_cost += float(e["unitPrice"]) * float(e.get("quantity") or 0)
+        if e.get("unitPrice") is not None:
+            if units > 0:
+                total_cost += float(e["unitPrice"]) * float(e.get("quantity") or 0)
             currencies.add(e.get("currency") or "VND")
             per = float(e["unitPrice"]) / (METRIC_CORES.get(e.get("metric") or "core", 1) if unit == "core" else 1)
             price_per_core = per if price_per_core is None else min(price_per_core, per)
@@ -140,12 +144,26 @@ def _ent_summary(ents: List[Dict[str, Any]], product: str, unit: str) -> Dict[st
             cost_known = False
     return {
         "product": product, "label": PRODUCT_LABEL.get(product, product), "count": len(rows),
-        "units": qty, "unit": unit, "hasSa": any(e.get("hasSa") for e in rows),
+        "units": qty, "unit": unit, "hasSa": any(e.get("hasSa") for e in rows if (e.get("kind") or "owned") != "none"),
+        "declaredNone": declared_none,   # người dùng xác nhận CHƯA có license sản phẩm này
         "costKnown": cost_known and bool(rows), "totalCost": total_cost if rows else None,
         "currency": (sorted(currencies)[0] if len(currencies) == 1 else ("mixed" if currencies else None)),
         "pricePerUnit": price_per_core,  # per core (or per CPU for legacy); lowest if several
         "items": rows,
     }
+
+
+def cluster_in_scope(item: Dict[str, Any], scope: Dict[str, Any]) -> bool:
+    """Scope may list cluster *keys* ("vcenterKey::cluster", precise when the
+    same cluster name exists in several vCenters) and/or plain cluster names
+    (older snapshots, global cluster filter). Empty scope = everything."""
+    keys = scope.get("clusterKeys") or []
+    names = scope.get("clusters") or []
+    if not keys and not names:
+        return True
+    if keys:
+        return f"{item.get('vcenterKey') or ''}::{item.get('cluster') or ''}" in keys
+    return item.get("cluster") in names
 
 
 def _status(demand: float, demand_max: float, entitled: float, has_ent: bool) -> str:
@@ -172,10 +190,9 @@ def assess(hosts: List[Dict[str, Any]], vms_classified: List[Dict[str, Any]], ru
     vml = (legacy_rule or {}).get("params") if legacy_rule else None
 
     vcenter_keys = scope.get("vcenterKeys")
-    clusters_filter = scope.get("clusters")
-    if clusters_filter:
-        hosts = [h for h in hosts if h.get("cluster") in clusters_filter]
-        vms_classified = [v for v in vms_classified if v.get("cluster") in clusters_filter]
+    if scope.get("clusters") or scope.get("clusterKeys"):
+        hosts = [h for h in hosts if cluster_in_scope(h, scope)]
+        vms_classified = [v for v in vms_classified if cluster_in_scope(v, scope)]
 
     host_rows = [host_license_row(h, ws, vmc, vml) for h in hosts]
 
@@ -269,7 +286,7 @@ def assess(hosts: List[Dict[str, Any]], vms_classified: List[Dict[str, Any]], ru
     ent_dc = _ent_summary(ents_in_scope, "ws_dc", "core")
 
     def _ws_option(name: str, cores: int, cores_max: int, ent: Dict[str, Any]) -> Dict[str, Any]:
-        has = ent["units"] > 0
+        has = ent["units"] > 0 or bool(ent.get("declaredNone"))
         shortfall = max(0.0, cores - ent["units"])
         shortfall_max = max(0.0, cores_max - ent["units"])
         cost = None
@@ -323,12 +340,16 @@ def assess(hosts: List[Dict[str, Any]], vms_classified: List[Dict[str, Any]], ru
         ws_gaps.append(f"Rule '{ws_rule.get('name')}' v{ws_rule.get('version')} chưa được xác minh (needs_verification).")
     if ent_std["count"] + ent_dc["count"] == 0:
         ws_gaps.append("Chưa nhập entitlement Windows Server → chỉ hiển thị nhu cầu, không kết luận compliance.")
+    for ent in (ent_std, ent_dc):
+        if ent.get("declaredNone") and ent["units"] <= 0:
+            ws_assumptions.append(f"Đã xác nhận CHƯA có license {ent['label']} → toàn bộ nhu cầu là thiếu hụt phải mua.")
 
     # ---- VMware totals ----
     vmw_cores = sum(h["vmwareCores"] for h in host_rows)
     vmw_ents = {p: _ent_summary(ents_in_scope, p, "core") for p in VMWARE_CORE_PRODUCTS}
     vmw_ent_total = sum(e["units"] for e in vmw_ents.values())
-    vmw_has = vmw_ent_total > 0
+    vmw_declared_none = any(e.get("declaredNone") for e in vmw_ents.values())
+    vmw_has = vmw_ent_total > 0 or vmw_declared_none
     vmw_short = max(0.0, vmw_cores - vmw_ent_total)
     min_order = _i(vmc.get("min_cores_per_order"), 0)
     order_qty = max(vmw_short, min_order) if vmw_short > 0 and min_order > 0 else vmw_short
@@ -344,7 +365,7 @@ def assess(hosts: List[Dict[str, Any]], vms_classified: List[Dict[str, Any]], ru
         ent_leg = _ent_summary(ents_in_scope, "vmware_cpu_legacy", "cpu")
         legacy = {"demandCpuLicenses": cpu_demand, "entitled": ent_leg["units"],
                   "shortfall": max(0.0, cpu_demand - ent_leg["units"]),
-                  "status": _status(cpu_demand, cpu_demand, ent_leg["units"], ent_leg["units"] > 0),
+                  "status": _status(cpu_demand, cpu_demand, ent_leg["units"], ent_leg["units"] > 0 or bool(ent_leg.get("declaredNone"))),
                   "entitlement": {k: v for k, v in ent_leg.items() if k != "items"},
                   "formula": f"Số license CPU = Σ(host) socket × ceil(core/socket / {_i(vml.get('cores_per_cpu_license'), 32)})."}
 
@@ -369,6 +390,9 @@ def assess(hosts: List[Dict[str, Any]], vms_classified: List[Dict[str, Any]], ru
         vmw_gaps.append(f"Rule '{vm_rule.get('name')}' v{vm_rule.get('version')} chưa được xác minh (needs_verification).")
     if not vmw_has:
         vmw_gaps.append("Chưa nhập entitlement VMware → chỉ hiển thị nhu cầu core.")
+    elif vmw_declared_none and vmw_ent_total <= 0:
+        vmw_assumptions.append("Đã xác nhận CHƯA có license VMware per-core → toàn bộ nhu cầu core là thiếu hụt phải mua"
+                               + (f" ({', '.join(e['label'] for e in vmw_ents.values() if e.get('declaredNone'))})." if vmw_declared_none else "."))
 
     result = {
         "scope": scope,
@@ -396,7 +420,7 @@ def assess(hosts: List[Dict[str, Any]], vms_classified: List[Dict[str, Any]], ru
             "demandCores": vmw_cores, "entitledCores": vmw_ent_total, "shortfallCores": vmw_short,
             "orderCores": order_qty, "status": _status(vmw_cores, vmw_cores, vmw_ent_total, vmw_has) if host_rows else "ok",
             "entitlements": {p: {k: v for k, v in e.items() if k != "items"} for p, e in vmw_ents.items()},
-            "cost": vmw_cost, "legacy": legacy,
+            "declaredNone": vmw_declared_none, "cost": vmw_cost, "legacy": legacy,
             "formula": vmw_formula, "assumptions": vmw_assumptions, "dataGaps": vmw_gaps,
         },
         "entitlementsUsed": ents_in_scope,

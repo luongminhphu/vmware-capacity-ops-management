@@ -187,8 +187,11 @@ const api = {
 
 
   // ---- Inventory & License Assessment ----
-  licInventory: (vcenter, cluster) => { const qs = new URLSearchParams({ vcenter: vcenter || 'all', ...(cluster && cluster !== 'all' ? { cluster } : {}) }); return apiRequest(`/licensing/inventory?${qs}`); },
-  licAssess: (vcenter, cluster) => { const qs = new URLSearchParams({ vcenter: vcenter || 'all', ...(cluster && cluster !== 'all' ? { cluster } : {}) }); return apiRequest(`/licensing/assess?${qs}`); },
+  _licQs: (vcenter, cluster, clusters) => new URLSearchParams({ vcenter: vcenter || 'all', ...(cluster && cluster !== 'all' ? { cluster } : {}), ...(clusters && clusters.length ? { clusters: clusters.join(',') } : {}) }),
+  licClusters: (vcenter) => apiRequest(`/licensing/clusters?${new URLSearchParams({ vcenter: vcenter || 'all' })}`),
+  licInventory: (vcenter, cluster, clusters) => apiRequest(`/licensing/inventory?${api._licQs(vcenter, cluster, clusters)}`),
+  licAssess: (vcenter, cluster, clusters) => apiRequest(`/licensing/assess?${api._licQs(vcenter, cluster, clusters)}`),
+  licReportPdf: (vcenter, cluster, clusters, snapshotId) => { const qs = api._licQs(vcenter, cluster, clusters); if (snapshotId) qs.set('snapshot', snapshotId); return api._downloadBlob(`${API_BASE}/licensing/report/pdf?${qs}`, { method: 'GET' }, 'VCO_License_executive_summary.pdf'); },
   licRules: () => apiRequest('/licensing/rules'),
   licRuleVersion: (id, payload) => apiRequest(`/licensing/rules/${id}/versions`, { method: 'POST', body: JSON.stringify(payload) }),
   licRuleActivate: (id) => apiRequest(`/licensing/rules/${id}/activate`, { method: 'POST' }),

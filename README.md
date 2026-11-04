@@ -162,7 +162,18 @@ vCenter / cluster hiện có. Gồm 5 phần:
     chi phí Standard/Datacenter khi có đủ đơn giá. Trạng thái `ok / shortfall / insufficient_data /
     no_entitlement` — không kết luận compliance khi thiếu entitlement hoặc rule chưa active.
   - **Entitlement & đơn giá** do người dùng nhập (sản phẩm, đơn vị core/pack2/pack16/CPU, số lượng, đơn
-    giá, SA, phạm vi vCenter/cluster, hạn). Không có giá mặc định.
+    giá, SA, phạm vi vCenter/cluster, hạn). Không có giá mặc định. Tình trạng **Đang sở hữu** hoặc
+    **Chưa có (chưa mua)**: dòng "Chưa có" xác nhận sản phẩm đó chưa có license — toàn bộ nhu cầu được tính
+    là thiếu hụt phải mua, có thể nhập kèm đơn giá báo giá để ước chi phí.
+  - **Phạm vi cluster cho đợt mua** — thanh chip *Phạm vi cluster* (theo `vcenterKey::cluster`) giới hạn
+    đánh giá cho một số hệ thống (ví dụ production trước); các cluster còn lại được liệt kê rõ là "chưa
+    tính". Lựa chọn lưu theo trình duyệt (`localStorage`); bộ lọc cluster toàn cục (nếu đang chọn) được ưu
+    tiên. Snapshot, what-if, Excel và PDF đều ghi phạm vi (`scope.clusterKeys`, `excludedClusterKeys`,
+    `partial`).
+  - **Xuất PDF · Executive summary** — `backend/app/report_license.py` dùng cùng kết quả engine để xuất
+    2–3 trang: kết luận & quyết định đề nghị, phạm vi, **tổng quan license theo cluster**, nhu cầu ·
+    entitlement · thiếu hụt · chi phí, cơ sở tính toán (rule/version/nguồn, công thức, thiếu dữ liệu).
+    Xuất từ phạm vi hiện tại (tab License assessment) hoặc từ một snapshot đã lưu (nút PDF ở bảng Snapshot).
   - **Rule licensing** có version, URL nguồn, ghi chú, trạng thái `needs_verification / verified`, người
     và ngày xác minh. Rule không sửa đè: mỗi thay đổi tạo version mới; seed từ tài liệu công khai của
     Microsoft (core-based licensing, Product Terms, virtualization guidance) và Broadcom (KB 313548, VCF
@@ -174,8 +185,9 @@ vCenter / cluster hiện có. Gồm 5 phần:
 - **Snapshot** — lưu toàn bộ đầu vào (inventory đã phân loại, override, version rule + tham số,
   entitlement) cùng kết quả và hash; nút **Tái lập** chạy lại engine trên đầu vào đã lưu và so hash.
 
-API: `/api/licensing/inventory`, `/overrides`, `/rules` (+`/versions`, `/activate`, `/verify`),
-`/entitlements`, `/assess`, `/assessments` (+`/{id}/recompute`), `/whatif`. Tất cả yêu cầu đăng nhập
+API: `/api/licensing/clusters`, `/inventory`, `/overrides`, `/rules` (+`/versions`, `/activate`, `/verify`),
+`/entitlements`, `/assess`, `/assessments` (+`/{id}/recompute`), `/whatif`, `/report/pdf`
+(`?clusters=vc::cluster,...` hoặc `?snapshot=<id>`). Tất cả yêu cầu đăng nhập
 (ứng dụng hiện có một vai trò; chưa có phân quyền chi tiết theo chức năng).
 
 ### Inventory — lọc VM theo cluster & xuất Excel

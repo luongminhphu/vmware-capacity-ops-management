@@ -9,15 +9,16 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from .. import data_access
+from .. import data_access, report_license
 from ..config import get_settings
 from ..database import get_db
 from ..licensing import assess as assess_mod
 from ..licensing import os_classify, rules as rules_mod, whatif as whatif_mod
-from ..models import LicenseAssessment, LicenseEntitlement, LicenseRuleSet, User, VmOsOverride
+from ..models import LicenseAssessment, LicenseEntitlement, LicenseRuleSet, ReportLogo, User, VmOsOverride
 from ..security import get_current_user
 from ..timeutil import to_iso_utc
 
@@ -30,6 +31,43 @@ router = APIRouter(prefix="/api/licensing", tags=["licensing"])
 
 def _scope_keys(vcenter: Optional[str]) -> Optional[List[str]]:
     return None if (not vcenter or vcenter == "all") else [vcenter]
+
+
+def _parse_clusters(cluster: Optional[str], clusters: Optional[Any]) -> Dict[str, Any]:
+    """Normalise the two ways a cluster scope can arrive:
+    - `cluster`  : single name from the global filter (legacy, name-only);
+    - `clusters` : comma-separated string or list of "vcenterKey::cluster"
+                   keys chosen in the License tab (purchase scope, may be several).
+    Returns {"clusterKeys": [...] | None, "clusters": [names] | None}."""
+    keys: List[str] = []
+    names: List[str] = []
+    items: List[str] = []
+    if isinstance(clusters, str):
+        items = [x.strip() for x in clusters.split(",") if x.strip()]
+    elif isinstance(clusters, (list, tuple)):
+        items = [str(x).strip() for x in clusters if str(x).strip()]
+    for it in items:
+        if "::" in it:
+            keys.append(it)
+            names.append(it.split("::", 1)[1])
+        else:
+            names.append(it)
+    if cluster and cluster != "all":
+        # global filter narrows further: keep only selected keys matching that name
+        if keys:
+            keys = [k for k in keys if k.split("::", 1)[1] == cluster] or [f"::{cluster}"]
+            names = [cluster]
+        else:
+            names = [cluster]
+    if not keys and not names:
+        return {"clusterKeys": None, "clusters": None}
+    return {"clusterKeys": keys or None, "clusters": sorted(set(names)) or None}
+
+
+def _filter_scope(rows: List[Dict[str, Any]], sc: Dict[str, Any]) -> List[Dict[str, Any]]:
+    if not sc.get("clusterKeys") and not sc.get("clusters"):
+        return rows
+    return [r for r in rows if assess_mod.cluster_in_scope(r, sc)]
 
 
 def _overrides_map(db: Session) -> Dict[str, Dict[str, Any]]:
@@ -48,19 +86,21 @@ def _override_dict(o: VmOsOverride) -> Dict[str, Any]:
 
 def _ent_dict(e: LicenseEntitlement) -> Dict[str, Any]:
     return {"id": e.id, "product": e.product, "label": assess_mod.PRODUCT_LABEL.get(e.product, e.product),
-            "metric": e.metric, "quantity": e.quantity, "unitPrice": e.unit_price, "currency": e.currency,
+            "metric": e.metric, "quantity": e.quantity, "kind": e.kind or "owned",
+            "unitPrice": e.unit_price, "currency": e.currency,
             "hasSa": bool(e.has_sa), "scopeVcenter": e.scope_vcenter, "scopeCluster": e.scope_cluster,
             "validTo": to_iso_utc(e.valid_to) if e.valid_to else None, "note": e.note,
             "updatedBy": e.updated_by, "updatedAt": to_iso_utc(e.updated_at)}
 
 
-def _load_inventory(db: Session, vcenter: Optional[str], cluster: Optional[str] = None):
+def _load_inventory(db: Session, vcenter: Optional[str], cluster: Optional[str] = None, clusters: Optional[Any] = None):
     hosts, vms, run_meta = data_access.get_latest_combined(db, _scope_keys(vcenter), include_import=True)
-    if cluster and cluster != "all":
-        hosts = [h for h in hosts if h.get("cluster") == cluster]
-        vms = [v for v in vms if v.get("cluster") == cluster]
+    sc = _parse_clusters(cluster, clusters)
+    all_clusters = sorted({f"{h.get('vcenterKey') or ''}::{h.get('cluster') or ''}" for h in hosts})
+    hosts = _filter_scope(hosts, sc)
+    vms = _filter_scope(vms, sc)
     classified = os_classify.classify_all(vms, _overrides_map(db))
-    return hosts, classified, run_meta
+    return hosts, classified, {"runs": run_meta, "allClusterKeys": all_clusters}
 
 
 def _entitlements(db: Session) -> List[Dict[str, Any]]:
@@ -72,20 +112,48 @@ def _rules(db: Session) -> Dict[str, Dict[str, Any]]:
     return rules_mod.active_rules(db)
 
 
-def _scope(vcenter: Optional[str], cluster: Optional[str], run_meta) -> Dict[str, Any]:
-    return {"vcenterKeys": _scope_keys(vcenter), "clusters": ([cluster] if cluster and cluster != "all" else None),
-            "runs": run_meta}
+def _scope(vcenter: Optional[str], cluster: Optional[str], run_meta, clusters: Optional[Any] = None) -> Dict[str, Any]:
+    sc = _parse_clusters(cluster, clusters)
+    all_keys = (run_meta or {}).get("allClusterKeys") or []
+    runs = (run_meta or {}).get("runs")
+    in_scope = [k for k in all_keys if assess_mod.cluster_in_scope({"vcenterKey": k.split("::", 1)[0] or None, "cluster": k.split("::", 1)[1]}, sc)]
+    excluded = [k for k in all_keys if k not in in_scope]
+    return {"vcenterKeys": _scope_keys(vcenter), "clusters": sc["clusters"], "clusterKeys": sc["clusterKeys"],
+            "allClusterKeys": all_keys, "excludedClusterKeys": excluded, "partial": bool(excluded),
+            "runs": runs}
 
 
 # ---------------------------------------------------------------------------
 # Inventory
 # ---------------------------------------------------------------------------
 
+@router.get("/clusters")
+def clusters_list(vcenter: Optional[str] = Query(default="all"), db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Every cluster in the vCenter scope (no cluster filter) — drives the
+    purchase-scope selector so a subset of production clusters can be licensed first."""
+    hosts, vms, _ = data_access.get_latest_combined(db, _scope_keys(vcenter), include_import=True)
+    out: Dict[str, Dict[str, Any]] = {}
+    for h in hosts:
+        k = f"{h.get('vcenterKey') or ''}::{h.get('cluster') or ''}"
+        row = out.setdefault(k, {"key": k, "vcenterKey": h.get("vcenterKey"), "cluster": h.get("cluster"), "hostCount": 0,
+                                 "physicalCores": 0, "vmCount": 0, "ha": False, "drs": False})
+        row["hostCount"] += 1
+        row["physicalCores"] += int(h.get("cores") or 0)
+        row["ha"] = row["ha"] or bool(h.get("clusterHa"))
+        row["drs"] = row["drs"] or bool(h.get("clusterDrs"))
+    for v in vms:
+        k = f"{v.get('vcenterKey') or ''}::{v.get('cluster') or ''}"
+        if k in out:
+            out[k]["vmCount"] += 1
+    return sorted(out.values(), key=lambda r: (str(r["vcenterKey"]), str(r["cluster"])))
+
+
 @router.get("/inventory")
 def inventory(vcenter: Optional[str] = Query(default="all"), cluster: Optional[str] = Query(default=None),
+              clusters: Optional[str] = Query(default=None),
               db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     """ESXi hardware inventory (vCenter → cluster → host) + VM OS classification."""
-    hosts, classified, run_meta = _load_inventory(db, vcenter, cluster)
+    hosts, classified, run_meta = _load_inventory(db, vcenter, cluster, clusters)
     rules = _rules(db)
     ws = (rules.get("windows_server") or {}).get("params") or {}
     vmc = (rules.get("vmware") or {}).get("params") or {}
@@ -109,7 +177,8 @@ def inventory(vcenter: Optional[str] = Query(default="all"), cluster: Optional[s
         for k in dist:
             val = r.get(k) or "—"
             dist[k][val] = dist[k].get(val, 0) + 1
-    return {"hosts": host_rows, "vms": vm_rows, "summary": summary, "distribution": dist, "runMeta": run_meta,
+    return {"hosts": host_rows, "vms": vm_rows, "summary": summary, "distribution": dist, "runMeta": run_meta.get("runs"),
+            "scope": _scope(vcenter, cluster, run_meta, clusters),
             "totals": {"hosts": len(host_rows), "sockets": sum(h["sockets"] for h in host_rows),
                        "physicalCores": sum(h["cores"] for h in host_rows),
                        "logicalThreads": sum((h["threads"] or 0) for h in host_rows),
@@ -235,7 +304,8 @@ def verify_rule(rule_id: int, payload: RuleVerifyIn, db: Session = Depends(get_d
 class EntitlementIn(BaseModel):
     product: str
     metric: str = "core"
-    quantity: float = Field(ge=0)
+    kind: str = "owned"          # owned | none ("Chưa có" — xác nhận chưa mua license sản phẩm này)
+    quantity: float = Field(default=0, ge=0)
     unitPrice: Optional[float] = Field(default=None, ge=0)
     currency: str = "VND"
     hasSa: bool = False
@@ -248,7 +318,8 @@ class EntitlementIn(BaseModel):
 @router.get("/entitlements")
 def list_entitlements(db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     return {"items": _entitlements(db), "products": assess_mod.PRODUCT_LABEL,
-            "metrics": {"core": "core", "pack2": "pack 2 core", "pack16": "pack 16 core", "cpu": "CPU (legacy)"}}
+            "metrics": {"core": "core", "pack2": "pack 2 core", "pack16": "pack 16 core", "cpu": "CPU (legacy)"},
+            "kinds": {"owned": "Đang sở hữu", "none": "Chưa có (chưa mua)"}}
 
 
 def _apply_ent(row: LicenseEntitlement, p: EntitlementIn, user: User):
@@ -260,7 +331,12 @@ def _apply_ent(row: LicenseEntitlement, p: EntitlementIn, user: User):
         raise HTTPException(400, "VMware per-CPU legacy phải dùng metric 'cpu'")
     if p.product != "vmware_cpu_legacy" and p.metric == "cpu":
         raise HTTPException(400, "Metric 'cpu' chỉ dùng cho VMware per-CPU legacy")
-    row.product, row.metric, row.quantity = p.product, p.metric, p.quantity
+    if p.kind not in ("owned", "none"):
+        raise HTTPException(400, "kind phải là 'owned' hoặc 'none'")
+    if p.kind == "owned" and not (p.quantity > 0):
+        raise HTTPException(400, "Số lượng entitlement phải lớn hơn 0 (hoặc chọn 'Chưa có' nếu chưa mua license)")
+    row.kind = p.kind
+    row.product, row.metric, row.quantity = p.product, p.metric, (0.0 if p.kind == "none" else p.quantity)
     row.unit_price, row.currency, row.has_sa = p.unitPrice, (p.currency or "VND").upper()[:8], p.hasSa
     row.scope_vcenter = p.scopeVcenter or None
     row.scope_cluster = p.scopeCluster or None
@@ -304,11 +380,11 @@ def delete_entitlement(ent_id: int, db: Session = Depends(get_db), user: User = 
 # Assessment (live + snapshots)
 # ---------------------------------------------------------------------------
 
-def _run_assess(db: Session, vcenter: Optional[str], cluster: Optional[str]):
-    hosts, classified, run_meta = _load_inventory(db, vcenter, cluster)
+def _run_assess(db: Session, vcenter: Optional[str], cluster: Optional[str], clusters: Optional[Any] = None):
+    hosts, classified, run_meta = _load_inventory(db, vcenter, cluster, clusters)
     rules = _rules(db)
     ents = _entitlements(db)
-    scope = _scope(vcenter, cluster, run_meta)
+    scope = _scope(vcenter, cluster, run_meta, clusters)
     result = assess_mod.assess(hosts, classified, rules, ents, scope)
     result["generatedAt"] = datetime.utcnow().isoformat() + "Z"
     result["resultHash"] = assess_mod.result_hash(result)
@@ -318,14 +394,16 @@ def _run_assess(db: Session, vcenter: Optional[str], cluster: Optional[str]):
 
 @router.get("/assess")
 def assess_live(vcenter: Optional[str] = Query(default="all"), cluster: Optional[str] = Query(default=None),
+                clusters: Optional[str] = Query(default=None),
                 db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    result, _ = _run_assess(db, vcenter, cluster)
+    result, _ = _run_assess(db, vcenter, cluster, clusters)
     return result
 
 
 class SnapshotIn(BaseModel):
     vcenter: Optional[str] = "all"
     cluster: Optional[str] = None
+    clusters: Optional[List[str]] = None
     title: Optional[str] = None
     note: Optional[str] = None
 
@@ -344,7 +422,7 @@ def _snap_meta(s: LicenseAssessment) -> Dict[str, Any]:
 
 @router.post("/assessments")
 def create_snapshot(payload: SnapshotIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
-    result, inputs = _run_assess(db, payload.vcenter, payload.cluster)
+    result, inputs = _run_assess(db, payload.vcenter, payload.cluster, payload.clusters)
     snap = LicenseAssessment(
         created_by=user.username, title=payload.title or f"Assessment {datetime.utcnow():%Y-%m-%d %H:%M} UTC",
         note=payload.note, scope_json=json.dumps(result["scope"], ensure_ascii=False, default=str),
@@ -403,6 +481,7 @@ def delete_snapshot(snap_id: int, db: Session = Depends(get_db), user: User = De
 class WhatifIn(BaseModel):
     vcenter: Optional[str] = "all"
     cluster: Optional[str] = None
+    clusters: Optional[List[str]] = None
     scenario: Dict[str, Any]
 
 
@@ -410,12 +489,54 @@ class WhatifIn(BaseModel):
 def whatif(payload: WhatifIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)):
     if payload.scenario.get("type") not in whatif_mod.SCENARIO_TYPES:
         raise HTTPException(400, f"scenario.type phải thuộc {whatif_mod.SCENARIO_TYPES}")
-    hosts, classified, run_meta = _load_inventory(db, payload.vcenter, None)
+    hosts, classified, run_meta = _load_inventory(db, payload.vcenter, None)   # capacity needs every cluster
     rules = _rules(db)
     ents = _entitlements(db)
-    scope = _scope(payload.vcenter, payload.cluster, run_meta)
+    scope = _scope(payload.vcenter, payload.cluster, run_meta, payload.clusters)   # license totals follow purchase scope
     policy = data_access.get_effective_policy(db, get_settings())
     try:
         return whatif_mod.run_whatif(hosts, classified, rules, ents, scope, policy, payload.scenario, os_classify.classify_vm)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
+
+
+# ---------------------------------------------------------------------------
+# Executive summary PDF (per-cluster license overview)
+# ---------------------------------------------------------------------------
+
+def _ascii_slug(v: str) -> str:
+    import re
+    import unicodedata
+    t = unicodedata.normalize("NFKD", v or "").encode("ascii", "ignore").decode()
+    return re.sub(r"[^A-Za-z0-9]+", "_", t).strip("_")[:40]
+
+
+@router.get("/report/pdf")
+def report_pdf(vcenter: Optional[str] = Query(default="all"), cluster: Optional[str] = Query(default=None),
+               clusters: Optional[str] = Query(default=None), snapshot: Optional[int] = Query(default=None),
+               preparedBy: Optional[str] = Query(default=None),
+               db: Session = Depends(get_db), user: User = Depends(get_current_user)):
+    """Executive summary of license demand/shortfall per cluster — from the live
+    scope or from a stored snapshot (same renderer, so the PDF matches the UI)."""
+    snap_meta = None
+    if snapshot:
+        s = db.query(LicenseAssessment).filter(LicenseAssessment.id == snapshot).first()
+        if not s:
+            raise HTTPException(404, "Không tìm thấy snapshot")
+        result = json.loads(s.result_json)
+        snap_meta = _snap_meta(s)
+    else:
+        result, _ = _run_assess(db, vcenter, cluster, clusters)
+    logo_row = db.query(ReportLogo).filter(ReportLogo.id == 1).first()
+    logo_data_url = f"data:{logo_row.mime_type};base64,{logo_row.data_base64}" if logo_row else None
+    try:
+        pdf_bytes = report_license.build_license_pdf(result, logo_data_url=logo_data_url, prepared_by=preparedBy or user.username,
+                                                     snapshot=snap_meta)
+    except Exception as exc:  # pragma: no cover - surfaced to the UI
+        raise HTTPException(status_code=500, detail=f"Không thể tạo PDF: {exc}")
+    sc = result.get("scope") or {}
+    label = "_".join(_ascii_slug(c) for c in (sc.get("clusters") or [])[:3]) or (_ascii_slug(vcenter) if vcenter and vcenter != "all" else "tat_ca")
+    filename = f"VCO_License_executive_summary_{label}{('_snapshot' + str(snapshot)) if snapshot else ''}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
+    from urllib.parse import quote
+    headers = {"Content-Disposition": f"attachment; filename=\"{filename}\"; filename*=UTF-8''{quote(filename)}"}
+    return StreamingResponse(iter([pdf_bytes]), media_type="application/pdf", headers=headers)

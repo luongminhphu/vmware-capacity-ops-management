@@ -479,7 +479,9 @@ td.finding-code{font-weight:700;color:var(--primary);white-space:nowrap;font-siz
 .lic-warn-box strong{color:var(--warn);}
 .lic-snap-banner{display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap;}
 .lic-reasons{margin-top:.5rem;color:var(--bad);}
-.lic-actions{white-space:nowrap;}
+.lic-actions{white-space:normal;}
+.lic-actions .lic-btns{display:flex;flex-wrap:wrap;gap:.25rem;max-width:180px;}
+.lic-scope-cell{white-space:normal;max-width:220px;}
 .lic-actions .btn{margin-bottom:.2rem;}
 .lic-rule-active td{background:color-mix(in oklab,var(--ok) 6%,transparent);}
 .lic-hash{font-size:var(--text-xs);}
@@ -493,3 +495,14 @@ td.finding-code{font-weight:700;color:var(--primary);white-space:nowrap;font-siz
 @media (max-width:760px){
   .lic-kpi-6,.lic-kpi-5,.lic-kpi-4,.lic-2col,.lic-form-6,.lic-form-5,.lic-form-2{grid-template-columns:1fr;}
 }
+/* License scope (purchase scope) chips */
+.lic-scope-bar{display:flex;flex-wrap:wrap;align-items:center;gap:.4rem;margin-top:var(--space-3);padding-top:var(--space-3);border-top:1px solid var(--divider);}
+.lic-scope-bar:empty{display:none;}
+.lic-scope-label{font-size:var(--text-xs);text-transform:uppercase;letter-spacing:.06em;color:var(--muted);font-weight:600;margin-right:.25rem;}
+.lic-chip{display:inline-flex;align-items:center;gap:.35rem;min-height:30px;padding:0 .7rem;border-radius:999px;border:1.5px solid var(--border);background:var(--surface);font-size:var(--text-sm);cursor:pointer;transition:border-color var(--transition),background-color var(--transition);}
+.lic-chip:hover{border-color:var(--border-strong);}
+.lic-chip.on{border-color:var(--primary);background:color-mix(in oklab,var(--primary) 12%,var(--surface));color:var(--text);font-weight:600;}
+.lic-chip .lic-chip-sub{font-size:var(--text-xs);color:var(--text-muted);font-weight:400;}
+.lic-chip.disabled{opacity:.55;cursor:not-allowed;}
+.lic-scope-note{font-size:var(--text-xs);color:var(--text-muted);flex-basis:100%;}
+.lic-scope-note.partial{color:var(--warn);}

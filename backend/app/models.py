@@ -225,6 +225,7 @@ class LicenseEntitlement(Base):
     product = Column(String(32), nullable=False, index=True)    # ws_std | ws_dc | vsphere_std | vsphere_ent_plus | vvf | vcf | vmware_cpu_legacy
     metric = Column(String(32), nullable=False, default="core")  # core | pack2 | pack16 | cpu
     quantity = Column(Float, nullable=False, default=0)
+    kind = Column(String(16), nullable=False, default="owned")   # owned = đang sở hữu · none = xác nhận CHƯA có license (quantity 0, unit_price = báo giá nếu có)
     unit_price = Column(Float, nullable=True)
     currency = Column(String(8), nullable=False, default="VND")
     has_sa = Column(Boolean, nullable=False, default=False)      # Software Assurance / subscription (license mobility)

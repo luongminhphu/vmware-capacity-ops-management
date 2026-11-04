@@ -554,7 +554,7 @@
         <section class="table-card lic-head-card">
           <div class="panel-head">
             <div><div class="panel-title">Inventory &amp; License Assessment</div>
-              <p class="panel-sub">Thống kê ESXi (model, phiên bản, socket, physical core, logical thread, RAM), phân loại guest OS và đánh giá nhu cầu license VMware per-core và Windows Server Standard/Datacenter theo rule có version, nguồn và ngày xác minh. Phạm vi theo bộ lọc vCenter / cluster phía trên.</p></div>
+              <p class="panel-sub">Thống kê ESXi (model, phiên bản, socket, physical core, logical thread, RAM), phân loại guest OS và đánh giá nhu cầu license VMware per-core và Windows Server Standard/Datacenter theo rule có version, nguồn và ngày xác minh. Phạm vi theo bộ lọc vCenter phía trên; chọn cluster bên dưới để giới hạn đợt mua license cho một số hệ thống (ví dụ production trước).</p></div>
             <div class="panel-toolbar">
               <span class="pill na" id="licScopePill">—</span>
               <button class="btn btn-secondary btn-sm" id="btnLicRefresh" type="button">Tải lại</button>
@@ -567,6 +567,7 @@
             <button class="sim-tab" data-lic="whatif" type="button">What-if license</button>
             <button class="sim-tab" data-lic="snapshots" type="button">Snapshot</button>
           </div>
+          <div class="lic-scope-bar" id="licScopeBar"></div>
           <p class="logo-upload-hint hidden" id="licStatus" role="status" aria-live="polite"></p>
         </section>
         <div id="licBody"><div class="empty-note">Đang tải dữ liệu…</div></div>

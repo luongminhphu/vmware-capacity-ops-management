@@ -31,6 +31,9 @@ def ensure_schema() -> None:
             ("esxi_build", "VARCHAR(64)"), ("cpu_model", "VARCHAR(255)"), ("cpu_sockets", "INTEGER"),
             ("cpu_threads", "INTEGER"), ("cluster_ha", "BOOLEAN"), ("cluster_drs", "BOOLEAN"),
         ],
+        "license_entitlements": [
+            ("kind", "VARCHAR(16) NOT NULL DEFAULT 'owned'"),
+        ],
     }
     indexed = {"instance_uuid"}
     insp = inspect(engine)
