@@ -1673,7 +1673,7 @@ function num(v, digits) {
 }
 
 async function exportInventoryXlsx(kind, btn) {
-  const originalLabel = btn.textContent;
+  const originalLabel = btn.innerHTML;
   btn.disabled = true;
   btn.textContent = 'Đang tạo Excel...';
   try {
@@ -1726,7 +1726,7 @@ async function exportInventoryXlsx(kind, btn) {
     showValidationBanner([`Không thể xuất Excel: ${err.message}`], []);
   } finally {
     btn.disabled = false;
-    btn.textContent = originalLabel;
+    btn.innerHTML = originalLabel;
   }
 }
 
@@ -1797,16 +1797,24 @@ function populateFilterSelects() {
 
 function syncViewSections() {
   $$('.view-section').forEach(sec => sec.classList.add('hidden'));
-  const map = { dashboard:'#viewDashboard', compliance:'#viewCompliance', inventory:'#viewInventory', whatif:'#viewWhatif', sizing:'#viewSizing', licensing:'#viewLicensing' };
+  const map = {
+    executive:'#viewExecutive', dashboard:'#viewDashboard', history:'#viewHistory', compliance:'#viewCompliance',
+    inventory:'#viewInventory', whatif:'#viewWhatif', sizing:'#viewSizing', planning:'#viewPlanning',
+    licensing:'#viewLicensing', reports:'#viewReports', settings:'#viewSettings',
+  };
   const target = $(map[appState.view] || map.dashboard);
   if (target) target.classList.remove('hidden');
-  $$('#viewTabs .tab-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.view === appState.view));
+  document.body.dataset.view = appState.view;
+  if (typeof syncNavState === 'function') syncNavState();
 }
 
 function renderActiveView() {
   if (appState.view === 'dashboard') {
     renderCapacityKpis(); renderDashboardCharts(); renderClusterTable(); bindSortableHeaders('clusterTable','clusterTable',renderClusterTable); highlightSortHeaders('clusterTable','clusterTable');
-    // Snapshot-history panel (needs the backend; skipped silently in static mode).
+  }
+  else if (appState.view === 'executive' && typeof renderExecutiveView === 'function') renderExecutiveView();
+  else if (appState.view === 'history') {
+    // Snapshot-history page (needs the backend; skipped silently in static mode).
     if (typeof renderHistoryPanel === 'function' && typeof api !== 'undefined') renderHistoryPanel('techHistoryMount', { showVmChanges: true, followClusterFilter: true });
   }
   else if (appState.view === 'compliance') renderComplianceView();
@@ -1814,6 +1822,7 @@ function renderActiveView() {
   else if (appState.view === 'whatif') renderWhatifView();
   else if (appState.view === 'sizing' && typeof renderSizingView === 'function') renderSizingView();
   else if (appState.view === 'licensing' && typeof renderLicensingView === 'function') renderLicensingView();
+  // reports / planning / settings are static forms bound once in app.js.
 }
 
 function refreshAll() {
@@ -1849,15 +1858,11 @@ function bindGlobalInteractions() {
 
   $('#themeToggle').addEventListener('click', () => {
     const html = document.documentElement;
-    html.setAttribute('data-theme', html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
-    if (appState.view === 'dashboard') renderDashboardCharts();
+    const next = html.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+    html.setAttribute('data-theme', next);
+    try { localStorage.setItem('vco.theme', next); } catch (err) { /* ignore */ }
+    renderActiveView(); // charts read their palette from CSS variables
   });
-
-  $$('#viewTabs .tab-btn').forEach(btn => btn.addEventListener('click', () => {
-    appState.view = btn.dataset.view;
-    syncViewSections();
-    renderActiveView();
-  }));
 
   $('#complianceSearch').addEventListener('input', e => { appState.compliance.search = e.target.value; renderComplianceTable(); renderComplianceKpis(); });
   $('#complianceSeverityFilter').addEventListener('change', e => { appState.compliance.severity = e.target.value; renderComplianceTable(); });
@@ -1867,8 +1872,8 @@ function bindGlobalInteractions() {
   $('#vmSearch').addEventListener('input', e => { appState.vmTableSearch = e.target.value; renderVmTable(); });
   $('#vmStatusFilter').addEventListener('change', e => { appState.vmStatusFilter = e.target.value; renderVmTable(); });
   $('#vmClusterFilter').addEventListener('change', e => { appState.vmClusterFilter = e.target.value; renderVmTable(); });
-  $('#btnExportHostsXlsx').addEventListener('click', e => exportInventoryXlsx('hosts', e.currentTarget));
-  $('#btnExportVmsXlsx').addEventListener('click', e => exportInventoryXlsx('vms', e.currentTarget));
+  ['#btnExportHostsXlsx', '#btnExportHostsXlsx2'].forEach(sel => { const b = $(sel); if (b) b.addEventListener('click', e => exportInventoryXlsx('hosts', e.currentTarget)); });
+  ['#btnExportVmsXlsx', '#btnExportVmsXlsx2'].forEach(sel => { const b = $(sel); if (b) b.addEventListener('click', e => exportInventoryXlsx('vms', e.currentTarget)); });
 
   $('#whatifClusterSelect').addEventListener('change', e => { appState.whatif.cluster = e.target.value; renderSimForm(); });
   $$('#simTabs .sim-tab').forEach(btn => btn.addEventListener('click', () => {

@@ -229,20 +229,16 @@ function recRefsHtml(r) {
   const note = r.refNote || '';
   if (!items.length && !note) return '';
   const more = (refs.total || 0) - items.length;
-  const chips = items.map(it => `<span class="ref-item"><button type="button" class="ref-code" data-code="${esc(it.code)}" title="Mở tab Compliance và lọc theo mã này">${esc(it.code)}</button> ${esc(it.entity)}${it.vcenterKey ? ` (${esc(it.vcenterKey)})` : ''}${refs.compact ? '' : `<span class="ref-metric"> — ${esc(it.metric || it.typeLabel || '')}</span>`}</span>`).join('');
-  const moreHtml = more > 0 ? `<span class="ref-item muted">+${more} mã khác — xem tab Compliance</span>` : '';
+  const chips = items.map(it => `<span class="ref-item"><button type="button" class="ref-code" data-code="${esc(it.code)}" title="Mở trang Compliance và lọc theo mã này">${esc(it.code)}</button> ${esc(it.entity)}${it.vcenterKey ? ` (${esc(it.vcenterKey)})` : ''}${refs.compact ? '' : `<span class="ref-metric"> — ${esc(it.metric || it.typeLabel || '')}</span>`}</span>`).join('');
+  const moreHtml = more > 0 ? `<span class="ref-item muted">+${more} mã khác — xem trang Compliance</span>` : '';
   return `<div class="rec-refs"><strong>Đối soát:</strong> ${chips}${moreHtml}${note ? `<div class="ref-note">${esc(note)}</div>` : ''}</div>`;
 }
 
 document.addEventListener('click', (e) => {
   const btn = e.target.closest('.ref-code[data-code]');
   if (!btn) return;
-  // Compliance tab lives in the Technical perspective: switch first, then
-  // open the tab and pre-fill the search box with the reconciliation code.
-  const techBtn = document.querySelector('#perspectiveToggle button[data-perspective="technical"]');
-  if (techBtn && !techBtn.classList.contains('active')) techBtn.click();
-  const tab = document.querySelector('.tab-btn[data-view="compliance"]');
-  if (tab) tab.click();
+  // Open the Compliance page and pre-fill the search box with the reconciliation code.
+  if (typeof navigateTo === 'function') navigateTo('compliance');
   const search = $('#complianceSearch');
   if (search) { search.value = btn.dataset.code; search.dispatchEvent(new Event('input', { bubbles: true })); search.scrollIntoView({ block: 'center' }); }
 });

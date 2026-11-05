@@ -2,20 +2,31 @@
 
 Ứng dụng theo dõi capacity, compliance và mô phỏng what-if cho hạ tầng VMware, hỗ trợ **truy vấn
 live tới 4 vCenter (đọc chỉ đọc)** song song với import CSV/JSON thủ công, lưu lịch sử theo thời
-gian bằng PostgreSQL, và giao diện chia hai góc nhìn:
+gian bằng PostgreSQL, và giao diện **điều hướng theo luồng công việc** (sidebar trái, HSC design system).
 
-- **Executive View** — hộp "Tóm tắt" (trạng thái, thông điệp chính, điểm cần biết, quyết định cần
-  phê duyệt), KPI tổng năng lực CPU/RAM, xu hướng sử dụng theo thời gian, dự báo bao lâu nữa hết
-  công suất, top cluster rủi ro cao nhất, các thẻ **Nhận định & đề xuất** (ý nghĩa / việc cần làm /
-  nếu chưa hành động / đề nghị phê duyệt) và **Danh mục quyết định cần phê duyệt**. Văn phong ngắn
-  gọn; trách nhiệm xử lý quy về **System Owner của từng cluster** (mỗi cluster do một phòng ban
-  công nghệ phụ trách), không quy riêng cho IT.
-- **Technical View** — dashboard capacity chi tiết, bảng host/VM, compliance findings, what-if
-  simulation (Add Host, Upgrade Host, Upgrade + Add Host, Add VM, Resize VM, Decommission Idle VM + 8 scenario template dựng sẵn),
-  và **Sizing máy chủ** (tính số host vật lý cần mua từ danh sách VM của dự án mới).
+### Cấu trúc giao diện (information architecture)
 
-Giao diện dùng tone màu lạnh (slate-blue) đồng nhất ở cả dark và light theme, giá trị số
-dùng tabular-nums, màu trạng thái AN TOÀN/THEO DÕI/VƯỢT NGƯỠNG nhất quán.
+Mọi tính năng cũ được giữ nguyên nhưng gom lại theo luồng công việc thực tế; mỗi trang có địa chỉ
+riêng (`#/<trang>`, giữ được khi F5 / chia sẻ link) và thanh **Phạm vi** trên cùng chỉ hiện các bộ lọc
+mà trang đó dùng (vCenter / cluster / host).
+
+| Nhóm | Trang | Nội dung (trước đây nằm ở đâu) |
+|---|---|---|
+| Tổng quan | **Điều hành** | Tóm tắt, KPI, xu hướng, nhận định & danh mục quyết định cần phê duyệt (Executive View cũ). |
+| | **Capacity** | KPI CPU/RAM/Storage, biểu đồ utilization, overcommit, bảng cluster (tab Dashboard cũ). |
+| Giám sát | **Compliance** | Findings host/cluster/VM với mã đối soát; bấm mã ở trang Điều hành sẽ nhảy sang đây và lọc sẵn. |
+| | **Xu hướng & biến động** | Biến động CPU/RAM theo snapshot và danh sách VM thêm/bớt/đổi cấu hình (trước nằm cuối Dashboard). |
+| Inventory | **Host & VM** | Bảng host, bảng VM có lọc cluster riêng, xuất Excel (tab Inventory cũ). |
+| | **ESXi & phần cứng**, **Hệ điều hành guest** | Hai tab đầu của License & Inventory cũ. |
+| Quy hoạch | **What-if capacity**, **Sizing máy chủ**, **Quy hoạch tài nguyên** | What-if simulation; sizing host vật lý; form giả định + PDF quy hoạch (trước là dropdown trong header). |
+| License | **Đánh giá license**, **What-if license**, **Snapshot license** | Ba tab còn lại của License & Inventory cũ, kèm thanh chọn phạm vi cluster cho đợt mua. |
+| Báo cáo & cài đặt | **Trung tâm báo cáo** | Mọi nút xuất: PDF Vận hành / Kỹ thuật / Quy hoạch / Tổng quan license, CSV, Excel; phạm vi cluster-host của PDF, loại finding, logo (trước rải rác ở 5 dropdown trong header). |
+| | **Cài đặt** | Tiêu chí đánh giá (Storage), ngưỡng (idle, overcommit, HT) có nút **Lưu ngưỡng** lên server, trạng thái vCenter, import CSV/JSON, sample data, reset. |
+
+Giao diện dùng HSC design system: dark theme mặc định (nền đen, bề mặt `#14171A`, brand `#2681FF`),
+light theme chuyển bằng nút ở chân sidebar; font Inter, số dùng tabular-nums, màu trạng thái
+AN TOÀN/THEO DÕI/CẢNH BÁO/VƯỢT NGƯỠNG nhất quán giữa web và PDF. Dưới 1024px sidebar thu thành
+ngăn kéo (drawer).
 
 ### Xuất báo cáo PDF (khổ A4)
 
@@ -72,7 +83,7 @@ cluster), `lead` (tháng mua sắm + triển khai, mặc định 3), `target` (%
 
 ### What-if Simulation — Upgrade Host (nâng cấp host hiện hữu)
 
-Ngoài Add Host / Add VM / Resize VM / Decommission, tab **Upgrade Host** mô phỏng nâng cấp tại
+Ngoài Add Host / Add VM / Resize VM / Decommission, kịch bản **Upgrade Host** mô phỏng nâng cấp tại
 chỗ (thêm DIMM, đổi CPU) cho các host đang tick trong cluster mục tiêu. Quy tắc riêng cho CPU
 cores và RAM: *Giữ nguyên / Đặt thành / Cộng thêm / Tăng theo %*; bảng host xem trước cấu hình
 sau nâng cấp. Kết quả gồm before/after như các kịch bản khác, bảng Δ từng host, tổng cores/GB thêm
@@ -81,7 +92,7 @@ N+1 sau nâng cấp (mất host lớn nhất mới) — vì nâng cấp tại ch
 thiện dự phòng N+1. Template nhanh **Host upgrade** (RAM ×2 toàn bộ host) cũng dùng logic này
 (`getEffectiveData({ upgradeHosts })`).
 
-Tab **Upgrade + Add Host** gộp hai bước trong một kịch bản: (1) quy tắc nâng cấp cho host đang
+Kịch bản **Upgrade + Add Host** gộp hai bước trong một kịch bản: (1) quy tắc nâng cấp cho host đang
 tick, (2) danh sách host mới (nhiều dòng), chạy một lần ra một kết quả before/after chung. Bảng
 chi tiết liệt kê cả host nâng cấp (Δ cores/RAM) lẫn host mới (nhãn "mới"), dòng tổng hợp tách
 riêng phần năng lực đến từ nâng cấp và từ host mới, số host trước → sau, và N+1 tính trên cụm
@@ -91,7 +102,7 @@ hiện hữu + 1 host mới bằng host lớn nhất sau nâng cấp.
 ### Sizing máy chủ (HW sizing từ danh sách VM của dự án)
 
 Bài toán: team Dev gửi danh sách VM cho một ứng dụng/hệ thống mới (tên, số lượng, vCPU, RAM, Disk);
-team Infra cần đề xuất số lượng và cấu hình máy chủ vật lý. Tab **Sizing máy chủ** (Technical View):
+team Infra cần đề xuất số lượng và cấu hình máy chủ vật lý. Trang **Sizing máy chủ** (nhóm Quy hoạch):
 
 - **Nhập liệu**: bảng sửa trực tiếp (Enter ở dòng cuối tạo dòng mới), hoặc **Import Excel/CSV**
   (`POST /api/sizing/import`, đọc `.xlsx`/`.csv`, nhận tiêu đề tiếng Việt lẫn tiếng Anh: Tên VM / VM name,
@@ -135,7 +146,7 @@ team Infra cần đề xuất số lượng và cấu hình máy chủ vật lý
 
 ### License & Inventory — Inventory & License Assessment
 
-Tab **License & Inventory** (Technical View) dùng lại kết nối vCenter read-only, collector theo lịch/thủ công
+Nhóm trang **Inventory / License** (ESXi & phần cứng, Hệ điều hành guest, Đánh giá license, What-if license, Snapshot license) dùng lại kết nối vCenter read-only, collector theo lịch/thủ công
 (mỗi vCenter đồng bộ và báo lỗi độc lập, credential chỉ nằm trong env/Secret), database, đăng nhập và bộ lọc
 vCenter / cluster hiện có. Gồm 5 phần:
 
@@ -173,7 +184,7 @@ vCenter / cluster hiện có. Gồm 5 phần:
   - **Xuất PDF · Executive summary** — `backend/app/report_license.py` dùng cùng kết quả engine để xuất
     2–3 trang: kết luận & quyết định đề nghị, phạm vi, **tổng quan license theo cluster**, nhu cầu ·
     entitlement · thiếu hụt · chi phí, cơ sở tính toán (rule/version/nguồn, công thức, thiếu dữ liệu).
-    Xuất từ phạm vi hiện tại (tab License assessment) hoặc từ một snapshot đã lưu (nút PDF ở bảng Snapshot).
+    Xuất từ phạm vi hiện tại (trang Đánh giá license, hoặc trực tiếp từ Trung tâm báo cáo) hoặc từ một snapshot đã lưu (nút PDF ở bảng Snapshot).
   - **Rule licensing** có version, URL nguồn, ghi chú, trạng thái `needs_verification / verified`, người
     và ngày xác minh. Rule không sửa đè: mỗi thay đổi tạo version mới; seed từ tài liệu công khai của
     Microsoft (core-based licensing, Product Terms, virtualization guidance) và Broadcom (KB 313548, VCF
@@ -192,7 +203,7 @@ API: `/api/licensing/clusters`, `/inventory`, `/overrides`, `/rules` (+`/version
 
 ### Inventory — lọc VM theo cluster & xuất Excel
 
-Tab **Inventory** có bộ lọc **cluster riêng cho bảng VM** (độc lập với bộ lọc chung trên thanh
+Trang **Host & VM** có bộ lọc **cluster riêng cho bảng VM** (độc lập với bộ lọc chung trên thanh
 công cụ; danh sách cluster tự cập nhật theo scope vCenter đang chọn) và hai nút **Xuất Excel**
 cho bảng Host và bảng VM. File `.xlsx` xuất **đúng những dòng đang hiển thị** (đã áp dụng scope
 vCenter, bộ lọc cluster/host/power/tìm kiếm và thứ tự sắp xếp), kèm sheet *Phạm vi* ghi scope,
@@ -211,7 +222,7 @@ theo loại: `HCPU`/`HRAM` host vượt ngưỡng, `CCPU`/`CRAM` overcommit clus
 `POFF` VM tắt lâu, `OVP` VM over-provision; 5 ký tự hex là FNV-1a của
 `loại|vCenter|cluster|đối tượng`). Mã được tính giống nhau ở backend (`capacity.finding_code`) và
 web (`core.js findingCode`), nên cùng một vấn đề mang **cùng mã** ở Báo cáo Vận hành, Báo cáo
-Kỹ thuật, tab Compliance và file CSV export; mã không đổi giữa các kỳ nếu vấn đề vẫn còn.
+Kỹ thuật, trang Compliance và file CSV export; mã không đổi giữa các kỳ nếu vấn đề vẫn còn.
 
 - Mỗi khuyến nghị trong Báo cáo Vận hành có dòng **"Đối soát"** liệt kê mã + đối tượng + chỉ số
   đo được (ví dụ "4 điểm cần System Owner xử lý" liệt kê đủ 4 mã; các danh sách dài như VM
@@ -219,7 +230,7 @@ Kỹ thuật, tab Compliance và file CSV export; mã không đổi giữa các 
 - Bảng "Điểm nghiêm trọng cần System Owner xử lý" của Báo cáo Vận hành có cột **Mã** và liệt kê các điểm
   severity critical (tối đa 8, phần còn lại ghi "+n"); bảng "Compliance Findings đầy đủ" của Báo
   cáo Kỹ thuật có cùng cột Mã và đủ mọi severity.
-- Trên web, bấm vào mã trong Executive View sẽ chuyển sang Technical → tab Compliance và lọc theo
+- Trên web, bấm vào mã trong trang Điều hành sẽ chuyển sang trang Compliance và lọc theo
   mã đó; ô tìm kiếm Compliance cũng nhận mã đối soát.
 - API: `GET /api/reports/brief` trả `recommendations[].refs {total, items[{code, entity, cluster,
   vcenterKey, typeLabel, metric, severity}]}` và `refNote`; findings có trường `code`.
@@ -247,13 +258,13 @@ thời gian** với khoảng nhìn lại **3 / 6 / 12 tháng**. Đơn vị theo 
 cluster = một nhóm dự án độc lập, là cấp đề xuất bổ sung tài nguyên); nhóm theo vCenter là góc nhìn
 phụ:
 
-- Panel "Biến động tài nguyên CPU/RAM theo thời gian" xuất hiện ở cả **Executive View** và tab
+- Panel "Biến động tài nguyên CPU/RAM theo thời gian" xuất hiện ở cả trang **Điều hành** và trang
   **Dashboard** (Technical View): 4 ô KPI đầu kỳ → nay (CPU %, RAM %, số VM, số host), hai biểu
   đồ đường CPU/RAM (% ngưỡng overcommit, có đường ngưỡng 100% và đường "Toàn bộ"), bảng delta
   từng nhóm và 2–3 câu nhận định ngắn. Technical View có thêm hai bảng **VM thêm mới / VM đã
   loại bỏ** trong kỳ. Lựa chọn khoảng thời gian và cách nhóm được lưu trên trình duyệt
   (`vco.historyMonths`, `vco.historyGroupV2`).
-- Panel trên tab Dashboard **đi theo bộ lọc Cluster** của trang: chọn một cluster thì biểu đồ,
+- Panel trên trang Xu hướng & biến động **đi theo bộ lọc Cluster** của trang: chọn một cluster thì biểu đồ,
   bảng delta, nhận định và danh sách VM thêm/bỏ chỉ tính cho cluster đó; Executive View luôn hiển
   thị mọi cluster trong phạm vi vCenter đang chọn.
 - Cùng số liệu được đưa vào PDF, luôn theo cluster và **theo đúng phạm vi cluster đã chọn khi xuất

@@ -1,14 +1,15 @@
 <!DOCTYPE html>
-<html lang="vi" data-theme="light">
+<html lang="vi" data-theme="dark">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>VMware Capacity Ops Management</title>
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="css/styles.css?v=__ASSET_V__" />
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://unpkg.com/lucide@latest"></script>
 </head>
 <body data-view="dashboard">
 <a href="#mainContent" class="skip-link">Bỏ qua đến nội dung chính</a>
@@ -23,8 +24,8 @@
       </svg>
     </div>
     <h2>VMware Capacity Ops Management</h2>
-    <p class="lead">Đăng nhập để xem dashboard capacity và compliance.</p>
-    <div id="loginError"></div>
+    <p class="lead">Đăng nhập để xem capacity, compliance và license của hạ tầng VMware.</p>
+    <div id="loginError" role="alert"></div>
     <div class="login-field">
       <label for="loginUsername">Tên đăng nhập</label>
       <input type="text" id="loginUsername" autocomplete="username" required>
@@ -40,278 +41,153 @@
 <!-- ================= APP SHELL ================= -->
 <div class="app-shell hidden" id="appShell">
 
-  <header class="page-header">
-    <div class="brand-wrap">
-      <div class="brand-mark" aria-label="VMware Capacity Ops">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <rect x="3" y="4" width="7" height="7" rx="1.4"></rect>
-          <rect x="14" y="4" width="7" height="7" rx="1.4"></rect>
-          <rect x="3" y="14" width="7" height="7" rx="1.4"></rect>
-          <rect x="14" y="14" width="7" height="7" rx="1.4"></rect>
+  <!-- Sidebar: workflow-grouped navigation -->
+  <aside class="sidebar" id="sidebar" aria-label="Điều hướng chính">
+    <div class="sidebar-brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="4" width="7" height="7" rx="1.4"></rect><rect x="14" y="4" width="7" height="7" rx="1.4"></rect>
+          <rect x="3" y="14" width="7" height="7" rx="1.4"></rect><rect x="14" y="14" width="7" height="7" rx="1.4"></rect>
         </svg>
       </div>
-      <div>
-        <div class="eyebrow">Infrastructure Capacity Ops</div>
-        <h1>VMware Capacity Ops Management</h1>
-        <p class="lead">Theo dõi tài nguyên đã dùng / còn dư, kiểm tra compliance và mô phỏng what-if cho hạ tầng VMware.</p>
+      <div class="brand-text">
+        <div class="brand-name">VMware Capacity Ops</div>
+        <div class="brand-sub">Management</div>
+      </div>
+      <button class="btn icon-btn sidebar-close" id="btnSidebarClose" type="button" aria-label="Đóng menu"><i data-lucide="x"></i></button>
+    </div>
+    <nav class="sidebar-nav" id="mainNav"></nav>
+    <div class="sidebar-foot">
+      <div class="sidebar-user">
+        <i data-lucide="user-round" class="sidebar-user-icon"></i>
+        <span id="currentUserLabel"></span>
+      </div>
+      <div class="sidebar-foot-actions">
+        <button class="btn icon-btn" id="themeToggle" type="button" aria-label="Chuyển giao diện sáng/tối" title="Giao diện sáng/tối"><i data-lucide="sun-moon"></i></button>
+        <button class="btn btn-secondary btn-sm" id="btnLogout" type="button"><i data-lucide="log-out"></i>Đăng xuất</button>
       </div>
     </div>
-    <div class="header-actions">
-      <button class="btn btn-secondary" id="btnExportCsv" type="button">Export CSV</button>
-      <details class="finding-filter-dropdown" id="criteriaFilterDropdown">
-        <summary class="btn btn-secondary" title="Chọn tiêu chí tài nguyên được đưa vào đánh giá trên dashboard và báo cáo PDF">Tiêu chí đánh giá</summary>
-        <div class="finding-filter-panel criteria-filter-panel">
-          <label class="finding-filter-item criteria-locked" title="CPU luôn được đánh giá"><input type="checkbox" checked disabled><span>CPU (overcommit vCPU:pCPU)</span></label>
-          <label class="finding-filter-item criteria-locked" title="RAM luôn được đánh giá"><input type="checkbox" checked disabled><span>RAM (overcommit vRAM:pRAM)</span></label>
-          <div class="finding-filter-sep"></div>
-          <label class="finding-filter-item"><input type="checkbox" id="criteriaStorageToggle"><span>Storage (Used / Provisioned theo datastore)</span></label>
-          <p class="criteria-hint">Tắt khi dùng SAN dùng chung: VM thick provisioning làm % storage luôn tiệm cận 100% và không phản ánh dung lượng SAN thực còn trống. Khi tắt, mọi KPI, biểu đồ, bảng và nội dung PDF về storage sẽ được loại khỏi đánh giá và báo cáo ghi rõ "Storage: không đánh giá".</p>
-          <p class="criteria-status" id="criteriaStatus"></p>
-        </div>
-      </details>
-      <details class="finding-filter-dropdown" id="pdfScopeFilterDropdown">
-        <summary class="btn btn-secondary" title="Chọn cluster/host sẽ được đưa vào báo cáo PDF">Phạm vi cluster/host cho PDF</summary>
-        <div class="finding-filter-panel scope-filter-panel">
-          <div class="scope-quick-group" id="scopeQuickGroup">
-            <button type="button" class="scope-quick-btn" data-scope-quick="all">Toàn dự án</button>
-          </div>
-          <div class="finding-filter-sep"></div>
-          <label class="finding-filter-item finding-filter-all">
-            <input type="checkbox" id="pdfClusterAll" checked>
-            <span>Chọn tất cả cluster</span>
-          </label>
-          <div id="pdfClusterList" class="scope-cluster-list"></div>
-          <div class="finding-filter-sep"></div>
-          <label class="finding-filter-item scope-host-toggle">
-            <input type="checkbox" id="pdfHostNarrowToggle">
-            <span>Giới hạn thêm theo host cụ thể (tùy chọn)</span>
-          </label>
-          <div id="pdfHostList" class="scope-host-list hidden"></div>
-        </div>
-      </details>
-      <details class="finding-filter-dropdown" id="pdfFindingFilterDropdown">
-        <summary class="btn btn-secondary" title="Chọn loại finding sẽ được đưa vào báo cáo PDF">Lọc findings cho PDF</summary>
-        <div class="finding-filter-panel">
-          <label class="finding-filter-item finding-filter-all">
-            <input type="checkbox" id="pdfFindingTypeAll" checked>
-            <span>Chọn tất cả</span>
-          </label>
-          <div class="finding-filter-sep"></div>
-          <label class="finding-filter-item"><input type="checkbox" class="pdfFindingTypeCb" value="host_cpu" checked><span>Host CPU vượt ngưỡng</span></label>
-          <label class="finding-filter-item"><input type="checkbox" class="pdfFindingTypeCb" value="host_ram" checked><span>Host RAM vượt ngưỡng</span></label>
-          <label class="finding-filter-item"><input type="checkbox" class="pdfFindingTypeCb" value="overcommit_cpu" checked><span>Overcommit CPU vượt ngưỡng</span></label>
-          <label class="finding-filter-item"><input type="checkbox" class="pdfFindingTypeCb" value="overcommit_ram" checked><span>Overcommit RAM vượt ngưỡng</span></label>
-          <label class="finding-filter-item"><input type="checkbox" class="pdfFindingTypeCb" value="vm_idle" checked><span>VM idle lâu</span></label>
-          <label class="finding-filter-item"><input type="checkbox" class="pdfFindingTypeCb" value="vm_off" checked><span>VM tắt lâu</span></label>
-          <label class="finding-filter-item"><input type="checkbox" class="pdfFindingTypeCb" value="vm_overprovision" checked><span>VM over-provision</span></label>
-        </div>
-      </details>
-      <details class="finding-filter-dropdown" id="pdfLogoDropdown">
-        <summary class="btn btn-secondary" title="Import logo công ty để hiển thị trên báo cáo PDF">Logo báo cáo</summary>
-        <div class="finding-filter-panel logo-upload-panel">
-          <div class="logo-upload-preview-row">
-            <div class="logo-upload-preview" id="logoUploadPreview">
-              <span class="logo-upload-empty" id="logoUploadEmptyLabel">Chưa có logo</span>
-              <img id="logoUploadImg" alt="Logo công ty" class="hidden">
-            </div>
-            <div class="logo-upload-actions">
-              <label class="btn btn-secondary btn-sm" for="logoUploadInput">Chọn ảnh…</label>
-              <input type="file" id="logoUploadInput" accept="image/png,image/jpeg,image/svg+xml,image/webp" class="hidden">
-              <button type="button" class="btn btn-secondary btn-sm" id="btnRemoveLogo">Xóa logo</button>
-            </div>
-          </div>
-          <p class="logo-upload-hint">Logo sẽ hiển thị ở góc trang bìa các báo cáo PDF (Vận hành &amp; Kỹ thuật). Khuyến nghị PNG/SVG nền trong suốt, tối đa 2MB.</p>
-          <p class="logo-upload-status" id="logoUploadStatus"></p>
-        </div>
-      </details>
-      <button class="btn btn-secondary" id="btnExportPdfExec" type="button" title="Xuất Báo cáo Vận hành PDF khổ A4 (2–3 trang)">Xuất PDF · Vận hành</button>
-      <button class="btn btn-secondary" id="btnExportPdfTech" type="button" title="Xuất báo cáo PDF khổ A4 chi tiết kỹ thuật">Xuất PDF · Kỹ thuật</button>
-      <details class="finding-filter-dropdown" id="planningDropdown">
-        <summary class="btn btn-secondary" title="Báo cáo Quy hoạch tài nguyên: dự phóng tăng trưởng CPU/RAM và đề xuất bổ sung node máy chủ">Xuất PDF · Quy hoạch</summary>
-        <div class="finding-filter-panel planning-panel">
-          <div class="planning-panel-title">Giả định quy hoạch tài nguyên</div>
-          <label class="planning-field"><span>Thời gian dự phóng</span>
-            <select id="planHorizon"><option value="12">12 tháng</option><option value="24">24 tháng</option><option value="36" selected>36 tháng</option><option value="48">48 tháng</option><option value="60">60 tháng</option></select></label>
-          <label class="planning-field"><span>Tăng trưởng %/quý (thấp, cơ sở, cao)</span><input type="text" id="planGrowth" value="5,10,20" placeholder="5,10,20"></label>
-          <div class="planning-row">
-            <label class="planning-field"><span>Node mới: cores</span><input type="number" id="planNodeCores" min="1" placeholder="theo host"></label>
-            <label class="planning-field"><span>Node mới: RAM (GB)</span><input type="number" id="planNodeRam" min="1" placeholder="theo host"></label>
-          </div>
-          <div class="planning-row">
-            <label class="planning-field"><span>Mua sắm + triển khai (tháng)</span><input type="number" id="planLead" min="0" max="12" value="3"></label>
-            <label class="planning-field"><span>Mục tiêu (% ngưỡng)</span><input type="number" id="planTarget" min="50" max="100" value="80"></label>
-          </div>
-          <p class="logo-upload-hint">Để trống cores/RAM: node mới lấy theo host lớn nhất của từng cluster. Điều kiện đủ năng lực: ≤ mục tiêu % ngưỡng overcommit và vẫn ≤ 100% khi mất 1 host (N+1). Theo phạm vi vCenter/cluster đang chọn.</p>
-          <button class="btn btn-primary btn-sm" id="btnExportPdfPlan" type="button">Tạo báo cáo PDF</button>
-        </div>
-      </details>
-      <button class="btn icon-btn" id="themeToggle" type="button" aria-label="Chuyển dark/light mode" title="Chuyển dark/light mode">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></svg>
-      </button>
-    </div>
-  </header>
+  </aside>
+  <div class="sidebar-scrim" id="sidebarScrim"></div>
 
-  <section class="top-bar">
-    <div class="top-bar-left">
-      <div class="view-toggle" id="perspectiveToggle">
-        <button type="button" data-perspective="executive">Executive View</button>
-        <button type="button" data-perspective="technical" class="active">Technical View</button>
+  <div class="app-main">
+    <!-- Top bar: page title + global scope + sync -->
+    <header class="topbar">
+      <button class="btn icon-btn topbar-menu" id="btnSidebarOpen" type="button" aria-label="Mở menu"><i data-lucide="menu"></i></button>
+      <div class="topbar-title">
+        <div class="eyebrow" id="pageGroup">Tổng quan</div>
+        <h1 id="pageTitle">Capacity</h1>
       </div>
-      <select id="vcenterSelect" title="Chọn vCenter"></select>
-      <button class="btn btn-secondary btn-sm" id="btnSyncNow" type="button">Đồng bộ ngay</button>
-      <span class="vcenter-status-row" id="vcenterStatusRow"></span>
-    </div>
-    <div class="user-menu">
-      <span id="currentUserLabel"></span>
-      <button class="btn btn-secondary" id="btnLogout" type="button">Đăng xuất</button>
-    </div>
-  </section>
+      <div class="topbar-scope" id="topbarScope" aria-label="Phạm vi dữ liệu">
+        <span class="scope-label"><i data-lucide="filter"></i>Phạm vi</span>
+        <select id="vcenterSelect" title="Chọn vCenter" data-scope="vcenter"></select>
+        <select id="filterCluster" data-scope="cluster"><option value="all">Tất cả cluster</option></select>
+        <select id="filterHost" data-scope="host"><option value="all">Tất cả host</option></select>
+        <span class="pill na" id="dataFootprint" data-scope="footprint">Hosts: 0 | VMs: 0</span>
+      </div>
+      <div class="topbar-actions">
+        <span class="vcenter-status-row" id="vcenterStatusRow"></span>
+        <button class="btn btn-secondary btn-sm" id="btnSyncNow" type="button"><i data-lucide="refresh-cw"></i>Đồng bộ ngay</button>
+      </div>
+    </header>
+    <p class="page-desc" id="pageDesc"></p>
 
-  <div class="validation-banner" id="validationBanner"></div>
-
-  <!-- ================= EXECUTIVE VIEW ================= -->
-  <div id="executiveView" class="perspective-view hidden">
-    <section class="card exec-brief-card" id="execBrief" aria-live="polite">
-      <div class="empty-state">Đang tổng hợp nhận định...</div>
-    </section>
-
-    <section class="exec-grid" id="execKpis"></section>
-
-    <div id="execHistoryMount"></div>
-
-    <section class="chart-grid" style="grid-template-columns:2fr 1fr;">
-      <article class="card chart-card">
-        <div class="panel-head"><div><div class="panel-title">Xu hướng sử dụng tài nguyên (toàn hệ thống)</div><p class="panel-sub">Tổng vCPU/RAM đã dùng so với tổng năng lực vật lý theo thời gian, tổng hợp từ lịch sử polling.</p></div></div>
-        <div class="chart-wrap"><canvas id="chartExecTrend"></canvas></div>
-      </article>
-      <article class="card chart-card">
-        <div class="panel-head"><div><div class="panel-title">Phân bổ theo vCenter</div><p class="panel-sub">Mức sử dụng CPU/RAM theo từng vCenter.</p></div></div>
-        <div class="chart-wrap"><canvas id="chartExecByVcenter"></canvas></div>
-      </article>
-    </section>
-
-    <div class="insight-card" id="execForecastCpu"></div>
-    <div class="insight-card" id="execForecastRam"></div>
-
-    <section class="panel">
-      <div class="panel-head">
-        <div><div class="panel-title">Top cluster rủi ro cao nhất</div><p class="panel-sub">Xếp hạng theo % ngưỡng overcommit CPU/RAM đã dùng — ưu tiên đầu tư/mở rộng.</p></div>
-      </div>
-      <div id="execTopRisk"></div>
-    </section>
-
-    <section class="panel" id="execRecommendationsPanel">
-      <div class="panel-head">
-        <div><div class="panel-title">Nhận định &amp; đề xuất</div><p class="panel-sub">Mỗi đề xuất gồm ý nghĩa, việc cần làm, rủi ro nếu chưa hành động và nội dung cần phê duyệt; System Owner của từng cluster chịu trách nhiệm xử lý.</p></div>
-      </div>
-      <div id="execRecommendations"></div>
-    </section>
-
-    <section class="panel" id="execDecisionPanel">
-      <div class="panel-head">
-        <div><div class="panel-title">Danh mục quyết định cần phê duyệt</div><p class="panel-sub">Nội dung cần phê duyệt hoặc ghi nhận chủ trương, xếp theo ưu tiên.</p></div>
-      </div>
-      <div class="table-wrap"><table class="data-table" id="execDecisionTable">
-        <thead><tr><th>#</th><th>Nội dung quyết định</th><th>Ưu tiên</th><th>Thời điểm</th><th>Rủi ro tránh được / lợi ích</th></tr></thead>
-        <tbody></tbody>
-      </table></div>
-    </section>
-  </div>
-
-  <!-- ================= TECHNICAL VIEW ================= -->
-  <div id="technicalView" class="perspective-view">
-
-    <section class="toolbar" aria-label="Nạp và cấu hình dữ liệu">
-      <div class="field-group">
-        <label for="hostFile">Host file (CSV/JSON) — import thủ công</label>
-        <input type="file" id="hostFile" accept=".csv,.json,.txt">
-      </div>
-      <div class="field-group">
-        <label for="vmFile">VM file (CSV/JSON) — import thủ công</label>
-        <input type="file" id="vmFile" accept=".csv,.json,.txt">
-      </div>
-      <div class="field-group">
-        <label for="idleThresholdInput">Ngưỡng VM idle (ngày)</label>
-        <input type="text" id="idleThresholdInput" value="30">
-      </div>
-      <div class="field-group">
-        <label for="cpuOvercommitInput">Ngưỡng overcommit CPU (vCPU:pCPU)</label>
-        <input type="text" id="cpuOvercommitInput" value="6">
-      </div>
-      <div class="field-group">
-        <label for="htFactorInput" title="Số pCPU logic dùng để tính overcommit = CPU Cores (vật lý) × hệ số này. Mặc định 2 vì hầu hết host ESXi bật Hyperthreading (mỗi core vật lý = 2 logical thread).">Hệ số Hyperthreading (pCPU logic/core)</label>
-        <input type="text" id="htFactorInput" value="2">
-      </div>
-      <div class="field-group">
-        <label for="ramOvercommitInput">Ngưỡng overcommit RAM (vRAM:pRAM)</label>
-        <input type="text" id="ramOvercommitInput" value="1.0">
-      </div>
-      <div class="toolbar-actions">
-        <button class="btn btn-secondary" id="btnLoadSample" type="button">Nạp sample data</button>
-        <button class="btn btn-secondary" id="btnResetAll" type="button">Đặt lại toàn bộ</button>
-      </div>
-    </section>
-
-    <section class="section-nav">
-      <div class="tabbar" id="viewTabs">
-        <button class="tab-btn active" data-view="dashboard" type="button">Dashboard</button>
-        <button class="tab-btn" data-view="compliance" type="button">Compliance</button>
-        <button class="tab-btn" data-view="inventory" type="button">Inventory</button>
-        <button class="tab-btn" data-view="whatif" type="button">What-if Simulation</button>
-        <button class="tab-btn" data-view="sizing" type="button">Sizing máy chủ</button>
-        <button class="tab-btn" data-view="licensing" type="button">License &amp; Inventory</button>
-      </div>
-      <div class="panel-toolbar">
-        <select id="filterCluster"><option value="all">Tất cả cluster</option></select>
-        <select id="filterHost"><option value="all">Tất cả host</option></select>
-        <span class="pill na" id="dataFootprint">Hosts: 0 | VMs: 0</span>
-      </div>
-    </section>
+    <div class="validation-banner" id="validationBanner"></div>
 
     <main id="mainContent">
 
-      <!-- ================= DASHBOARD VIEW ================= -->
+      <!-- ================= TỔNG QUAN · ĐIỀU HÀNH ================= -->
+      <section id="viewExecutive" class="view-section hidden">
+        <section class="card exec-brief-card" id="execBrief" aria-live="polite">
+          <div class="empty-state">Đang tổng hợp nhận định...</div>
+        </section>
+
+        <section class="exec-grid" id="execKpis"></section>
+
+        <div id="execHistoryMount"></div>
+
+        <section class="chart-grid exec-chart-grid">
+          <article class="card chart-card">
+            <div class="panel-head"><div><div class="panel-title">Xu hướng sử dụng tài nguyên (toàn hệ thống)</div><p class="panel-sub">Tổng vCPU/RAM đã dùng so với tổng năng lực vật lý theo thời gian, tổng hợp từ lịch sử polling.</p></div></div>
+            <div class="chart-wrap"><canvas id="chartExecTrend"></canvas></div>
+          </article>
+          <article class="card chart-card">
+            <div class="panel-head"><div><div class="panel-title">Phân bổ theo vCenter</div><p class="panel-sub">Mức sử dụng CPU/RAM theo từng vCenter.</p></div></div>
+            <div class="chart-wrap"><canvas id="chartExecByVcenter"></canvas></div>
+          </article>
+        </section>
+
+        <div class="insight-card" id="execForecastCpu"></div>
+        <div class="insight-card" id="execForecastRam"></div>
+
+        <section class="panel">
+          <div class="panel-head">
+            <div><div class="panel-title">Top cluster rủi ro cao nhất</div><p class="panel-sub">Xếp hạng theo % ngưỡng overcommit CPU/RAM đã dùng — ưu tiên đầu tư/mở rộng.</p></div>
+          </div>
+          <div id="execTopRisk"></div>
+        </section>
+
+        <section class="panel" id="execRecommendationsPanel">
+          <div class="panel-head">
+            <div><div class="panel-title">Nhận định &amp; đề xuất</div><p class="panel-sub">Mỗi đề xuất gồm ý nghĩa, việc cần làm, rủi ro nếu chưa hành động và nội dung cần phê duyệt; System Owner của từng cluster chịu trách nhiệm xử lý.</p></div>
+          </div>
+          <div id="execRecommendations"></div>
+        </section>
+
+        <section class="panel" id="execDecisionPanel">
+          <div class="panel-head">
+            <div><div class="panel-title">Danh mục quyết định cần phê duyệt</div><p class="panel-sub">Nội dung cần phê duyệt hoặc ghi nhận chủ trương, xếp theo ưu tiên.</p></div>
+          </div>
+          <div class="table-wrap"><table class="data-table" id="execDecisionTable">
+            <thead><tr><th>#</th><th>Nội dung quyết định</th><th>Ưu tiên</th><th>Thời điểm</th><th>Rủi ro tránh được / lợi ích</th></tr></thead>
+            <tbody></tbody>
+          </table></div>
+        </section>
+      </section>
+
+      <!-- ================= TỔNG QUAN · CAPACITY ================= -->
       <section id="viewDashboard" class="view-section">
         <section class="kpi-grid" id="capacityKpis"></section>
 
         <section class="chart-grid">
           <article class="card chart-card">
-            <div class="panel-head"><div><div class="panel-title">Utilization theo Cluster</div><p class="panel-sub" id="clusterUtilSub">CPU / RAM / Storage % sử dụng theo từng cluster.</p></div></div>
+            <div class="panel-head"><div><div class="panel-title">Utilization theo cluster</div><p class="panel-sub" id="clusterUtilSub">CPU / RAM / Storage % sử dụng theo từng cluster.</p></div></div>
             <div class="chart-wrap"><canvas id="chartClusterUtil"></canvas></div>
           </article>
           <article class="card chart-card">
-            <div class="panel-head"><div><div class="panel-title">Utilization theo Host</div><p class="panel-sub">Top host theo mức sử dụng CPU/RAM.</p></div></div>
+            <div class="panel-head"><div><div class="panel-title">Utilization theo host</div><p class="panel-sub">Top host theo mức sử dụng CPU/RAM.</p></div></div>
             <div class="chart-wrap"><canvas id="chartHostUtil"></canvas></div>
           </article>
           <article class="card chart-card">
-            <div class="panel-head"><div><div class="panel-title">VM Power State</div><p class="panel-sub">Phân bố trạng thái nguồn của VM.</p></div></div>
+            <div class="panel-head"><div><div class="panel-title">VM power state</div><p class="panel-sub">Phân bố trạng thái nguồn của VM.</p></div></div>
             <div class="chart-wrap"><canvas id="chartPowerState"></canvas></div>
           </article>
         </section>
 
-        <section class="chart-grid" id="datastoreChartGrid" style="grid-template-columns:1fr 1fr;">
+        <section class="chart-grid chart-grid-2" id="datastoreChartGrid">
           <article class="card chart-card" id="datastoreChartCard">
-            <div class="panel-head"><div><div class="panel-title">Phân bổ tài nguyên theo Datastore</div><p class="panel-sub">Provisioned vs Used theo datastore.</p></div></div>
+            <div class="panel-head"><div><div class="panel-title">Phân bổ tài nguyên theo datastore</div><p class="panel-sub">Provisioned vs Used theo datastore.</p></div></div>
             <div class="chart-wrap"><canvas id="chartDatastore"></canvas></div>
           </article>
           <article class="card chart-card">
-            <div class="panel-head"><div><div class="panel-title">Overcommit Ratio</div><p class="panel-sub">CPU / RAM overcommit theo cluster (vCPU:pCPU, vRAM:pRAM).</p></div></div>
+            <div class="panel-head"><div><div class="panel-title">Overcommit ratio</div><p class="panel-sub">CPU / RAM overcommit theo cluster (vCPU:pCPU, vRAM:pRAM).</p></div></div>
             <div class="chart-wrap"><canvas id="chartOvercommit"></canvas></div>
           </article>
         </section>
 
-        <div id="techHistoryMount"></div>
-
         <section class="panel">
           <div class="panel-head">
-            <div><div class="panel-title">Phân bổ theo Cluster</div><p class="panel-sub">Chi tiết capacity, usage và overcommit từng cluster.</p></div>
+            <div><div class="panel-title">Phân bổ theo cluster</div><p class="panel-sub">Chi tiết capacity, usage và overcommit từng cluster.</p></div>
+            <div class="panel-toolbar">
+              <button class="btn btn-secondary btn-sm" type="button" data-nav-link="history"><i data-lucide="trending-up"></i>Xem xu hướng</button>
+            </div>
           </div>
           <div class="table-scroll">
             <table class="data-table" id="clusterTable">
               <thead><tr>
                 <th data-key="name">Cluster</th><th data-key="hosts">Hosts</th><th data-key="vms">VMs</th>
                 <th data-key="cpuPct" title="% ngưỡng overcommit CPU đã dùng = overcommit CPU thực tế ÷ ngưỡng overcommit CPU × 100. Overcommit CPU = vCPU dùng / pCPU logic (pCPU logic = CPU Cores vật lý × hệ số Hyperthreading)">CPU % (theo overcommit)</th><th data-key="ramPct" title="% ngưỡng overcommit RAM đã dùng = overcommit RAM thực tế ÷ ngưỡng overcommit RAM × 100">RAM % (theo overcommit)</th><th data-key="storagePct" class="col-storage">Storage %</th>
-                <th data-key="cpuOvercommit">CPU Overcommit</th><th data-key="ramOvercommit">RAM Overcommit</th><th data-key="status">Status</th>
+                <th data-key="cpuOvercommit">CPU overcommit</th><th data-key="ramOvercommit">RAM overcommit</th><th data-key="status">Status</th>
               </tr></thead>
               <tbody></tbody>
             </table>
@@ -319,16 +195,21 @@
         </section>
       </section>
 
-      <!-- ================= COMPLIANCE VIEW ================= -->
+      <!-- ================= GIÁM SÁT · XU HƯỚNG & BIẾN ĐỘNG ================= -->
+      <section id="viewHistory" class="view-section hidden">
+        <div id="techHistoryMount"></div>
+      </section>
+
+      <!-- ================= GIÁM SÁT · COMPLIANCE ================= -->
       <section id="viewCompliance" class="view-section hidden">
         <section class="kpi-grid" id="complianceKpis"></section>
 
         <section class="panel">
           <div class="panel-head">
-            <div><div class="panel-title">Compliance Findings</div><p class="panel-sub">Host CPU/RAM vượt ngưỡng, overcommit ratio cluster, VM idle/tắt lâu/over-provision vCPU.</p></div>
+            <div><div class="panel-title">Compliance findings</div><p class="panel-sub">Host CPU/RAM vượt ngưỡng, overcommit ratio cluster, VM idle/tắt lâu/over-provision vCPU.</p></div>
             <div class="panel-toolbar">
               <div class="search-box">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+                <i data-lucide="search"></i>
                 <input type="text" id="complianceSearch" placeholder="Tìm theo mã đối soát, tên, cluster, host...">
               </div>
               <select id="complianceSeverityFilter">
@@ -347,6 +228,7 @@
                 <option value="vm_off">VM tắt lâu</option>
                 <option value="vm_overprovision">VM over-provision</option>
               </select>
+              <button class="btn btn-secondary btn-sm" type="button" data-nav-link="settings" title="Ngưỡng đánh giá nằm trong Cài đặt"><i data-lucide="settings-2"></i>Ngưỡng</button>
             </div>
           </div>
           <div class="table-scroll">
@@ -362,23 +244,23 @@
         </section>
       </section>
 
-      <!-- ================= INVENTORY VIEW ================= -->
+      <!-- ================= INVENTORY · HOST & VM ================= -->
       <section id="viewInventory" class="view-section hidden">
         <section class="table-card">
           <div class="panel-head">
-            <div><div class="panel-title">Host Table</div><p class="panel-sub">Toàn bộ ESXi host đã import hoặc đồng bộ, kèm mức sử dụng.</p></div>
+            <div><div class="panel-title">Host</div><p class="panel-sub">Toàn bộ ESXi host đã import hoặc đồng bộ, kèm mức sử dụng.</p></div>
             <div class="panel-toolbar">
               <div class="search-box">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+                <i data-lucide="search"></i>
                 <input type="text" id="hostSearch" placeholder="Tìm host...">
               </div>
-              <button class="btn btn-secondary btn-sm" id="btnExportHostsXlsx" type="button" title="Xuất các host đang hiển thị (theo bộ lọc hiện tại) ra file Excel">Xuất Excel</button>
+              <button class="btn btn-secondary btn-sm" id="btnExportHostsXlsx" type="button" title="Xuất các host đang hiển thị (theo bộ lọc hiện tại) ra file Excel"><i data-lucide="download"></i>Xuất Excel</button>
             </div>
           </div>
           <div class="table-scroll">
             <table class="data-table" id="hostTable">
               <thead><tr>
-                <th data-key="cluster">Cluster</th><th data-key="host">Host</th><th data-key="cores">CPU Cores</th>
+                <th data-key="cluster">Cluster</th><th data-key="host">Host</th><th data-key="cores">CPU cores</th>
                 <th data-key="ramGB">RAM GB</th><th data-key="vcpuUsed">vCPU dùng</th><th data-key="cpuPct" title="% ngưỡng overcommit CPU đã dùng = (vCPU dùng / pCPU logic) ÷ ngưỡng overcommit CPU × 100, pCPU logic = CPU Cores vật lý × hệ số Hyperthreading. Vượt 100% nghĩa là overcommit thực tế của host đã vượt ngưỡng cấu hình">CPU % (theo overcommit)</th>
                 <th data-key="ramUsedGB">RAM dùng</th><th data-key="ramPct" title="% ngưỡng overcommit RAM đã dùng = (RAM dùng / RAM vật lý) ÷ ngưỡng overcommit RAM × 100. Vượt 100% nghĩa là overcommit thực tế của host đã vượt ngưỡng cấu hình">RAM % (theo overcommit)</th><th data-key="vmCount">Số VM</th><th data-key="status">Status</th>
               </tr></thead>
@@ -390,10 +272,10 @@
 
         <section class="table-card">
           <div class="panel-head">
-            <div><div class="panel-title">VM Table</div><p class="panel-sub">Toàn bộ VM đã import hoặc đồng bộ, kèm trạng thái và mức sử dụng disk.</p></div>
+            <div><div class="panel-title">VM</div><p class="panel-sub">Toàn bộ VM đã import hoặc đồng bộ, kèm trạng thái và mức sử dụng disk.</p></div>
             <div class="panel-toolbar">
               <div class="search-box">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.3-4.3"></path></svg>
+                <i data-lucide="search"></i>
                 <input type="text" id="vmSearch" placeholder="Tìm VM, IP...">
               </div>
               <select id="vmClusterFilter" title="Lọc VM theo cluster">
@@ -404,7 +286,7 @@
                 <option value="on">Powered On</option>
                 <option value="off">Powered Off</option>
               </select>
-              <button class="btn btn-secondary btn-sm" id="btnExportVmsXlsx" type="button" title="Xuất các VM đang hiển thị (theo bộ lọc hiện tại) ra file Excel">Xuất Excel</button>
+              <button class="btn btn-secondary btn-sm" id="btnExportVmsXlsx" type="button" title="Xuất các VM đang hiển thị (theo bộ lọc hiện tại) ra file Excel"><i data-lucide="download"></i>Xuất Excel</button>
             </div>
           </div>
           <div class="table-scroll">
@@ -412,7 +294,7 @@
               <thead><tr>
                 <th data-key="cluster">Cluster</th><th data-key="host">Host</th><th data-key="vm">VM</th><th data-key="powerState">Power</th>
                 <th data-key="ipAddress">IP</th><th data-key="vcpu">vCPU</th><th data-key="ramGB">RAM GB</th>
-                <th data-key="diskProvGB">Disk Prov</th><th data-key="diskUsedGB">Disk Used</th><th data-key="diskUsedPct">Disk Used %</th>
+                <th data-key="diskProvGB">Disk prov</th><th data-key="diskUsedGB">Disk used</th><th data-key="diskUsedPct">Disk used %</th>
                 <th data-key="lastActivityDays">Idle (ngày)</th><th data-key="powerOffDays">Tắt (ngày)</th>
               </tr></thead>
               <tbody></tbody>
@@ -422,40 +304,40 @@
         </section>
       </section>
 
-      <!-- ================= WHAT-IF VIEW ================= -->
+      <!-- ================= QUY HOẠCH · WHAT-IF CAPACITY ================= -->
       <section id="viewWhatif" class="view-section hidden">
         <section class="panel">
           <div class="panel-head">
-            <div><div class="panel-title">Scenario Templates</div><p class="panel-sub">Chọn nhanh một kịch bản chuẩn để mô phỏng tác động lên capacity.</p></div>
+            <div><div class="panel-title">Kịch bản mẫu</div><p class="panel-sub">Chọn nhanh một kịch bản chuẩn để mô phỏng tác động lên capacity.</p></div>
           </div>
           <div class="scenario-grid" id="scenarioTemplates"></div>
         </section>
 
         <div class="layout-2col">
           <aside class="side-card">
-            <h4>Chọn cluster mục tiêu</h4>
+            <h4>Cluster mục tiêu</h4>
             <div class="field">
               <select id="whatifClusterSelect"></select>
             </div>
-            <div class="legend-list" style="margin-top:1rem;">
+            <div class="legend-list">
               <div class="legend-item"><span class="legend-dot" style="background:var(--ok)"></span>An toàn (&lt;80% ngưỡng overcommit)</div>
               <div class="legend-item"><span class="legend-dot" style="background:var(--warn)"></span>Theo dõi (80–100% ngưỡng overcommit)</div>
               <div class="legend-item"><span class="legend-dot" style="background:var(--crit)"></span>Vượt ngưỡng (&gt;100% ngưỡng overcommit)</div>
             </div>
-            <h4 style="margin-top:1.2rem;">Lịch sử simulation</h4>
+            <h4 class="side-card-h4-gap">Lịch sử simulation</h4>
             <div class="sim-list" id="simHistoryList"><div class="empty-note">Chưa có simulation nào.</div></div>
-            <button class="btn btn-secondary btn-sm" id="btnClearSimHistory" type="button" style="margin-top:.6rem;width:100%;">Xoá lịch sử</button>
+            <button class="btn btn-secondary btn-sm btn-block" id="btnClearSimHistory" type="button">Xoá lịch sử</button>
           </aside>
 
           <div class="sim-shell">
             <div class="sim-card">
               <div class="sim-tabbar" id="simTabs">
-                <button class="sim-tab active" data-sim="addHost" type="button">Add Host</button>
-                <button class="sim-tab" data-sim="upgradeHost" type="button">Upgrade Host</button>
-                <button class="sim-tab" data-sim="upgradeAndAdd" type="button">Upgrade + Add Host</button>
+                <button class="sim-tab active" data-sim="addHost" type="button">Add host</button>
+                <button class="sim-tab" data-sim="upgradeHost" type="button">Upgrade host</button>
+                <button class="sim-tab" data-sim="upgradeAndAdd" type="button">Upgrade + add host</button>
                 <button class="sim-tab" data-sim="addVm" type="button">Add VM</button>
                 <button class="sim-tab" data-sim="resizeVm" type="button">Resize VM</button>
-                <button class="sim-tab" data-sim="decommission" type="button">Decommission Idle VM</button>
+                <button class="sim-tab" data-sim="decommission" type="button">Decommission idle VM</button>
               </div>
               <div id="simFormArea"></div>
             </div>
@@ -464,17 +346,17 @@
         </div>
       </section>
 
-      <!-- ================= SIZING VIEW ================= -->
+      <!-- ================= QUY HOẠCH · SIZING MÁY CHỦ ================= -->
       <section id="viewSizing" class="view-section hidden">
         <section class="table-card">
           <div class="panel-head">
             <div><div class="panel-title">Danh sách VM yêu cầu</div><p class="panel-sub">Team Dev cung cấp danh sách máy chủ ảo cho dự án mới (số lượng, vCPU, RAM, Disk). Nhập trực tiếp vào bảng hoặc import file Excel/CSV theo mẫu; từ tổng nhu cầu này hệ thống tính số host vật lý cần mua.</p></div>
             <div class="panel-toolbar">
               <input type="file" id="sizingFile" accept=".xlsx,.xlsm,.csv,.txt" hidden>
-              <button class="btn btn-primary btn-sm" id="btnSizingImport" type="button" title="Đọc file .xlsx hoặc .csv: cột Tên VM, Số lượng, vCPU, RAM (GB), Disk (GB), Ghi chú">Import Excel/CSV</button>
+              <button class="btn btn-secondary btn-sm" id="btnSizingImport" type="button" title="Đọc file .xlsx hoặc .csv: cột Tên VM, Số lượng, vCPU, RAM (GB), Disk (GB), Ghi chú"><i data-lucide="upload"></i>Import Excel/CSV</button>
               <button class="btn btn-secondary btn-sm" id="btnSizingTemplate" type="button">Tải file mẫu</button>
               <button class="btn btn-secondary btn-sm" id="btnSizingSample" type="button">Nạp ví dụ</button>
-              <button class="btn btn-secondary btn-sm" id="btnSizingAddRow" type="button">+ Thêm dòng</button>
+              <button class="btn btn-secondary btn-sm" id="btnSizingAddRow" type="button"><i data-lucide="plus"></i>Thêm dòng</button>
               <button class="btn btn-secondary btn-sm btn-danger" id="btnSizingClear" type="button">Xoá danh sách</button>
             </div>
           </div>
@@ -514,15 +396,15 @@
 
           <div class="sim-shell">
             <div class="sim-card">
-              <div class="panel-head" style="margin-bottom:var(--space-3);">
-                <div><div class="panel-title" style="font-size:var(--text-base);">Cấu hình host ứng viên</div><p class="panel-sub">Khai các cấu hình máy chủ vật lý đang cân nhắc (socket × cores, RAM, đĩa cục bộ nếu dùng vSAN, đơn giá nếu có). Hệ thống tính số host cho từng cấu hình và đánh dấu phương án đề xuất.</p></div>
+              <div class="panel-head panel-head-tight">
+                <div><div class="panel-title panel-title-sm">Cấu hình host ứng viên</div><p class="panel-sub">Khai các cấu hình máy chủ vật lý đang cân nhắc (socket × cores, RAM, đĩa cục bộ nếu dùng vSAN, đơn giá nếu có). Hệ thống tính số host cho từng cấu hình và đánh dấu phương án đề xuất.</p></div>
               </div>
               <div class="multi-row-list" id="sizingProfiles"></div>
-              <div class="multi-row-add"><button class="btn btn-secondary btn-sm" id="btnSizingAddProfile" type="button">+ Thêm cấu hình</button></div>
+              <div class="multi-row-add"><button class="btn btn-secondary btn-sm" id="btnSizingAddProfile" type="button"><i data-lucide="plus"></i>Thêm cấu hình</button></div>
               <div class="sim-actions">
                 <button class="btn btn-primary" id="btnSizingRun" type="button">Tính sizing</button>
                 <details class="finding-filter-dropdown" id="sizingPdfDropdown">
-                  <summary class="btn btn-secondary" title="PDF 'Đề xuất cấu hình máy chủ' theo bố cục báo cáo quản trị (tóm tắt → so sánh → giả định) để đính kèm tờ trình">Xuất PDF · Đề xuất ▾</summary>
+                  <summary class="btn btn-secondary" title="PDF 'Đề xuất cấu hình máy chủ' theo bố cục báo cáo quản trị (tóm tắt → so sánh → giả định) để đính kèm tờ trình">Xuất PDF đề xuất <i data-lucide="chevron-down"></i></summary>
                   <div class="finding-filter-panel planning-panel sz-pdf-panel">
                     <div class="planning-panel-title">Nội dung đề xuất</div>
                     <label class="sz-radio"><input type="radio" name="szPdfMode" value="new" checked> <span><b>Trang bị mới server</b> <span class="muted-sub">(mặc định)</span><br><span class="muted-sub">Số host vật lý cần mua theo từng cấu hình ứng viên, ngân sách ước tính.</span></span></label>
@@ -541,7 +423,7 @@
                     <p class="logo-upload-hint hidden" id="szPdfStatus" role="status" aria-live="polite"></p>
                   </div>
                 </details>
-                <button class="btn btn-secondary" id="btnSizingExport" type="button" title="Xuất Excel: tóm tắt + so sánh cấu hình + danh sách VM">Xuất Excel</button>
+                <button class="btn btn-secondary" id="btnSizingExport" type="button" title="Xuất Excel: tóm tắt + so sánh cấu hình + danh sách VM"><i data-lucide="download"></i>Xuất Excel</button>
               </div>
             </div>
             <div class="sim-card sim-result hidden" id="sizingResult"></div>
@@ -549,23 +431,56 @@
         </div>
       </section>
 
-      <!-- ================= LICENSE & INVENTORY VIEW ================= -->
+      <!-- ================= QUY HOẠCH · QUY HOẠCH TÀI NGUYÊN ================= -->
+      <section id="viewPlanning" class="view-section hidden">
+        <div class="layout-2col layout-2col-wide">
+          <section class="panel planning-page-panel">
+            <div class="panel-head">
+              <div><div class="panel-title">Giả định quy hoạch</div><p class="panel-sub">Dự phóng tăng trưởng CPU/RAM theo ba kịch bản và tính thời điểm cần bổ sung node máy chủ cho từng cluster trong phạm vi đã chọn.</p></div>
+            </div>
+            <div class="planning-form">
+              <label class="planning-field"><span>Thời gian dự phóng</span>
+                <select id="planHorizon"><option value="12">12 tháng</option><option value="24">24 tháng</option><option value="36" selected>36 tháng</option><option value="48">48 tháng</option><option value="60">60 tháng</option></select></label>
+              <label class="planning-field"><span>Tăng trưởng %/quý (thấp, cơ sở, cao)</span><input type="text" id="planGrowth" value="5,10,20" placeholder="5,10,20"></label>
+              <div class="planning-row">
+                <label class="planning-field"><span>Node mới: cores</span><input type="number" id="planNodeCores" min="1" placeholder="theo host"></label>
+                <label class="planning-field"><span>Node mới: RAM (GB)</span><input type="number" id="planNodeRam" min="1" placeholder="theo host"></label>
+              </div>
+              <div class="planning-row">
+                <label class="planning-field"><span>Mua sắm + triển khai (tháng)</span><input type="number" id="planLead" min="0" max="12" value="3"></label>
+                <label class="planning-field"><span>Mục tiêu (% ngưỡng)</span><input type="number" id="planTarget" min="50" max="100" value="80"></label>
+              </div>
+              <p class="logo-upload-hint">Để trống cores/RAM: node mới lấy theo host lớn nhất của từng cluster. Điều kiện đủ năng lực: ≤ mục tiêu % ngưỡng overcommit và vẫn ≤ 100% khi mất 1 host (N+1). Phạm vi cluster/host lấy theo mục Phạm vi báo cáo trong Trung tâm báo cáo.</p>
+              <div class="sim-actions">
+                <button class="btn btn-primary" id="btnExportPdfPlan" type="button"><i data-lucide="file-text"></i>Tạo báo cáo PDF</button>
+                <button class="btn btn-secondary" type="button" data-nav-link="reports">Phạm vi báo cáo</button>
+              </div>
+            </div>
+          </section>
+          <aside class="side-card">
+            <h4>Nội dung báo cáo</h4>
+            <ul class="lic-list planning-outline">
+              <li>Tóm tắt: cluster nào cần bổ sung node và khi nào, theo kịch bản cơ sở.</li>
+              <li>Dự phóng CPU/RAM theo ba kịch bản tăng trưởng (thấp, cơ sở, cao).</li>
+              <li>Thời điểm phải đặt hàng = thời điểm vượt mục tiêu trừ thời gian mua sắm + triển khai.</li>
+              <li>Số node và cấu hình node đề xuất cho từng cluster, kiểm tra N+1.</li>
+            </ul>
+            <p class="logo-upload-hint">Báo cáo dùng ngưỡng overcommit và tiêu chí Storage trong Cài đặt; logo lấy từ Trung tâm báo cáo.</p>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ================= INVENTORY & LICENSE (hardware / os / assess / whatif / snapshots) ================= -->
       <section id="viewLicensing" class="view-section hidden">
         <section class="table-card lic-head-card">
-          <div class="panel-head">
-            <div><div class="panel-title">Inventory &amp; License Assessment</div>
-              <p class="panel-sub">Thống kê ESXi (model, phiên bản, socket, physical core, logical thread, RAM), phân loại guest OS và đánh giá nhu cầu license VMware per-core và Windows Server Standard/Datacenter theo rule có version, nguồn và ngày xác minh. Phạm vi theo bộ lọc vCenter phía trên; chọn cluster bên dưới để giới hạn đợt mua license cho một số hệ thống (ví dụ production trước).</p></div>
-            <div class="panel-toolbar">
+          <div class="lic-head-row">
+            <div class="lic-head-text">
               <span class="pill na" id="licScopePill">—</span>
-              <button class="btn btn-secondary btn-sm" id="btnLicRefresh" type="button">Tải lại</button>
+              <span class="lic-head-note" id="licHeadNote">Phạm vi theo bộ lọc vCenter/cluster phía trên. Chọn cluster bên dưới để giới hạn đợt mua license cho một số hệ thống (ví dụ production trước).</span>
             </div>
-          </div>
-          <div class="sim-tabbar" id="licTabs">
-            <button class="sim-tab active" data-lic="hardware" type="button">ESXi &amp; phần cứng</button>
-            <button class="sim-tab" data-lic="os" type="button">Phân loại OS</button>
-            <button class="sim-tab" data-lic="assess" type="button">License assessment</button>
-            <button class="sim-tab" data-lic="whatif" type="button">What-if license</button>
-            <button class="sim-tab" data-lic="snapshots" type="button">Snapshot</button>
+            <div class="panel-toolbar">
+              <button class="btn btn-secondary btn-sm" id="btnLicRefresh" type="button"><i data-lucide="refresh-cw"></i>Tải lại</button>
+            </div>
           </div>
           <div class="lic-scope-bar" id="licScopeBar"></div>
           <p class="logo-upload-hint hidden" id="licStatus" role="status" aria-live="polite"></p>
@@ -573,10 +488,207 @@
         <div id="licBody"><div class="empty-note">Đang tải dữ liệu…</div></div>
       </section>
 
-    </main>
-  </div>
+      <!-- ================= TRUNG TÂM BÁO CÁO ================= -->
+      <section id="viewReports" class="view-section hidden">
+        <div class="reports-layout">
+          <div class="reports-main">
+            <section class="panel">
+              <div class="panel-head">
+                <div><div class="panel-title">Báo cáo PDF</div><p class="panel-sub">Khổ A4, tiếng Việt. Phạm vi vCenter theo bộ lọc phía trên; phạm vi cluster/host, loại finding và logo theo tùy chọn bên phải.</p></div>
+              </div>
+              <div class="report-grid">
+                <article class="report-card">
+                  <div class="report-card-icon"><i data-lucide="briefcase"></i></div>
+                  <div class="report-card-body">
+                    <div class="report-card-title">Báo cáo Vận hành</div>
+                    <p class="report-card-desc">2–3 trang: tình trạng capacity, rủi ro, đề xuất và nội dung cần phê duyệt theo System Owner của từng cluster.</p>
+                  </div>
+                  <button class="btn btn-primary btn-sm" id="btnExportPdfExec" type="button">Xuất PDF</button>
+                </article>
+                <article class="report-card">
+                  <div class="report-card-icon"><i data-lucide="file-cog"></i></div>
+                  <div class="report-card-body">
+                    <div class="report-card-title">Báo cáo Kỹ thuật</div>
+                    <p class="report-card-desc">Chi tiết host, cluster, compliance findings và phụ lục biến động VM để đội vận hành đối soát.</p>
+                  </div>
+                  <button class="btn btn-secondary btn-sm" id="btnExportPdfTech" type="button">Xuất PDF</button>
+                </article>
+                <article class="report-card">
+                  <div class="report-card-icon"><i data-lucide="calendar-range"></i></div>
+                  <div class="report-card-body">
+                    <div class="report-card-title">Quy hoạch tài nguyên</div>
+                    <p class="report-card-desc">Dự phóng tăng trưởng và thời điểm bổ sung node; chỉnh giả định trong trang Quy hoạch tài nguyên.</p>
+                  </div>
+                  <div class="report-card-actions">
+                    <button class="btn btn-secondary btn-sm" id="btnExportPdfPlanQuick" type="button">Xuất PDF</button>
+                    <button class="btn btn-ghost btn-sm" type="button" data-nav-link="planning">Giả định</button>
+                  </div>
+                </article>
+                <article class="report-card">
+                  <div class="report-card-icon"><i data-lucide="badge-check"></i></div>
+                  <div class="report-card-body">
+                    <div class="report-card-title">Tổng quan license theo cluster</div>
+                    <p class="report-card-desc">Executive summary nhu cầu license VMware và Windows Server theo phạm vi cluster đã chọn trong trang Đánh giá license.</p>
+                  </div>
+                  <div class="report-card-actions">
+                    <button class="btn btn-secondary btn-sm" id="btnExportPdfLicSummary" type="button">Xuất PDF</button>
+                    <button class="btn btn-ghost btn-sm" type="button" data-nav-link="lic-assess">Phạm vi</button>
+                  </div>
+                </article>
+                <article class="report-card">
+                  <div class="report-card-icon"><i data-lucide="calculator"></i></div>
+                  <div class="report-card-body">
+                    <div class="report-card-title">Đề xuất cấu hình máy chủ</div>
+                    <p class="report-card-desc">Tạo từ trang Sizing máy chủ sau khi nhập danh sách VM và cấu hình host ứng viên.</p>
+                  </div>
+                  <button class="btn btn-secondary btn-sm" type="button" data-nav-link="sizing">Mở Sizing</button>
+                </article>
+              </div>
+            </section>
 
-  <div class="footer-note">VMware Capacity Ops Management — dữ liệu live từ vCenter (đọc chỉ đọc, tài khoản infra.mon@vsphere.local) + import thủ công, lưu lịch sử để phân tích xu hướng.</div>
+            <section class="panel">
+              <div class="panel-head">
+                <div><div class="panel-title">Xuất dữ liệu</div><p class="panel-sub">Theo phạm vi vCenter/cluster/host đang chọn.</p></div>
+              </div>
+              <div class="export-row">
+                <button class="btn btn-secondary" id="btnExportCsv" type="button"><i data-lucide="download"></i>CSV tổng hợp (host, VM, findings)</button>
+                <button class="btn btn-secondary" id="btnExportHostsXlsx2" type="button"><i data-lucide="download"></i>Excel danh sách host</button>
+                <button class="btn btn-secondary" id="btnExportVmsXlsx2" type="button"><i data-lucide="download"></i>Excel danh sách VM</button>
+              </div>
+            </section>
+          </div>
+
+          <aside class="reports-side">
+            <section class="side-card side-card-static">
+              <h4>Phạm vi báo cáo</h4>
+              <p class="side-hint" id="scopeFilterSummary">Toàn bộ cluster</p>
+              <div class="scope-quick-group" id="scopeQuickGroup">
+                <button type="button" class="scope-quick-btn" data-scope-quick="all">Toàn dự án</button>
+              </div>
+              <label class="finding-filter-item finding-filter-all">
+                <input type="checkbox" id="pdfClusterAll" checked>
+                <span>Chọn tất cả cluster</span>
+              </label>
+              <div id="pdfClusterList" class="scope-cluster-list"></div>
+              <div class="finding-filter-sep"></div>
+              <label class="finding-filter-item scope-host-toggle">
+                <input type="checkbox" id="pdfHostNarrowToggle">
+                <span>Giới hạn thêm theo host cụ thể</span>
+              </label>
+              <div id="pdfHostList" class="scope-host-list hidden"></div>
+            </section>
+
+            <section class="side-card side-card-static">
+              <h4>Loại finding trong PDF</h4>
+              <p class="side-hint" id="pdfFindingFilterSummary">Tất cả loại</p>
+              <label class="finding-filter-item finding-filter-all">
+                <input type="checkbox" id="pdfFindingTypeAll" checked>
+                <span>Chọn tất cả</span>
+              </label>
+              <div class="finding-filter-sep"></div>
+              <label class="finding-filter-item"><input type="checkbox" class="pdfFindingTypeCb" value="host_cpu" checked><span>Host CPU vượt ngưỡng</span></label>
+              <label class="finding-filter-item"><input type="checkbox" class="pdfFindingTypeCb" value="host_ram" checked><span>Host RAM vượt ngưỡng</span></label>
+              <label class="finding-filter-item"><input type="checkbox" class="pdfFindingTypeCb" value="overcommit_cpu" checked><span>Overcommit CPU vượt ngưỡng</span></label>
+              <label class="finding-filter-item"><input type="checkbox" class="pdfFindingTypeCb" value="overcommit_ram" checked><span>Overcommit RAM vượt ngưỡng</span></label>
+              <label class="finding-filter-item"><input type="checkbox" class="pdfFindingTypeCb" value="vm_idle" checked><span>VM idle lâu</span></label>
+              <label class="finding-filter-item"><input type="checkbox" class="pdfFindingTypeCb" value="vm_off" checked><span>VM tắt lâu</span></label>
+              <label class="finding-filter-item"><input type="checkbox" class="pdfFindingTypeCb" value="vm_overprovision" checked><span>VM over-provision</span></label>
+            </section>
+
+            <section class="side-card side-card-static">
+              <h4>Logo báo cáo</h4>
+              <div class="logo-upload-preview-row">
+                <div class="logo-upload-preview" id="logoUploadPreview">
+                  <span class="logo-upload-empty" id="logoUploadEmptyLabel">Chưa có logo</span>
+                  <img id="logoUploadImg" alt="Logo công ty" class="hidden">
+                </div>
+                <div class="logo-upload-actions">
+                  <label class="btn btn-secondary btn-sm" for="logoUploadInput">Chọn ảnh</label>
+                  <input type="file" id="logoUploadInput" accept="image/png,image/jpeg,image/svg+xml,image/webp" class="hidden">
+                  <button type="button" class="btn btn-secondary btn-sm" id="btnRemoveLogo">Xóa logo</button>
+                </div>
+              </div>
+              <p class="logo-upload-hint">Hiển thị ở góc trang bìa mọi báo cáo PDF. Khuyến nghị PNG/SVG nền trong suốt, tối đa 2MB.</p>
+              <p class="logo-upload-status" id="logoUploadStatus"></p>
+            </section>
+          </aside>
+        </div>
+      </section>
+
+      <!-- ================= CÀI ĐẶT ================= -->
+      <section id="viewSettings" class="view-section hidden">
+        <div class="settings-grid">
+          <section class="panel">
+            <div class="panel-head">
+              <div><div class="panel-title">Tiêu chí đánh giá</div><p class="panel-sub">Áp dụng cho dashboard, compliance, báo cáo PDF và quy hoạch.</p></div>
+            </div>
+            <label class="finding-filter-item criteria-locked" title="CPU luôn được đánh giá"><input type="checkbox" checked disabled><span>CPU (overcommit vCPU:pCPU)</span></label>
+            <label class="finding-filter-item criteria-locked" title="RAM luôn được đánh giá"><input type="checkbox" checked disabled><span>RAM (overcommit vRAM:pRAM)</span></label>
+            <label class="finding-filter-item"><input type="checkbox" id="criteriaStorageToggle"><span>Storage (Used / Provisioned theo datastore)</span></label>
+            <p class="criteria-hint">Tắt khi dùng SAN dùng chung: VM thick provisioning làm % storage luôn tiệm cận 100% và không phản ánh dung lượng SAN thực còn trống. Khi tắt, mọi KPI, biểu đồ, bảng và nội dung PDF về storage sẽ được loại khỏi đánh giá và báo cáo ghi rõ "Storage: không đánh giá".</p>
+            <p class="criteria-status" id="criteriaStatus"></p>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div><div class="panel-title">Ngưỡng đánh giá</div><p class="panel-sub">Thay đổi áp dụng ngay trên màn hình; bấm Lưu để báo cáo PDF và các phiên làm việc khác dùng cùng ngưỡng.</p></div>
+            </div>
+            <div class="settings-form">
+              <div class="field">
+                <label for="idleThresholdInput">Ngưỡng VM idle (ngày)</label>
+                <input type="text" id="idleThresholdInput" value="30">
+              </div>
+              <div class="field">
+                <label for="cpuOvercommitInput">Ngưỡng overcommit CPU (vCPU:pCPU)</label>
+                <input type="text" id="cpuOvercommitInput" value="6">
+              </div>
+              <div class="field">
+                <label for="htFactorInput" title="Số pCPU logic dùng để tính overcommit = CPU Cores (vật lý) × hệ số này. Mặc định 2 vì hầu hết host ESXi bật Hyperthreading (mỗi core vật lý = 2 logical thread).">Hệ số Hyperthreading (pCPU logic/core)</label>
+                <input type="text" id="htFactorInput" value="2">
+              </div>
+              <div class="field">
+                <label for="ramOvercommitInput">Ngưỡng overcommit RAM (vRAM:pRAM)</label>
+                <input type="text" id="ramOvercommitInput" value="1.0">
+              </div>
+            </div>
+            <div class="sim-actions">
+              <button class="btn btn-primary btn-sm" id="btnSaveThresholds" type="button">Lưu ngưỡng</button>
+              <span class="criteria-status" id="thresholdStatus"></span>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-head">
+              <div><div class="panel-title">Nguồn dữ liệu</div><p class="panel-sub">Dữ liệu live đọc từ vCenter (tài khoản chỉ đọc) và dữ liệu import thủ công; lịch sử được lưu để phân tích xu hướng.</p></div>
+            </div>
+            <div class="table-scroll table-scroll-flat">
+              <table class="data-table" id="vcenterSourceTable">
+                <thead><tr><th>vCenter</th><th>Trạng thái</th><th>Đồng bộ gần nhất</th></tr></thead>
+                <tbody></tbody>
+              </table>
+            </div>
+            <div class="settings-form settings-form-2">
+              <div class="field">
+                <label for="hostFile">Host file (CSV/JSON) — import thủ công</label>
+                <input type="file" id="hostFile" accept=".csv,.json,.txt">
+              </div>
+              <div class="field">
+                <label for="vmFile">VM file (CSV/JSON) — import thủ công</label>
+                <input type="file" id="vmFile" accept=".csv,.json,.txt">
+              </div>
+            </div>
+            <div class="sim-actions">
+              <button class="btn btn-secondary btn-sm" id="btnLoadSample" type="button">Nạp sample data</button>
+              <button class="btn btn-secondary btn-sm btn-danger" id="btnResetAll" type="button">Đặt lại dữ liệu trên màn hình</button>
+            </div>
+          </section>
+        </div>
+      </section>
+
+    </main>
+
+    <div class="footer-note">VMware Capacity Ops Management — dữ liệu live từ vCenter (tài khoản chỉ đọc infra.mon@vsphere.local) + import thủ công, lưu lịch sử để phân tích xu hướng.</div>
+  </div>
 </div>
 
 <script src="js/api.js?v=__ASSET_V__"></script>

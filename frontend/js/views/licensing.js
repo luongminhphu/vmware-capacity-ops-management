@@ -135,11 +135,8 @@ function bindLicensingView() {
   const st = licState();
   if (st.bound) return;
   st.bound = true;
-  $$('#licTabs .sim-tab').forEach(btn => btn.addEventListener('click', () => {
-    st.sub = btn.dataset.lic;
-    $$('#licTabs .sim-tab').forEach(b => b.classList.toggle('active', b === btn));
-    renderLicBody();
-  }));
+  // Sub-pages (hardware / os / assess / whatif / snapshots) are chosen from the
+  // sidebar; navigateTo() sets st.sub before calling renderLicensingView().
   $('#btnLicRefresh').addEventListener('click', async () => { await licLoad(true); renderLicBody(); });
   $('#licScopeBar').addEventListener('click', async (e) => {
     const chip = e.target.closest('[data-lic-scope]');
@@ -711,7 +708,7 @@ async function onLicBodyClick(e) {
       st.snaps = await api.licSnapshots(); licSetStatus(`Đã lưu snapshot #${s.id} (hash ${s.resultHash}).`);
       if (st.sub === 'snapshots') renderLicBody();
     }
-    else if (act === 'snap-view') { const full = await api.licSnapshotGet(id); st.viewingSnapshot = full; st.sub = 'assess'; $$('#licTabs .sim-tab').forEach(b => b.classList.toggle('active', b.dataset.lic === 'assess')); renderLicBody(); }
+    else if (act === 'snap-view') { const full = await api.licSnapshotGet(id); st.viewingSnapshot = full; st.sub = 'assess'; if (typeof syncNavState === 'function') syncNavState(); renderLicBody(); }
     else if (act === 'snap-close') { st.viewingSnapshot = null; renderLicBody(); }
     else if (act === 'snap-recompute') { const r = await api.licSnapshotRecompute(id); const el = $(`#licRecomp${id}`); if (el) el.innerHTML = r.reproducible ? ' <span class="pill ok">tái lập đúng</span>' : ` <span class="pill crit">khác: ${esc(r.recomputedHash)}</span>`; }
     else if (act === 'snap-delete') { if (!confirm(`Xoá snapshot #${id}?`)) return; await api.licSnapshotDelete(id); st.snaps = await api.licSnapshots(); renderLicBody(); }
