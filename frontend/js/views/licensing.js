@@ -268,13 +268,13 @@ function renderLicOs() {
           <select id="licOsConf" data-lic-filter="confidence">${opt(LIC_CONF_LABEL, st.filters.confidence, 'Mọi độ tin cậy')}</select>
           <select id="licOsSrc" data-lic-filter="source">${opt(LIC_SOURCE_LABEL, st.filters.source, 'Mọi nguồn')}</select>
           <select id="licOsCluster" data-lic-filter="cluster"><option value="all">Tất cả cluster</option>${clusters.map(c => `<option value="${esc(c)}"${st.filters.cluster === c ? ' selected' : ''}>${esc(c)}</option>`).join('')}</select>
-          <input id="licOsSearch" placeholder="Tìm VM / OS / host…" value="${esc(st.filters.q)}">
+          <input id="licOsSearch" placeholder="Tìm VM / IP / OS / host…" value="${esc(st.filters.q)}">
           <button class="btn btn-secondary btn-sm" data-lic-action="export-os" type="button">Xuất Excel</button>
         </div>
       </div>
       <div id="licOverrideEditor"></div>
       <div class="table-scroll"><table class="data-table lic-table" id="licOsTable">
-        <thead><tr><th>VM</th><th>Cluster / Host</th><th>Trạng thái</th><th class="num">vCPU</th><th class="num">RAM GB</th><th>Phân loại</th><th>OS version</th><th>Edition</th><th>Nguồn</th><th>Độ tin cậy</th><th>Ghi chú</th><th></th></tr></thead>
+        <thead><tr><th>VM</th><th>IP address</th><th>Cluster / Host</th><th>Trạng thái</th><th class="num">vCPU</th><th class="num">RAM GB</th><th>Phân loại</th><th>OS version</th><th>Edition</th><th>Nguồn</th><th>Độ tin cậy</th><th>Ghi chú</th><th></th></tr></thead>
         <tbody></tbody></table></div>
       <div class="row-count" id="licOsFoot"></div>
     </section>`;
@@ -289,7 +289,7 @@ function licFilteredVms() {
     if (f.source !== 'all' && v.os.source !== f.source) return false;
     if (f.cluster !== 'all' && v.cluster !== f.cluster) return false;
     if (q) {
-      const hay = `${v.vm} ${v.host} ${v.cluster} ${v.os.osVersion || ''} ${v.os.evidence?.guestFullName || ''} ${v.os.evidence?.toolsGuestFullName || ''}`.toLowerCase();
+      const hay = `${v.vm} ${v.ipAddress || ''} ${v.host} ${v.cluster} ${v.os.osVersion || ''} ${v.os.evidence?.guestFullName || ''} ${v.os.evidence?.toolsGuestFullName || ''}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -308,6 +308,7 @@ function renderLicOsTable() {
     const title = `guestId: ${ev.guestId || '—'}\nconfig: ${ev.guestFullName || '—'}\ntools: ${ev.toolsGuestFullName || '—'} (${ev.toolsStatus || '—'})\nhostname: ${ev.guestHostname || '—'}`;
     return `<tr>
       <td><b>${esc(v.vm)}</b>${o.overridden ? ' <span class="pill ok" title="Override thủ công">override</span>' : ''}</td>
+      <td class="mono"${ev.guestHostname ? ` title="hostname: ${esc(ev.guestHostname)}"` : ''}>${esc(v.ipAddress || '—')}</td>
       <td>${esc(v.cluster || '—')}<div class="muted-sub">${esc(v.host || '—')}</div></td>
       <td>${v.isPoweredOn ? '<span class="pill ok">Bật</span>' : '<span class="pill na">Tắt</span>'}</td>
       <td class="num">${licNum(v.vcpu)}</td><td class="num">${licNum(v.ramGB)}</td>
@@ -319,7 +320,7 @@ function renderLicOsTable() {
       <td class="lic-note">${esc(o.note || '')}</td>
       <td><button class="btn btn-secondary btn-sm" data-lic-action="override" data-idx="${st_idx(v)}" type="button">Override</button></td>
     </tr>`;
-  }).join('') || '<tr><td colspan="12" class="empty-note">Không có VM khớp bộ lọc.</td></tr>';
+  }).join('') || '<tr><td colspan="13" class="empty-note">Không có VM khớp bộ lọc.</td></tr>';
   $('#licOsFoot').textContent = `${rows.length} / ${licState().inv.vms.length} VM${rows.length > 1500 ? ' (hiển thị 1500 dòng đầu — thu hẹp bộ lọc hoặc xuất Excel)' : ''}`;
 }
 function st_idx(v) { return licState().inv.vms.indexOf(v); }
@@ -762,8 +763,8 @@ async function licExportHardware() {
 }
 
 async function licExportOs() {
-  const rows = licFilteredVms().map(v => ({ vcenterKey: v.vcenterKey, cluster: v.cluster, host: v.host, vm: v.vm, power: v.isPoweredOn ? 'Bật' : 'Tắt', vcpu: v.vcpu, ramGB: v.ramGB, category: v.os.categoryLabel, osVersion: v.os.osVersion || '', osEdition: v.os.osEdition || '', source: LIC_SOURCE_LABEL[v.os.source] || v.os.source, confidence: LIC_CONF_LABEL[v.os.confidence] || v.os.confidence, guestId: v.os.evidence?.guestId || '', guestFullName: v.os.evidence?.guestFullName || '', toolsGuestFullName: v.os.evidence?.toolsGuestFullName || '', toolsStatus: v.os.evidence?.toolsStatus || '', note: v.os.note || '' }));
-  const cols = [['vcenterKey', 'vCenter'], ['cluster', 'Cluster'], ['host', 'Host'], ['vm', 'VM'], ['power', 'Trạng thái'], ['vcpu', 'vCPU'], ['ramGB', 'RAM GB'], ['category', 'Phân loại'], ['osVersion', 'OS version'], ['osEdition', 'Edition'], ['source', 'Nguồn'], ['confidence', 'Độ tin cậy'], ['guestId', 'guestId'], ['guestFullName', 'Cấu hình VM'], ['toolsGuestFullName', 'VMware Tools'], ['toolsStatus', 'Tools status'], ['note', 'Ghi chú']].map(([key, label]) => ({ key, label }));
+  const rows = licFilteredVms().map(v => ({ vcenterKey: v.vcenterKey, cluster: v.cluster, host: v.host, vm: v.vm, ipAddress: v.ipAddress || '', hostname: v.os.evidence?.guestHostname || '', power: v.isPoweredOn ? 'Bật' : 'Tắt', vcpu: v.vcpu, ramGB: v.ramGB, category: v.os.categoryLabel, osVersion: v.os.osVersion || '', osEdition: v.os.osEdition || '', source: LIC_SOURCE_LABEL[v.os.source] || v.os.source, confidence: LIC_CONF_LABEL[v.os.confidence] || v.os.confidence, guestId: v.os.evidence?.guestId || '', guestFullName: v.os.evidence?.guestFullName || '', toolsGuestFullName: v.os.evidence?.toolsGuestFullName || '', toolsStatus: v.os.evidence?.toolsStatus || '', note: v.os.note || '' }));
+  const cols = [['vcenterKey', 'vCenter'], ['cluster', 'Cluster'], ['host', 'Host'], ['vm', 'VM'], ['ipAddress', 'IP address'], ['hostname', 'Hostname (guest)'], ['power', 'Trạng thái'], ['vcpu', 'vCPU'], ['ramGB', 'RAM GB'], ['category', 'Phân loại'], ['osVersion', 'OS version'], ['osEdition', 'Edition'], ['source', 'Nguồn'], ['confidence', 'Độ tin cậy'], ['guestId', 'guestId'], ['guestFullName', 'Cấu hình VM'], ['toolsGuestFullName', 'VMware Tools'], ['toolsStatus', 'Tools status'], ['note', 'Ghi chú']].map(([key, label]) => ({ key, label }));
   await api.downloadXlsx({ filename: `VCO_VM_OS_inventory_${licScopeSlug()}`, sheets: [{ name: 'VM OS', columns: cols, rows }] });
 }
 

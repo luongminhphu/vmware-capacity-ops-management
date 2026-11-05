@@ -17,7 +17,7 @@ mà trang đó dùng (vCenter / cluster / host).
 | Giám sát | **Compliance** | Findings host/cluster/VM với mã đối soát; bấm mã ở trang Điều hành sẽ nhảy sang đây và lọc sẵn. |
 | | **Xu hướng & biến động** | Biến động CPU/RAM theo snapshot và danh sách VM thêm/bớt/đổi cấu hình (trước nằm cuối Dashboard). |
 | Inventory | **Host & VM** | Bảng host, bảng VM có lọc cluster riêng, xuất Excel (tab Inventory cũ). |
-| | **ESXi & phần cứng**, **Hệ điều hành guest** | Hai tab đầu của License & Inventory cũ. |
+| | **ESXi & phần cứng**, **Hệ điều hành guest** | Hai tab đầu của License & Inventory cũ; bảng VM có cột IP address (guest.ipAddress, IP chính do VMware Tools báo về) và hostname guest trong tooltip / file Excel. |
 | Quy hoạch | **What-if capacity**, **Sizing máy chủ**, **Quy hoạch tài nguyên** | What-if simulation; sizing host vật lý; form giả định + PDF quy hoạch (trước là dropdown trong header). |
 | License | **Đánh giá license**, **What-if license**, **Snapshot license** | Ba tab còn lại của License & Inventory cũ, kèm thanh chọn phạm vi cluster cho đợt mua. |
 | Báo cáo & cài đặt | **Trung tâm báo cáo** | Mọi nút xuất: PDF Vận hành / Kỹ thuật / Quy hoạch / Tổng quan license, CSV, Excel; phạm vi cluster-host của PDF, loại finding, logo (trước rải rác ở 5 dropdown trong header). |

@@ -167,7 +167,8 @@ def inventory(vcenter: Optional[str] = Query(default="all"), cluster: Optional[s
         r["vmCount"] = vm_by_host.get((r["vcenterKey"], r["host"]), 0)
     vm_rows = [{
         "vcenterKey": v.get("vcenterKey"), "cluster": v.get("cluster"), "host": v.get("host"), "vm": v.get("vm"),
-        "instanceUuid": v.get("instanceUuid"), "isPoweredOn": v.get("isPoweredOn"), "vcpu": v.get("vcpu"), "ramGB": v.get("ramGB"),
+        "instanceUuid": v.get("instanceUuid"), "isPoweredOn": v.get("isPoweredOn"), "ipAddress": v.get("ipAddress"),
+        "vcpu": v.get("vcpu"), "ramGB": v.get("ramGB"),
         "overrideKey": v.get("overrideKey"), **{"os": v["os"]},
     } for v in classified]
     summary = os_classify.summarize(classified)
